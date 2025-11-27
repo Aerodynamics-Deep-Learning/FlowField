@@ -7,7 +7,8 @@ ACT2CLS = {
     "gelu": nn.GELU,
     "relu": nn.ReLU,
     "tanh": nn.Tanh,
-    "sigmoid": nn.Sigmoid
+    "sigmoid": nn.Sigmoid,
+    "identity": nn.Identity
 }
 
 def get_activation(act_fn: str) -> nn.Module:
