@@ -14,10 +14,10 @@ def _validate_xfoil_existance():
     
 _validate_xfoil_existance()
 
-from .runner import XFoilRunner
-from .parser import parse_xfoil_polar
+from .run import XFoilRunner
+from .parse import XFoil_Parse_Cp
 
 __all__ = [
     "XFoilRunner",
-    "parse_xfoil_polar"
+    "XFoil_Parse_Cp"
 ]
