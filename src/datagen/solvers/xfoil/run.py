@@ -1,16 +1,15 @@
-from src.datagen.schemas import SolverResult
-from src.datagen.solvers.xfoil.utils import XFoil_Check_ConvergenceCp
+from src.datagen.schemas import XFoil_WarmStartIn, XFoil_WarmStartOut, XFoilConvergenceFlag
+from src.datagen.solvers.xfoil.convergence import XFoil_Check_ConvergenceCp
 
 import subprocess
 
 import logging
 logger = logging.getLogger(__name__)
 
-def XFoilRunner() -> SolverResult:
+def XFoilRunner(X: XFoil_WarmStartIn) -> XFoil_WarmStartOut:
     pass
 
 def XFoil_Run_Cp(xfoil_exe: str, input_script_path: str, cp_file_path: str, timeout_sec: int=60) -> tuple[int, str]:
-
     """
     Runs the given input script in XFoil, to compute the Cp distribtuion around the airfoil.
 
@@ -36,15 +35,27 @@ def XFoil_Run_Cp(xfoil_exe: str, input_script_path: str, cp_file_path: str, time
             )
             if process.returncode != 0:
                 logger.error(f"XFoil execution failed with return code {process.returncode}. Stderr: {process.stderr}. Output: {process.stdout}")
-                return -1, process.stdout
+                return XFoilConvergenceFlag.FAILED.value, process.stdout
             
             flag = XFoil_Check_ConvergenceCp(process.stdout, cp_file_path)
 
-            if flag != 2:
-                logger.warning(f"XFoil execuation failed to reach convergence.")
+            if flag == XFoilConvergenceFlag.FAILED.value:
+                logger.warning(f"XFoil execution failed")
+
+            elif flag == XFoilConvergenceFlag.DIVERGED.value:
+                logger.warning(f"XFoil execution diverged")
+
+            elif flag == XFoilConvergenceFlag.OSCILLATORY.value:
+                logger.warning(f"XFoil execution oscillated")
+
+            elif flag == XFoilConvergenceFlag.CONVERGED.value:
+                pass
+
+            else:
+                logger.warning(f"Unknown/Unsupported convergence flag: {flag}")
 
             return flag, process.stdout
             
         except subprocess.TimeoutExpired:
             logger.error(f"XFoil execution timed out after {timeout_sec} seconds. Process will be terminated.")
-            return -1, "TIMEOUT"
+            return XFoilConvergenceFlag.FAILED.value, "TIMEOUT"

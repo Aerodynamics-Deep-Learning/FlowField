@@ -15,9 +15,7 @@ def _validate_xfoil_existance():
 _validate_xfoil_existance()
 
 from .run import XFoilRunner
-from .parse import XFoil_Parse_Cp
 
 __all__ = [
     "XFoilRunner",
-    "XFoil_Parse_Cp"
 ]

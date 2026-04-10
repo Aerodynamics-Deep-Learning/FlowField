@@ -4,57 +4,48 @@ import numpy as np
 import torch
 from typing import Optional, Tuple
 
-class ConvergenceFlag(IntEnum):
+class Airfoil(BaseModel):
+    coords_tensor: torch.Tensor = Field(..., description="The geometry tensor of the airfoil in Selig format")
+    alpha: float = Field(..., ge=-30.0, le=30.0, description="Angle of attack in degrees")
+    Re: float = Field(..., gt=0.0, description="Reynolds number")
+    mach: float = Field(..., ge=0.0, le=0.75, description="Mach number")
+    altitude_m : float = Field(..., ge=0.0, description="Assumed altitude")
+
+class XFoilConvergenceFlag(IntEnum):
     """
     Strict convergence flag, to identify CFD solver convergence
     """
     FAILED = -1
     DIVERGED = 0
     OSCILLATORY = 1
-    CONVERGED = 2
+    STAGNATED = 2
+    ITER_LIMITED = 3
+    CONVERGED = 4
 
-class SolverConfig(BaseModel):
+class XFoilSolverConfig(BaseModel):
     """
-    Contract to define the configuration of the physics solver, such as XFoil or SU2
+    Contract for the configuration of the XFoil solver and the convergence criteria.
     """
-    solver_name: str = Field(..., description="Name of the solver (e.g., 'XFoil', 'SU2')")
-    max_iterations: int = Field(..., gt=0, description="Maximum number of iterations for the solver")
-    convergence_criterion: float = Field(..., gt=0.0, description="Convergence criterion for the solver (e.g., residual threshold)")
+    n_panels: int = Field(..., gt=0, description="Number of panels to be used for the panel method in XFoil")
+    tolerance: float = Field(..., description="The convergence tolerance for XFoil")
+    max_iterations: int = Field(..., gt=0, description="Maximum number of iterations for XFoil to run")
+    tail_length: int = Field(15, gt=0, description="The window to be used when checking resids for convergence flag assignment")
+    var_thresh: float = Field(1e-5, gt=0.0, description="The threshold for the variance at tail when checking for oscillations for convergence flag assignment")
+    slope_thresh: float = Field(-0.01, description="The threshold for the slope at tail when checking for stagnation for convergence flag assignment")
 
-class AirfoilParameters(BaseModel):
+class XFoil_WarmStartIn(BaseModel):
     """
-    Contract to define the parameters of the airfoil, and its operational conditions
+    Contract for the input given to XFoil, to get the warmstart values for SU2
     """
-    parameters: Tuple[float, ...] = Field(..., description="Vector of geometric parameters")
-    mach_number: float = Field(..., ge=0.0, le=5.0)
-    angle_of_attack: float = Field(..., ge=-30.0, le=30.0)
-    altitude_m : float = Field(..., ge=0.0)
-    reynolds_number: float = Field(..., gt=0.0)
+    airfoil: Airfoil
+    work_dir: str = Field(..., description="Directory where the XFoil input script and Cp output will be saved")
+    solver_config: XFoilSolverConfig
 
-class FlowTensor(BaseModel):
+class XFoil_WarmStartOut(BaseModel):
     """
-    Contract for the multi-fidelity flowfield tensors obtained after solving
+    Contract for the output given by XFoil, to conduct warmstart in SU2
     """
-    model_config = ConfigDict(arbitrary_types_allowed=True)
+    
+    flag: XFoilConvergenceFlag
 
-    coords = torch.Tensor = Field(..., description="Tensor of shape (N, 2) contains x,y tuples for airfoil surface points. Is in the Selig format.")
-    pressure_field: torch.Tensor
-    velocity_field: torch.Tensor
-    turbulent_viscosity: Optional[torch.Tensor] = None
 
-    def validate_dims(self, expected_shape: tuple):
-        if self.pressure_field.shape != expected_shape:
-            raise ValueError(f"Tensor mismatch. Expected shape: {expected_shape}, but got: {self.pressure_field.shape}")
-        
-class SolverResult(BaseModel):
-    """
-    Contract for any physics solver's (XFoil, SU2, etc.) output
-    """
-    model_config = ConfigDict(arbitrary_types_allowed=True)
-
-    flag: ConvergenceFlag
-    solver_config: SolverConfig
-    history: np.ndarray = Field(..., description="Final 200 iterations of the force coeffs")
-    flow_data: Optional[FlowTensor] = Field(None, description="None if flag=DIVERGED")
-    compute_time_sec: float
-    solver: str = Field(..., description="Name of the solver used to generate this result")

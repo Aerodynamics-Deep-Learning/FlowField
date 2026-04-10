@@ -4,7 +4,7 @@ import textwrap
 import logging
 logger = logging.getLogger(__name__)
 
-def XFoil_Build_Cp(coords_path: str, working_dir: str, alpha: float, Re: float, mach: float, n_nodes: int, tolerance: float, max_iterations: int) -> tuple[str, str]:
+def XFoil_Build_Cp(coords_path: str, working_dir: str, alpha: float, Re: float, mach: float, n_panels: int, tolerance: float, max_iterations: int) -> tuple[str, str]:
     """
     Builds the XFoil run commands to determine the Cp around the airfoil, returns the path to the input script and Cp output file
 
@@ -14,7 +14,7 @@ def XFoil_Build_Cp(coords_path: str, working_dir: str, alpha: float, Re: float, 
         alpha (float): Angle of attack in degrees
         Re (float): Reynolds number
         mach (float): Mach number
-        n_nodes (int): Number of nodes to be used for the panel method in XFoil
+        n_panels (int): Number of panels to be used for the panel method in XFoil
         tolerance (float): The convergence tolerance, it is strictly numerical
         max_iterations (int): Maximum number of iterations for XFoil to run
 
@@ -39,7 +39,7 @@ def XFoil_Build_Cp(coords_path: str, working_dir: str, alpha: float, Re: float, 
     commands = textwrap.dedent(f"""
     load {coords_path}
     ppar
-    n {n_nodes}
+    n {n_panels}
 
     oper 
     vpar 
