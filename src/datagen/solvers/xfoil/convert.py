@@ -48,7 +48,7 @@ def XFoil_Get_Freestream_Conditions(mach: float, altitude_m: float) -> Tuple[flo
 
     return P_inf, T_inf, rho_inf, V_inf
 
-def XFoil_Cp_To_Conservative_State(Cp_tensor: torch.Tensor, coords_tensor: torch.Tensor, M_inf: float, P_inf: float, T_inf: float, alpha: float) -> torch.Tensor:
+def XFoil_Cp_To_Conservative_State(Cp_tensor: torch.Tensor, coords_tensor: torch.Tensor, M_inf: float, altitude_m: float, alpha: float) -> torch.Tensor:
 
     """
     Conducts the relevant conversion from XFoil variables (dimensionless Cp) into isentropic flow assuming local conservative variables.
@@ -57,9 +57,8 @@ def XFoil_Cp_To_Conservative_State(Cp_tensor: torch.Tensor, coords_tensor: torch
     Args:
         Cp_tensor (torch.Tensor): The Cp values as a tensor of shape (N, [x, Cp])
         coords_tensor (torch.Tensor): The coordinates of the points defining the airfoil in shape (N, 2)
-        M_inf (float): The derived freestream Mach number
-        P_inf (float): The derived freestream pressure
-        T_inf (float): The derived freestream temperature
+        M_inf (float): The derived freestream Mach number, same variable as the mach number defined earlier
+        altitude_m (float): The assumed altitude of the run/setup
         alpha (float): Angle of attack of the given airfoil, in degrees
 
     Returns:
@@ -72,8 +71,8 @@ def XFoil_Cp_To_Conservative_State(Cp_tensor: torch.Tensor, coords_tensor: torch
 
     alpha_rad = torch.tensor(np.radians(alpha), device=device)
 
-    # Freestream density
-    rho_inf = P_inf / (R * T_inf)
+    P_inf, T_inf, rho_inf, V_inf = XFoil_Get_Freestream_Conditions(mach=M_inf, altitude_m=altitude_m)
+
     # Stagnation point (leading edge) temperature 
     T_0 = T_inf * (1.0 + ((GAMMA - 1) * M_inf**2) / 2)
 

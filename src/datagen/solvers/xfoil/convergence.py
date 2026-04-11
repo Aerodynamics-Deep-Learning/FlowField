@@ -4,19 +4,21 @@ import re
 import numpy as np
 import torch
 
-from src.datagen.schemas import XFoilConvergenceFlag
+from .schemas import XFoilConvergenceFlag
 
-def XFoil_Check_ConvergenceCp(stdout: str, cp_file_path: str, tolerance: float):
+def XFoil_Check_ConvergenceCp(stdout: str, cp_file_path: str, tolerance: float, tail_length: int, var_thresh: float, slope_thresh: float) -> int:
 
     convergence_flag = _Check_Absolute(stdout, cp_file_path)
 
+    # Check Absolute returns CONVERGED by default if XFoil did not fail catastrophically, recheck here to redefine specifically
+    # divergence or convergence
     if convergence_flag == XFoilConvergenceFlag.CONVERGED.value:
-        convergence_flag = _Check_Residuals(stdout, tolerance)
+        convergence_flag = _Check_Residuals(stdout, tolerance, tail_length, var_thresh, slope_thresh)
         return convergence_flag
     else:
-        return convergence_flag
+        return convergence_flag # If it failed catastrophically, just return that
 
-def _Check_Residuals(stdout: str, tolerance: float, tail_length: int=15, var_thresh: float=1e-4, slope_thresh: float=-0.01) -> int:
+def _Check_Residuals(stdout: str, tolerance: float, tail_length: int, var_thresh: float, slope_thresh: float) -> int:
     """
     Checks the state of convergence by checking the behavior of RMS viscous residual history. Checks of limit-cycle oscillations
     in the Newton solver.
@@ -29,7 +31,7 @@ def _Check_Residuals(stdout: str, tolerance: float, tail_length: int=15, var_thr
         slope_thresh (float): The threshold for the slope at tail
     """
 
-    rms_pattern = re.compile(r"rms:\s+([0-9]+\.[0-9]+E[-+][0-9]+)") # Regex bs
+    rms_pattern = re.compile(r"rms:\s+([0-9]*\.[0-9]+E[-+][0-9]+)") # Regex bs
 
     rms_history = []
     for line in stdout.splitlines():
@@ -56,7 +58,7 @@ def _Check_Residuals(stdout: str, tolerance: float, tail_length: int=15, var_thr
     else:
         return XFoilConvergenceFlag.CONVERGED.value
 
-def check_tail_variance(rms_array: np.ndarray, tolerance: float, tail_length: int=15, var_thresh: float=1e-4) -> bool:
+def check_tail_variance(rms_array: np.ndarray, tolerance: float, tail_length: int, var_thresh: float) -> bool:
     """
     Checks for the variance in tail_length, if it is more than var_thresh, the sim is defined as diverged.
     """
@@ -72,7 +74,7 @@ def check_tail_variance(rms_array: np.ndarray, tolerance: float, tail_length: in
 
     return True
 
-def check_log_grad(rms_array: np.ndarray, tolerance: float, tail_length: int=15, slope_thresh: float=-0.01) -> bool:
+def check_log_grad(rms_array: np.ndarray, tolerance: float, tail_length: int, slope_thresh: float) -> bool:
 
     if rms_array[-1] < tolerance and len(rms_array) < tail_length:
         return True
@@ -104,9 +106,8 @@ def _Check_Absolute(stdout: str, cp_file_path: str) -> int:
     """
 
     failure_keywords = [
-        "Convergence failed",
         "n2 convergence failed",
-        "VISCAL: Convergence failed"
+        "VISCAL:  Convergence failed"
     ]
 
     # A hard check on the stdout to find specific divergences

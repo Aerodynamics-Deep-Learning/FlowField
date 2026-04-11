@@ -4,7 +4,7 @@ import textwrap
 import logging
 logger = logging.getLogger(__name__)
 
-def XFoil_Build_Cp(coords_path: str, working_dir: str, alpha: float, Re: float, mach: float, n_panels: int, tolerance: float, max_iterations: int) -> tuple[str, str]:
+def XFoil_Build_Cp(coords_path: str, working_dir: str, alpha: float, Re: float, mach: float, n_panels: int, max_iterations: int) -> tuple[str, str]:
     """
     Builds the XFoil run commands to determine the Cp around the airfoil, returns the path to the input script and Cp output file
 
@@ -15,7 +15,6 @@ def XFoil_Build_Cp(coords_path: str, working_dir: str, alpha: float, Re: float, 
         Re (float): Reynolds number
         mach (float): Mach number
         n_panels (int): Number of panels to be used for the panel method in XFoil
-        tolerance (float): The convergence tolerance, it is strictly numerical
         max_iterations (int): Maximum number of iterations for XFoil to run
 
     Returns:
@@ -27,7 +26,7 @@ def XFoil_Build_Cp(coords_path: str, working_dir: str, alpha: float, Re: float, 
     if not os.path.exists(working_dir):
         os.makedirs(working_dir)
         logger.info(f"Created working directory at {working_dir} for XFoil Cp output.")
-    cp_file_path = os.path.join(working_dir, "cp_dist.txt")
+    cp_file_path = os.path.join(working_dir, "Cp.dat")
     if os.path.exists(cp_file_path):
         logger.warning(f"XFoil Cp output file already exists at {cp_file_path}. It will be overwritten.")
         os.remove(cp_file_path)
@@ -40,16 +39,15 @@ def XFoil_Build_Cp(coords_path: str, working_dir: str, alpha: float, Re: float, 
     load {coords_path}
     ppar
     n {n_panels}
+    
 
     oper 
-    vpar 
-    conv {tolerance}
-
     visc {Re}
     mach {mach}
     iter {max_iterations}
     alfa {alpha}
     cpwr {cp_file_path}
+
     quit
     """).strip()
 

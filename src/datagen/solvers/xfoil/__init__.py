@@ -1,4 +1,3 @@
-import os 
 import shutil
 import logging
 
@@ -15,7 +14,19 @@ def _validate_xfoil_existance():
 _validate_xfoil_existance()
 
 from .run import XFoilRunner
+from .schemas import (
+    XFoil_WarmStartIn,
+    XFoil_WarmStartOut,
+    XFoilSolverConfig,
+    XFoilConvergenceConfig,
+    XFoilConvergenceFlag
+)
 
 __all__ = [
     "XFoilRunner",
+    "XFoil_WarmStartIn",
+    "XFoil_WarmStartOut",
+    "XFoilSolverConfig",
+    "XFoilConvergenceConfig",
+    "XFoilConvergenceFlag"
 ]
