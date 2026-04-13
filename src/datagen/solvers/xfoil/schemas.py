@@ -48,6 +48,8 @@ class XFoil_WarmStartOut(BaseModel):
     """
     Contract for the output given by XFoil, to conduct warmstart in SU2
     """
+    model_config = {"arbitrary_types_allowed": True}
+
     airfoil: Airfoil
     freestream: Freestream
     flag: XFoilConvergenceFlag
