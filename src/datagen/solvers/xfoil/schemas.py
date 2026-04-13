@@ -3,7 +3,7 @@ from enum import IntEnum
 import torch
 from typing import Optional
 
-from ...schemas import Airfoil
+from ...schemas import Airfoil, Freestream
 
 class XFoilConvergenceFlag(IntEnum):
     """
@@ -38,6 +38,7 @@ class XFoil_WarmStartIn(BaseModel):
     Contract for the input given to XFoil, to get the warmstart values for SU2
     """
     airfoil: Airfoil
+    freestream: Freestream
     xfoil_exe: str = Field(..., description="Path to the XFoil executable")
     working_dir: str = Field(..., description="Directory where the XFoil input script and Cp output will be saved")
     solver_config: XFoilSolverConfig = Field(..., description="Specifics of the solver")
@@ -48,6 +49,7 @@ class XFoil_WarmStartOut(BaseModel):
     Contract for the output given by XFoil, to conduct warmstart in SU2
     """
     airfoil: Airfoil
+    freestream: Freestream
     flag: XFoilConvergenceFlag
     Cp_tensor: Optional[torch.Tensor] = Field(None, description="The dimensionless Cp distribution over the airfoil, with form (N, [x, Cp])")
     conservative_tensor: Optional[torch.Tensor] = Field(None, description="The conservative tensor of form [rho, rho*u, rh*v, rho*E] to be used in the warmstart of SU2")

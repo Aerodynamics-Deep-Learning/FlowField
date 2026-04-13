@@ -33,8 +33,8 @@ def XFoilRunner(XFoil_In: XFoil_WarmStartIn) -> XFoil_WarmStartOut:
     input_script_path, cp_file_path = XFoil_Build_Cp(
         coords_path=XFoil_In.airfoil.coords_path,
         working_dir=XFoil_In.working_dir,
-        alpha=XFoil_In.airfoil.alpha,
-        mach=XFoil_In.airfoil.mach,
+        alpha=XFoil_In.freestream.alpha,
+        mach=XFoil_In.freestream.mach,
         n_panels=XFoil_In.solver_config.n_panels,
         max_iterations=XFoil_In.solver_config.max_iterations
     )
@@ -59,9 +59,9 @@ def XFoilRunner(XFoil_In: XFoil_WarmStartIn) -> XFoil_WarmStartOut:
         conservative_tensor = XFoil_Cp_To_Conservative_State(
             Cp_tensor=Cp_tensor,
             coords_tensor=XFoil_In.airfoil.coords_tensor,
-            M_inf=XFoil_In.airfoil.mach,
-            altitude_m=XFoil_In.airfoil.altitude_m,
-            alpha=XFoil_In.airfoil.alpha
+            M_inf=XFoil_In.freestream.mach,
+            altitude_m=XFoil_In.freestream.altitude_m,
+            alpha=XFoil_In.freestream.alpha
         )
 
     # Write the stdout, build the verbose path list
@@ -70,6 +70,7 @@ def XFoilRunner(XFoil_In: XFoil_WarmStartIn) -> XFoil_WarmStartOut:
 
     return XFoil_WarmStartOut(
         airfoil=XFoil_In.airfoil,
+        freestream=XFoil_In.freestream,
         flag=flag,
         Cp_tensor=Cp_tensor,
         conservative_tensor=conservative_tensor,
