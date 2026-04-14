@@ -12,30 +12,6 @@ import logging
 logger = logging.getLogger(__name__)
 
 def GMSH_MeshGenerator(data: GMSH_In) -> GMSH_Out:
-
-    """
-    The actual function function that
-
-    1- Initializes gmsh
-    2- gets the dynamic y+ height, builds geom & mesh using the generate_mesh function
-    3- validates and quality checks the mesh, based on element quality, determines the flag
-    4- exportsthe final mesh with the .su2 extension (needs to build the path from working_dir)
-    5- populate the verbose_list using functions in the io (the .geo dump done in this function, too heavy to move around the gmsh obj)
-    6- return the whole thing as GMSH_Out
-
-    if none of this works, 
-    1- return the exception written, path included in the verbose list
-    2- append the necessary flag
-    3- return the whole thing as GMSH_Out
-
-    !!! finally, use:
-    
-    '
-    finally:
-        gmsh.finalize()
-    '
-    """
-
     """
     Orchestrates the entire pipeline of mesh generation using GMSH, including flagging, io, etc.
 
@@ -47,7 +23,7 @@ def GMSH_MeshGenerator(data: GMSH_In) -> GMSH_Out:
     """
 
     log_path = os.path.join(data.working_dir, f"{data.airfoil.airfoil_name}_gmsh_log.txt")
-    geo_path = None # Fallback value, in case geo dump was not generated
+    brep_path = None # Fallback value, in case brep dump was not generated
     
     gmsh.initialize()
     gmsh.option.setNumber("General.Terminal", 0)
@@ -86,7 +62,7 @@ def GMSH_MeshGenerator(data: GMSH_In) -> GMSH_Out:
             pass
 
         # Get the mesh
-        geo_path = generate_mesh(
+        brep_path = generate_mesh(
             meshing_config= data.meshing_config,
             airfoil= data.airfoil,
             h_first= h_first,
@@ -100,7 +76,7 @@ def GMSH_MeshGenerator(data: GMSH_In) -> GMSH_Out:
         quad_tags, _ = gmsh.model.mesh.getElementsByType(3)
         all_2d_tags = np.concatenate([tri_tags, quad_tags]).astype(np.uint64)
         if len(all_2d_tags) > 0:
-            _, qualities = gmsh.model.mesh.getElementQuality(elementTags=all_2d_tags, qualityName="SICN")
+            qualities = gmsh.model.mesh.getElementQualities(elementTags=all_2d_tags, qualityName="minSICN")
             min_mesh_quality = min(qualities)
         else:
             flag = GMSH_ExitFlag.EXTRUSION_FAIL
@@ -110,7 +86,7 @@ def GMSH_MeshGenerator(data: GMSH_In) -> GMSH_Out:
 
         if (num_quads == 0):
             flag = GMSH_ExitFlag.EXTRUSION_FAIL
-        elif min_mesh_quality <= 0.1:
+        elif min_mesh_quality <= 0.0:
             flag = GMSH_ExitFlag.NEGATIVE_JACOBIAN
         else:
             flag = GMSH_ExitFlag.SUCCESS
@@ -120,8 +96,8 @@ def GMSH_MeshGenerator(data: GMSH_In) -> GMSH_Out:
         mesh_path = os.path.join(data.working_dir, mesh_name)
         gmsh.write(mesh_path)
 
-        # Build the verbose list with gmsh log path, .geo dump, and exception (None, because it is working as intended)
-        verbose_list = [log_path, geo_path, None]
+        # Build the verbose list with gmsh log path, .brep dump, and exception (None, because it is working as intended)
+        verbose_list = [log_path, brep_path, None]
 
         return GMSH_Out(
            airfoil=data.airfoil,
@@ -137,7 +113,7 @@ def GMSH_MeshGenerator(data: GMSH_In) -> GMSH_Out:
 
         # Build the verbose list here
         exception_path = GMSH_Write_Exception(e, data.working_dir)
-        verbose_list = [log_path, geo_path, exception_path]
+        verbose_list = [log_path, brep_path, exception_path]
 
         return GMSH_Out(
             airfoil=data.airfoil,
@@ -165,7 +141,7 @@ def generate_mesh(meshing_config: GMSH_MeshingConfig, airfoil: Airfoil, h_first:
 
     Returns:
         None: A global api state of the generated mesh
-        str: The path string representing the .geo dump
+        str: The path string representing the .brep dump
     """
     # Redefine for ease of use
     model = gmsh.model
@@ -183,8 +159,8 @@ def generate_mesh(meshing_config: GMSH_MeshingConfig, airfoil: Airfoil, h_first:
     upper_spline = occ.addSpline(upper_points)
     lower_points = point_tags[le_idx:]
     lower_spline = occ.addSpline(lower_points)
-    te_line = occ.addLine(point_tags[0], point_tags[-1])
-    airfoil_curves = [upper_spline, te_line, lower_spline]
+    te_line = occ.addLine(point_tags[-1], point_tags[0])
+    airfoil_curves = [upper_spline, lower_spline, te_line]
 
     # Create the full airfoil boundary
     loop = occ.addCurveLoop(airfoil_curves)
@@ -200,25 +176,42 @@ def generate_mesh(meshing_config: GMSH_MeshingConfig, airfoil: Airfoil, h_first:
     all_curve_tags = [tag for dim, tag in all_domain_boundaries]
     actual_airfoil_curves = []
     actual_farfield_curves = []
-    # Manually picking out the actual airfoil and farfield curves bcs of cut oper
+    # Manually picking out the actual airfoil and farfield curves and points bcs of cut oper
     for tag in all_curve_tags:
         bbox = gmsh.model.occ.getBoundingBox(1, tag)
         if abs(bbox[0]) > 5.0 or abs(bbox[3]) > 5.0: 
             actual_farfield_curves.append(tag)
         else:
             actual_airfoil_curves.append(tag)
+
+    post_cut_te_curves = []
+    post_cut_le_curves = []
+    for tag in actual_airfoil_curves:
+        bbox = gmsh.model.occ.getBoundingBox(1, tag)
+        if bbox[0] > 0.9:
+            post_cut_te_curves.append(tag)
+        else:
+            post_cut_le_curves.append(tag)
+
+    post_cut_te_points = []
+    for tag in post_cut_te_curves:
+        boundaries = gmsh.model.getBoundary([(1, tag)], oriented=False)
+        for dim, p_tag in boundaries:
+            post_cut_te_points.append(p_tag)
+
     fluid_surface_tags = [tag for dim, tag in fluid_domain]
     
     # FIELDS:
     # Defining boundary layer field and meshing configs
     field_id = model.mesh.field.add("BoundaryLayer")
-    model.mesh.field.setNumbers(field_id, "CurvesList", actual_airfoil_curves)
+    model.mesh.field.setNumbers(field_id, "CurvesList", post_cut_le_curves)
 
     model.mesh.field.setNumber(field_id, "Size", h_first)
     model.mesh.field.setNumber(field_id, "Ratio", meshing_config.bl_growth_ratio)
     model.mesh.field.setNumber(field_id, "Quads", 1)
     model.mesh.field.setNumber(field_id, "Thickness", meshing_config.bl_total_thickness)
-    model.mesh.field.setNumber(field_id, "FanNodes", meshing_config.bl_fan_elements)
+    gmsh.option.setNumber("Mesh.BoundaryLayerFanElements", meshing_config.bl_fan_elements)
+    model.mesh.field.setNumbers(field_id, "FanPointsList", post_cut_te_points)
     model.mesh.field.setAsBoundaryLayer(field_id)
 
     # Main airfoil field, defined by the LE distance
@@ -259,11 +252,11 @@ def generate_mesh(meshing_config: GMSH_MeshingConfig, airfoil: Airfoil, h_first:
     gmsh.option.setNumber("Mesh.Smoothing", meshing_config.smoothing_steps)
     gmsh.option.setNumber("Mesh.Algorithm", meshing_config.algorithm)
 
-    # .geo dump, for diagnosis
-    geo_path = os.path.join(working_dir, f"{airfoil.airfoil_name}.geo")
-    gmsh.write(geo_path)
+    # .brep dump, for diagnosis
+    brep_path = os.path.join(working_dir, f"{airfoil.airfoil_name}.brep")
+    gmsh.write(brep_path)
 
     # Generate the mesh, using the defined configs, groups, and fields
     model.mesh.generate(2)
 
-    return geo_path
+    return brep_path
