@@ -4,7 +4,7 @@ import re
 import numpy as np
 import torch
 
-from .schemas import XFoilConvergenceFlag
+from .schemas import XFoil_ConvergenceFlag
 
 def XFoil_Check_ConvergenceCp(stdout: str, cp_file_path: str, tolerance: float, tail_length: int, var_thresh: float, slope_thresh: float) -> int:
 
@@ -12,7 +12,7 @@ def XFoil_Check_ConvergenceCp(stdout: str, cp_file_path: str, tolerance: float, 
 
     # Check Absolute returns CONVERGED by default if XFoil did not fail catastrophically, recheck here to redefine specifically
     # divergence or convergence
-    if convergence_flag == XFoilConvergenceFlag.CONVERGED.value:
+    if convergence_flag == XFoil_ConvergenceFlag.CONVERGED.value:
         convergence_flag = _Check_Residuals(stdout, tolerance, tail_length, var_thresh, slope_thresh)
         return convergence_flag
     else:
@@ -41,22 +41,22 @@ def _Check_Residuals(stdout: str, tolerance: float, tail_length: int, var_thresh
     rms_history = np.array(rms_history)
 
     if len(rms_history) == 0:
-        return XFoilConvergenceFlag.FAILED.value
+        return XFoil_ConvergenceFlag.FAILED.value
 
     tailvar_bool = check_tail_variance(rms_history, tolerance, tail_length, var_thresh)
     loggrad_bool = check_log_grad(rms_history, tolerance, tail_length, slope_thresh)
 
     if not tailvar_bool:
-        return XFoilConvergenceFlag.OSCILLATORY.value
+        return XFoil_ConvergenceFlag.OSCILLATORY.value
     
     elif not loggrad_bool:
-        return XFoilConvergenceFlag.STAGNATED.value
+        return XFoil_ConvergenceFlag.STAGNATED.value
 
     elif rms_history[-1] > tolerance:
-        return XFoilConvergenceFlag.ITER_LIMITED.value
+        return XFoil_ConvergenceFlag.ITER_LIMITED.value
     
     else:
-        return XFoilConvergenceFlag.CONVERGED.value
+        return XFoil_ConvergenceFlag.CONVERGED.value
 
 def check_tail_variance(rms_array: np.ndarray, tolerance: float, tail_length: int, var_thresh: float) -> bool:
     """
@@ -112,11 +112,11 @@ def _Check_Absolute(stdout: str, cp_file_path: str) -> int:
 
     # A hard check on the stdout to find specific divergences
     if any(keyword in stdout for keyword in failure_keywords):
-        return XFoilConvergenceFlag.DIVERGED.value
+        return XFoil_ConvergenceFlag.DIVERGED.value
     
     # A hard check on the file's existence and size
     if not os.path.exists(cp_file_path) or os.path.getsize(cp_file_path) == 0:
-        return XFoilConvergenceFlag.FAILED.value
+        return XFoil_ConvergenceFlag.FAILED.value
     
     # Check on numerical integrity
     try:
@@ -124,15 +124,15 @@ def _Check_Absolute(stdout: str, cp_file_path: str) -> int:
 
         # Ensuring it has data entries
         if data.size == 0:
-            return XFoilConvergenceFlag.FAILED.value
+            return XFoil_ConvergenceFlag.FAILED.value
         
         # Ensuring no NaNs or Infs
         if not np.all(np.isfinite(data)):
-            return XFoilConvergenceFlag.DIVERGED.value
+            return XFoil_ConvergenceFlag.DIVERGED.value
 
     # Catch all the parsing errors, in case the file is deformed
     except (ValueError, IndexError, OSError):
-        return XFoilConvergenceFlag.FAILED.value
+        return XFoil_ConvergenceFlag.FAILED.value
         
-    return XFoilConvergenceFlag.CONVERGED.value # Temporarily classify it as converged, it will be further checked by the residuals to define if stagnated or oscillatory
+    return XFoil_ConvergenceFlag.CONVERGED.value # Temporarily classify it as converged, it will be further checked by the residuals to define if stagnated or oscillatory
 

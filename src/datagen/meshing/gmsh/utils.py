@@ -1,4 +1,4 @@
-def get_mesh_height(Re: float, chord: float, target_yplus: float=1.0) -> float:
+def GMSH_get_mesh_height(Re: float, chord: float, target_yplus: float=1.0) -> float:
     """
     Gets the target height of the first layer of meshing given Re and chord length, and the target yplus
 

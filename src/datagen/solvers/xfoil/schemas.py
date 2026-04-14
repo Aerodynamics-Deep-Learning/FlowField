@@ -5,7 +5,7 @@ from typing import Optional
 
 from ...schemas import Airfoil, Freestream
 
-class XFoilConvergenceFlag(IntEnum):
+class XFoil_ConvergenceFlag(IntEnum):
     """
     Strict convergence flag, to identify CFD solver convergence
     """
@@ -16,7 +16,7 @@ class XFoilConvergenceFlag(IntEnum):
     ITER_LIMITED = 3
     CONVERGED = 4
 
-class XFoilConvergenceConfig(BaseModel):
+class XFoil_ConvergenceConfig(BaseModel):
     """
     Contract for the convergence criteria.
     """
@@ -25,7 +25,7 @@ class XFoilConvergenceConfig(BaseModel):
     slope_thresh: float = Field(-0.01, description="The threshold for the slope at tail when checking for stagnation for convergence flag assignment")
     tolerance: float = Field(1e-4, description="The convergence tolerance for XFoil")
 
-class XFoilSolverConfig(BaseModel):
+class XFoil_SolverConfig(BaseModel):
     """
     Contract for the configuration of the XFoil solver and the convergence criteria.
     """
@@ -41,8 +41,8 @@ class XFoil_WarmStartIn(BaseModel):
     freestream: Freestream
     xfoil_exe: str = Field(..., description="Path to the XFoil executable")
     working_dir: str = Field(..., description="Directory where the XFoil input script and Cp output will be saved")
-    solver_config: XFoilSolverConfig = Field(..., description="Specifics of the solver")
-    conv_config: XFoilConvergenceConfig = Field(..., description="Specifics of convergence criteria")
+    solver_config: XFoil_SolverConfig = Field(..., description="Specifics of the solver")
+    conv_config: XFoil_ConvergenceConfig = Field(..., description="Specifics of convergence criteria")
 
 class XFoil_WarmStartOut(BaseModel):
     """
@@ -52,7 +52,7 @@ class XFoil_WarmStartOut(BaseModel):
 
     airfoil: Airfoil
     freestream: Freestream
-    flag: XFoilConvergenceFlag
+    flag: XFoil_ConvergenceFlag
     Cp_tensor: Optional[torch.Tensor] = Field(None, description="The dimensionless Cp distribution over the airfoil, with form (N, [x, Cp])")
     conservative_tensor: Optional[torch.Tensor] = Field(None, description="The conservative tensor of form [rho, rho*u, rh*v, rho*E] to be used in the warmstart of SU2")
     verbose_list: list[str] = Field(..., description="A list to produce the verbose output. [input_script_path (.txt), cp_file_path (.dat), stdout_path (.txt)]")

@@ -1,4 +1,4 @@
-from .schemas import XFoil_WarmStartIn, XFoil_WarmStartOut, XFoilConvergenceFlag
+from .schemas import XFoil_WarmStartIn, XFoil_WarmStartOut, XFoil_ConvergenceFlag
 from .geometry import XFoil_Geometry_Write
 from .build import XFoil_Build_Cp
 from .convergence import XFoil_Check_ConvergenceCp
@@ -10,7 +10,7 @@ import subprocess
 import logging
 logger = logging.getLogger(__name__)
 
-def XFoilRunner(XFoil_In: XFoil_WarmStartIn) -> XFoil_WarmStartOut:
+def XFoil_Runner(XFoil_In: XFoil_WarmStartIn) -> XFoil_WarmStartOut:
     """
     Builds, runs, and handles i/o of the warm start procedure handled in XFoil. 
 
@@ -53,7 +53,7 @@ def XFoilRunner(XFoil_In: XFoil_WarmStartIn) -> XFoil_WarmStartOut:
 
     Cp_tensor = None
     conservative_tensor = None
-    if flag == XFoilConvergenceFlag.CONVERGED.value: # parse and convert iff it converged, if not, it is not useful for further analysis
+    if flag == XFoil_ConvergenceFlag.CONVERGED.value: # parse and convert iff it converged, if not, it is not useful for further analysis
         # Parses the written Cp.dat file, and converts it into proper conservative values
         Cp_tensor = XFoil_Parse_Cp(cp_file_path=cp_file_path)
         conservative_tensor = XFoil_Cp_To_Conservative_State(
@@ -107,26 +107,26 @@ def XFoil_Run_Cp(xfoil_exe: str, input_script_path: str, cp_file_path: str, time
             )
             if process.returncode != 0:
                 logger.error(f"XFoil execution failed with return code {process.returncode}. Stderr: {process.stderr}. Output: {process.stdout}")
-                return XFoilConvergenceFlag.FAILED.value, process.stdout
+                return XFoil_ConvergenceFlag.FAILED.value, process.stdout
             
             flag = XFoil_Check_ConvergenceCp(process.stdout, cp_file_path, tolerance, tail_length, var_thresh, slope_thresh)
 
-            if flag == XFoilConvergenceFlag.FAILED.value:
+            if flag == XFoil_ConvergenceFlag.FAILED.value:
                 logger.warning(f"XFoil execution failed")
 
-            elif flag == XFoilConvergenceFlag.DIVERGED.value:
+            elif flag == XFoil_ConvergenceFlag.DIVERGED.value:
                 logger.warning(f"XFoil execution diverged")
 
-            elif flag == XFoilConvergenceFlag.OSCILLATORY.value:
+            elif flag == XFoil_ConvergenceFlag.OSCILLATORY.value:
                 logger.warning(f"XFoil execution oscillated")
 
-            elif flag == XFoilConvergenceFlag.ITER_LIMITED.value:
+            elif flag == XFoil_ConvergenceFlag.ITER_LIMITED.value:
                 logger.warning(f"XFoil execution reached iteration limit without convergence")
 
-            elif flag == XFoilConvergenceFlag.STAGNATED.value:
+            elif flag == XFoil_ConvergenceFlag.STAGNATED.value:
                 logger.warning(f"XFoil execution stagnated")
 
-            elif flag == XFoilConvergenceFlag.CONVERGED.value:
+            elif flag == XFoil_ConvergenceFlag.CONVERGED.value:
                 logger.info(f"XFoil execution converged")
 
             else:
@@ -136,4 +136,4 @@ def XFoil_Run_Cp(xfoil_exe: str, input_script_path: str, cp_file_path: str, time
             
         except subprocess.TimeoutExpired:
             logger.error(f"XFoil execution timed out after {timeout_sec} seconds. Process will be terminated.")
-            return XFoilConvergenceFlag.FAILED.value, "TIMEOUT"
+            return XFoil_ConvergenceFlag.FAILED.value, "TIMEOUT"

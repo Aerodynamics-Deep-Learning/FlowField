@@ -13,20 +13,20 @@ def _validate_xfoil_existance():
     
 _validate_xfoil_existance()
 
-from .run import XFoilRunner
+from .run import XFoil_Runner
 from .schemas import (
     XFoil_WarmStartIn,
     XFoil_WarmStartOut,
-    XFoilSolverConfig,
-    XFoilConvergenceConfig,
-    XFoilConvergenceFlag
+    XFoil_SolverConfig,
+    XFoil_ConvergenceConfig,
+    XFoil_ConvergenceFlag
 )
 
 __all__ = [
-    "XFoilRunner",
+    "XFoil_Runner",
     "XFoil_WarmStartIn",
     "XFoil_WarmStartOut",
-    "XFoilSolverConfig",
-    "XFoilConvergenceConfig",
-    "XFoilConvergenceFlag"
+    "XFoil_SolverConfig",
+    "XFoil_ConvergenceConfig",
+    "XFoil_ConvergenceFlag"
 ]

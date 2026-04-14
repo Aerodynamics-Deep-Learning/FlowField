@@ -3,7 +3,7 @@ import os
 import numpy as np
 
 from .io import GMSH_Write_Exception
-from .utils import get_mesh_height
+from .utils import GMSH_get_mesh_height
 
 from ...schemas import Airfoil
 from .schemas import GMSH_In, GMSH_Out, GMSH_MeshingConfig, GMSH_ExitFlag
@@ -58,7 +58,7 @@ def GMSH_MeshGenerator(data: GMSH_In) -> GMSH_Out:
         pass
 
     try:
-        h_first = get_mesh_height(
+        h_first = GMSH_get_mesh_height(
             Re= data.freestream.Re,
             chord= data.airfoil.chord,
             target_yplus= data.meshing_config.target_yplus
