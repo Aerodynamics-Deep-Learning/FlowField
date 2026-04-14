@@ -59,7 +59,7 @@ class GMSH_Out(BaseModel):
     mesh_path: Optional[str] = Field(None, description="The path of the generated mesh, if successful")
     min_mesh_quality: Optional[float] = Field(None, description="Minimuum mesh element quality")
     num_nodes: Optional[int] = Field(None, description="The number of nodes in the generated mesh")
-    verbose_list: list[str | None] = Field(..., description="A list of paths for verbose output [gmsh_log_path (.txt), geometry_dump (.geo)]")
+    verbose_list: list[str | None] = Field(..., description="A list of paths for verbose output [gmsh_log_path (.txt), geometry_dump (.brep)]")
 
     
 
