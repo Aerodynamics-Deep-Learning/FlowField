@@ -29,8 +29,8 @@ class XFoil_SolverConfig(BaseModel):
     """
     Contract for the configuration of the XFoil solver and the convergence criteria.
     """
-    n_panels: int = Field(..., gt=0, description="Number of panels to be used for the panel method in XFoil")
-    max_iterations: int = Field(..., gt=0, description="Maximum number of iterations for XFoil to run")
+    n_panels: int = Field(494, gt=0, description="Number of panels to be used for the panel method in XFoil, default set at max panels")
+    max_iterations: int = Field(100, gt=0, description="Maximum number of iterations for XFoil to run")
     timeout_sec: int = Field(60, ge=0, le=120, description="The max allowed timeout limit")
 
 class XFoil_WarmStartIn(BaseModel):

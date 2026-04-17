@@ -34,6 +34,7 @@ def XFoil_Runner(XFoil_In: XFoil_WarmStartIn) -> XFoil_WarmStartOut:
         coords_path=XFoil_In.airfoil.coords_path,
         working_dir=XFoil_In.working_dir,
         alpha=XFoil_In.freestream.alpha,
+        Re=XFoil_In.freestream.Re,
         mach=XFoil_In.freestream.mach,
         n_panels=XFoil_In.solver_config.n_panels,
         max_iterations=XFoil_In.solver_config.max_iterations
