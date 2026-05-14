@@ -26,3 +26,4 @@ wandb/
 # Parquet files
 *.parquet
 
+/tests/datagen/meshing/gmsh/test_sicn/old
