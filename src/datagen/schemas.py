@@ -1,60 +1,19 @@
-from pydantic import BaseModel, Field, ConfigDict
-from enum import IntEnum
-import numpy as np
+from pydantic import BaseModel, Field
 import torch
-from typing import Optional, Tuple
+from typing import Optional
 
-class ConvergenceFlag(IntEnum):
-    """
-    Strict convergence flag, to identify CFD solver convergence
-    """
-    FAILED = -1
-    DIVERGED = 0
-    OSCILLATORY = 1
-    CONVERGED = 2
+class Airfoil(BaseModel):
+    model_config = {"arbitrary_types_allowed": True}
 
-class SolverConfig(BaseModel):
-    """
-    Contract to define the configuration of the physics solver, such as XFoil or SU2
-    """
-    solver_name: str = Field(..., description="Name of the solver (e.g., 'XFoil', 'SU2')")
-    max_iterations: int = Field(..., gt=0, description="Maximum number of iterations for the solver")
-    convergence_criterion: float = Field(..., gt=0.0, description="Convergence criterion for the solver (e.g., residual threshold)")
+    airfoil_name: Optional[str] = Field(None, description="Name of the airfoil used")
+    coords_tensor: torch.Tensor = Field(..., description="The geometry tensor of the airfoil in Selig format")
+    coords_path: Optional[str] = Field(None, description="The path to the geometry file in Selig format, ending with .dat")
+    chord: float = Field(..., description="The chord length of the parameterized airfoil")
+    le_idx: int = Field(..., description="The index within the tensor that defines the leading edge")
 
-class AirfoilParameters(BaseModel):
-    """
-    Contract to define the parameters of the airfoil, and its operational conditions
-    """
-    parameters: Tuple[float, ...] = Field(..., description="Vector of geometric parameters")
-    mach_number: float = Field(..., ge=0.0, le=5.0)
-    angle_of_attack: float = Field(..., ge=-30.0, le=30.0)
-    altitude_m : float = Field(..., ge=0.0)
-    reynolds_number: float = Field(..., gt=0.0)
+class Freestream(BaseModel):
 
-class FlowTensor(BaseModel):
-    """
-    Contract for the multi-fidelity flowfield tensors obtained after solving
-    """
-    model_config = ConfigDict(arbitrary_types_allowed=True)
-
-    coords = torch.Tensor = Field(..., description="Tensor of shape (N, 2) contains x,y tuples for airfoil surface points. Is in the Selig format.")
-    pressure_field: torch.Tensor
-    velocity_field: torch.Tensor
-    turbulent_viscosity: Optional[torch.Tensor] = None
-
-    def validate_dims(self, expected_shape: tuple):
-        if self.pressure_field.shape != expected_shape:
-            raise ValueError(f"Tensor mismatch. Expected shape: {expected_shape}, but got: {self.pressure_field.shape}")
-        
-class SolverResult(BaseModel):
-    """
-    Contract for any physics solver's (XFoil, SU2, etc.) output
-    """
-    model_config = ConfigDict(arbitrary_types_allowed=True)
-
-    flag: ConvergenceFlag
-    solver_config: SolverConfig
-    history: np.ndarray = Field(..., description="Final 200 iterations of the force coeffs")
-    flow_data: Optional[FlowTensor] = Field(None, description="None if flag=DIVERGED")
-    compute_time_sec: float
-    solver: str = Field(..., description="Name of the solver used to generate this result")
+    alpha: float = Field(..., ge=-30.0, le=30.0, description="Angle of attack in degrees")
+    Re: float = Field(..., gt=0.0, description="Reynolds number")
+    mach: float = Field(..., ge=0.0, le=0.75, description="Mach number")
+    altitude_m : float = Field(..., ge=0.0, description="Assumed altitude")

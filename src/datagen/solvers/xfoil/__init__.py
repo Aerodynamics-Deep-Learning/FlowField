@@ -1,4 +1,3 @@
-import os 
 import shutil
 import logging
 
@@ -14,10 +13,20 @@ def _validate_xfoil_existance():
     
 _validate_xfoil_existance()
 
-from .run import XFoilRunner
-from .parse import XFoil_Parse_Cp
+from .run import XFoil_Runner
+from .schemas import (
+    XFoil_WarmStartIn,
+    XFoil_WarmStartOut,
+    XFoil_SolverConfig,
+    XFoil_ConvergenceConfig,
+    XFoil_ConvergenceFlag
+)
 
 __all__ = [
-    "XFoilRunner",
-    "XFoil_Parse_Cp"
+    "XFoil_Runner",
+    "XFoil_WarmStartIn",
+    "XFoil_WarmStartOut",
+    "XFoil_SolverConfig",
+    "XFoil_ConvergenceConfig",
+    "XFoil_ConvergenceFlag"
 ]
