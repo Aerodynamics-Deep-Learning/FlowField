@@ -62,7 +62,7 @@ def GMSH_MeshGenerator(data: GMSH_In) -> GMSH_Out:
             pass
 
         # Get the mesh
-        brep_path = generate_mesh(
+        brep_path = generate_cmesh(
             meshing_config= data.meshing_config,
             airfoil= data.airfoil,
             h_first= h_first,
@@ -141,7 +141,7 @@ def GMSH_MeshGenerator(data: GMSH_In) -> GMSH_Out:
             pass
         gmsh.finalize()
 
-def generate_mesh(meshing_config: GMSH_MeshingConfig, airfoil: Airfoil, h_first: float, working_dir: str) -> str:
+def generate_cmesh(meshing_config: GMSH_MeshingConfig, airfoil: Airfoil, h_first: float, working_dir: str) -> str:
     """
     Generates a C-mesh given the configs, airfoil geometry, and the first cell height
 
@@ -466,7 +466,7 @@ def generate_mesh(meshing_config: GMSH_MeshingConfig, airfoil: Airfoil, h_first:
     all_fluid_surfaces = bl_surfaces + ff_surfaces
     gmsh.model.addPhysicalGroup(2, all_fluid_surfaces, tag=3, name="FLUID_DOMAIN")
 
-    # 8- INFER THE ALGO AND GENERATE #
+    # 8- SAVE CONFIG AND GENERATE #
     brep_path = os.path.join(working_dir, f"{airfoil.airfoil_name}_geometry.brep")
     gmsh.write(brep_path)
     gmsh.model.mesh.generate(2)

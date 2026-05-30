@@ -107,13 +107,13 @@ def XFoil_Run_Cp(xfoil_exe: str, input_script_path: str, cp_file_path: str, time
                 text=True
             )
             if process.returncode != 0:
-                logger.error(f"XFoil execution failed with return code {process.returncode}. Stderr: {process.stderr}. Output: {process.stdout}")
-                return XFoil_ConvergenceFlag.FAILED.value, process.stdout
+                logger.error(f"XFoil execution fatally failed with return code {process.returncode}. Stderr: {process.stderr}. Output: {process.stdout}")
+                return XFoil_ConvergenceFlag.FATAL.value, process.stdout
             
             flag = XFoil_Check_ConvergenceCp(process.stdout, cp_file_path, tolerance, tail_length, var_thresh, slope_thresh)
 
-            if flag == XFoil_ConvergenceFlag.FAILED.value:
-                logger.warning(f"XFoil execution failed")
+            if flag == XFoil_ConvergenceFlag.FATAL.value:
+                logger.warning(f"XFoil execution fatally failed")
 
             elif flag == XFoil_ConvergenceFlag.DIVERGED.value:
                 logger.warning(f"XFoil execution diverged")
@@ -137,4 +137,4 @@ def XFoil_Run_Cp(xfoil_exe: str, input_script_path: str, cp_file_path: str, time
             
         except subprocess.TimeoutExpired:
             logger.error(f"XFoil execution timed out after {timeout_sec} seconds. Process will be terminated.")
-            return XFoil_ConvergenceFlag.FAILED.value, "TIMEOUT"
+            return XFoil_ConvergenceFlag.FATAL.value, "TIMEOUT"

@@ -16,7 +16,7 @@ def XFoil_Check_ConvergenceCp(stdout: str, cp_file_path: str, tolerance: float, 
         convergence_flag = _Check_Residuals(stdout, tolerance, tail_length, var_thresh, slope_thresh)
         return convergence_flag
     else:
-        return convergence_flag # If it failed catastrophically, just return that
+        return convergence_flag # If it failed fatally, just return that
 
 def _Check_Residuals(stdout: str, tolerance: float, tail_length: int, var_thresh: float, slope_thresh: float) -> int:
     """
@@ -41,7 +41,7 @@ def _Check_Residuals(stdout: str, tolerance: float, tail_length: int, var_thresh
     rms_history = np.array(rms_history)
 
     if len(rms_history) == 0:
-        return XFoil_ConvergenceFlag.FAILED.value
+        return XFoil_ConvergenceFlag.FATAL.value
 
     tailvar_bool = check_tail_variance(rms_history, tolerance, tail_length, var_thresh)
     loggrad_bool = check_log_grad(rms_history, tolerance, tail_length, slope_thresh)
@@ -102,7 +102,7 @@ def _Check_Absolute(stdout: str, cp_file_path: str) -> int:
         cp_file_path (str): The file path of the saved Cp file
         
     Returns:
-        int: An integer, meaning if the solver failed catastrophically, diverged, reached max iter, or at least converged (or may have oscillated) to something
+        int: An integer, meaning if the solver failed fatally, diverged, reached max iter, or at least converged (or may have oscillated) to something
     """
 
     failure_keywords = [
@@ -116,7 +116,7 @@ def _Check_Absolute(stdout: str, cp_file_path: str) -> int:
     
     # A hard check on the file's existence and size
     if not os.path.exists(cp_file_path) or os.path.getsize(cp_file_path) == 0:
-        return XFoil_ConvergenceFlag.FAILED.value
+        return XFoil_ConvergenceFlag.FATAL.value
     
     # Check on numerical integrity
     try:
@@ -124,7 +124,7 @@ def _Check_Absolute(stdout: str, cp_file_path: str) -> int:
 
         # Ensuring it has data entries
         if data.size == 0:
-            return XFoil_ConvergenceFlag.FAILED.value
+            return XFoil_ConvergenceFlag.FATAL.value
         
         # Ensuring no NaNs or Infs
         if not np.all(np.isfinite(data)):
@@ -132,7 +132,7 @@ def _Check_Absolute(stdout: str, cp_file_path: str) -> int:
 
     # Catch all the parsing errors, in case the file is deformed
     except (ValueError, IndexError, OSError):
-        return XFoil_ConvergenceFlag.FAILED.value
+        return XFoil_ConvergenceFlag.FATAL.value
         
     return XFoil_ConvergenceFlag.CONVERGED.value # Temporarily classify it as converged, it will be further checked by the residuals to define if stagnated or oscillatory
 
