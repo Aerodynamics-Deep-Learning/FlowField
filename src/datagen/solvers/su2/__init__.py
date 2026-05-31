@@ -1,5 +1,6 @@
 import os
 import logging
+import shutil
 
 logger = logging.getLogger(__name__)
 
@@ -12,17 +13,17 @@ def _validate_su2_existance():
         raise EnvironmentError("'SU2_RUN' not found, thus cannot initialize SU2 bingings. Terminating.")
     if "SU2_HOME" not in os.environ:
         logger.warning("'SU2_HOME' not found, some Python-based SU2 utilities/APIs might/will fail.")
+    if shutil.which("SU2_CFD") is None:
+        logger.error("'SU2_CFD' binary is not found in the system PATH.")
+        raise EnvironmentError(
+            "'SU2_CFD' is missing from PATH. The subprocess runner will crash. "
+            "Ensure $SU2_RUN is appended to your system $PATH. Terminating."
+        )
 
 _validate_su2_existance()
 
-from .runner import SU2Runner
-from .config_builder import CFLScheduler
-from .parser import parse_history
-from .interpolator import map_solution
+from .run import SU2_Runner
 
 __all__ = [
-    "SU2Runner", # Handles the execution of SU2, and the management of its input/output files
-    "CFLScheduler", # Utility to build the CFL schedule for SU2, which is important when changing solver and mesh res
-    "parse_history", # Parses the SU2 history file, to extract the force coefficients and convergence information
-    "map_solution" # Utility to map the SU2 solution (which is on an unstructured mesh) to a structured grid, for easier ML training
+    "SU2_Runner", # Handles the execution of SU2, and the management of its input/output files
 ]

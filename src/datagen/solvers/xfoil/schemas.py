@@ -9,7 +9,7 @@ class XFoil_ConvergenceFlag(IntEnum):
     """
     Strict convergence flag, to identify CFD solver convergence
     """
-    FAILED = -1
+    FATAL = -1
     DIVERGED = 0
     OSCILLATORY = 1
     STAGNATED = 2
