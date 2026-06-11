@@ -1,9 +1,11 @@
 from typing import Union
+import copy
 
 from ....schemas import Airfoil, Freestream
+from ..schemas import SU2_SolverConfig
 from .utils import _deep_update
 
-def _SU2_BuildCfg_Cold(base_dict: dict, freestream: Freestream, airfoil: Airfoil) -> dict[str, dict[str, Union[str, int, float]]]:
+def _SU2_BuildCfg_Cold(base_dict: dict, freestream: Freestream, airfoil: Airfoil, SolverConfig: SU2_SolverConfig) -> dict[str, dict[str, Union[str, int, float]]]:
     """
     Builds the cold start config from the base dict and the given airfoil and freestream conditions.
 
@@ -11,10 +13,13 @@ def _SU2_BuildCfg_Cold(base_dict: dict, freestream: Freestream, airfoil: Airfoil
         base_dict (dict): The base config dict to be updated for the cold start
         freestream (Freestream): The freestream conditions to be used in the config
         airfoil (Airfoil): The airfoil geometry to be used in the config
+        SolverConfig (SU2_SolverConfig): The solver configuration
 
     Returns:
         dict[str, dict[str, Union[str, int, float]]]: The cold start config dict to be written to the .cfg file
     """
+
+    config = copy.deepcopy(base_dict)
 
     # Get if stated stuff
     numerics = _get_numerics(freestream)
@@ -34,16 +39,29 @@ def _SU2_BuildCfg_Cold(base_dict: dict, freestream: Freestream, airfoil: Airfoil
         "TURBULENCE PHYSICS": {
             "TURB_COMPRESSIBILITY_CORRECTION": turb_comp,
         },
+        "BOUNDARY MARKERS": {
+            "MARKER_HEATFLUX": f"( {SolverConfig.marker_airfoil}, 0.0 )",
+        },
+        "MULTIGRID PARAMETERS": {
+            "MGLEVEL": 2,
+        },
         "TIME DISCRETIZATION": {
+            "TIME_DISCRE_FLOW": "EULER_IMPLICIT",
             "TIME_DISCRE_TURB": "EULER_IMPLICIT",
+            "CFL_NUMBER": SolverConfig.cfl_number_cold,
+            "CFL_ADAPT": "YES",
+            "CFL_ADAPT_PARAM": f"( {SolverConfig.cfl_factordown_cold}, {SolverConfig.cfl_factorup_cold}, {SolverConfig.cfl_min_cold}, {SolverConfig.cfl_max_cold} )",
+            "CFL_REDUCTION_TURB": SolverConfig.cfl_turbreduction_cold,
+            "MAX_UPDATE_FLOW": SolverConfig.cfl_maxupdate_cold,
         },
         "SPATIAL DISCRETIZATION": {
             **numerics,
-            "CONV_NUM_METHOD_TURB": "SCALAR_UPWIND"
+            "CONV_NUM_METHOD_TURB": "SCALAR_UPWIND",
+            "SPATIAL_ORDER_TURB": "1ST_ORDER",
         },
     }
 
-    return _deep_update(base_dict, cold_updates)
+    return _deep_update(config, cold_updates)
 
 def _get_numerics(freestream: Freestream) -> dict:
     """

@@ -15,7 +15,7 @@ class Freestream(BaseModel):
 
     alpha: float = Field(..., ge=-5.0, le=15.0, description="Angle of attack in degrees")
     Re: float = Field(..., gt=1.5e6, le=1.5e7, description="Reynolds number")
-    mach: float = Field(..., ge=0.15, le=0.75, description="Mach number")
+    mach: float = Field(..., ge=0.15, le=0.75, description="Mach number") # Considering to change
     # ISA
     altitude_m : float = Field(0.0, ge=0.0, description="Assumed altitude")
     temp: float = Field(288.15, ge=0.0, le=400.0, description="Assumed freestream temp")

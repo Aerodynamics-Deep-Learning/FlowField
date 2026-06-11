@@ -16,7 +16,7 @@ def SU2_StrategyIdentify(Freestream: Freestream):
         return SU2_SolutionStrategy.MACH_SEQ
     
     elif Freestream.mach >= 0.55 and Freestream.Re >= 3.0e6:
-        # M >= 0.55 AND Re >= 3m AND NOT MACH_SEQ
+        # M >= 0.55 AND Re >= 3.0e6 AND NOT MACH_SEQ
         return SU2_SolutionStrategy.WARM_EULER
     
     else:

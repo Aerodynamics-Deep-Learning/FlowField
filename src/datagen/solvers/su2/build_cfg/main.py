@@ -42,7 +42,7 @@ def SU2_BuildCfg(Freestream: Freestream, Airfoil: Airfoil, SolverConfig: SU2_Sol
     if Strategy == SU2_SolutionStrategy.COLD:
         cold_build_path = f"{working_dir}/cold_build.cfg"
 
-        cold_dict = _SU2_BuildCfg_Cold(base_dict=base_dict) # Builds the cold start config from the base dict
+        cold_dict = _SU2_BuildCfg_Cold(base_dict=base_dict, freestream=Freestream, airfoil=Airfoil, SolverConfig=SolverConfig) # Builds the cold start config from the base dict
         _write_cfg(cold_dict, cold_build_path) # Writes the config to the path
         
         config_path_list.append(cold_build_path) # Appends the path to the list to be returned
@@ -52,8 +52,8 @@ def SU2_BuildCfg(Freestream: Freestream, Airfoil: Airfoil, SolverConfig: SU2_Sol
         warm_euler_build_path = f"{working_dir}/warm_euler_build.cfg"
         warm_restart_build_path = f"{working_dir}/warm_restart_build.cfg"
         
-        euler_dict = _SU2_BuildCfg_Warm_Euler(base_dict=base_dict) # Builds the warm euler config from the base dict
-        restart_dict = _SU2_BuildCfg_Warm_Restart(base_dict=base_dict) # Builds the warm restart config from the base dict
+        euler_dict = _SU2_BuildCfg_Warm_Euler(base_dict=base_dict, freestream=Freestream, airfoil=Airfoil, SolverConfig=SolverConfig)
+        restart_dict = _SU2_BuildCfg_Warm_Restart(base_dict=base_dict, freestream=Freestream, airfoil=Airfoil, SolverConfig=SolverConfig)
         _write_cfg(euler_dict, warm_euler_build_path) # Writes the euler config to the path
         _write_cfg(restart_dict, warm_restart_build_path) # Writes the restart config to the path
 
@@ -124,12 +124,6 @@ def _SU2_BuildCfg_Base(freestream: Freestream, airfoil: Airfoil, SolverConfig: S
             "MARKER_PLOTTING": f"( {SolverConfig.marker_airfoil} )",
             "MARKER_MONITORING": f"( {SolverConfig.marker_airfoil} )",
         },
-        "TIME DISCRETIZATION": {
-            "TIME_DISCRE_FLOW": "EULER_IMPLICIT",
-            "CFL_NUMBER": SolverConfig.cfl_number,
-            "CFL_ADAPT": "YES",
-            "CFL_ADAPT_PARAM": f"( {SolverConfig.cfl_adapt_1}, {SolverConfig.cfl_adapt_2}, {SolverConfig.cfl_adapt_3}, 1e10 )",
-        },
         "SPATIAL DISCRETIZATION": {
             "NUM_METHOD_GRAD": "WEIGHTED_LEAST_SQUARES",
             "SPATIAL_ORDER_FLOW": "2ND_ORDER_LIMITER",
@@ -137,7 +131,7 @@ def _SU2_BuildCfg_Base(freestream: Freestream, airfoil: Airfoil, SolverConfig: S
             "VENKAT_LIMITER_COEFF": 0.05,
         },
         "MULTIGRID PARAMETERS": {
-            "MGLEVEL": 3,
+            # MGLEVEL is defined later
             "MGCYCLE": "V_CYCLE",
             "MG_PRE_SMOOTH": "( 1, 2, 3, 3 )",
             "MG_POST_SMOOTH": "( 0, 0, 0, 0 )",
