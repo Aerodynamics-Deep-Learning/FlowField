@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 # Initially this embedding was written as a normal function. However, this approach was problematic when moving the model to GPU. Since as a function, this is not moved when 'model.to('mps')' is used and causes(aciklamayi sonra tamamla)
 class SinusoidalPositionalEncoding(nn.Module):
@@ -19,6 +20,5 @@ class SinusoidalPositionalEncoding(nn.Module):
         embedding = torch.cat([torch.sin(angles), torch.cos(angles)], dim=-1)
         embedding = embedding.flatten(start_dim=-2)
         if self.padding > 0:
-            pad_shape = (*embedding.shape[:-1], self.padding)
-            embedding = torch.cat([embedding, embedding.new_zeros(pad_shape)], dim=-1)
+            embedding = F.pad(embedding, (0, self.padding), "constant", value=0)
         return embedding
