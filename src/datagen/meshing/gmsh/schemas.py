@@ -2,13 +2,15 @@ from pydantic import BaseModel, Field
 from typing import Optional
 from enum import IntEnum
 
-from ...schemas import Airfoil, Freestream
+from src.datagen.schemas import Airfoil, Freestream
 
 class GMSH_ExitFlag(IntEnum):
     """
     Categorical flag for what happened in GMSH during/after mesh generation
     """
-    BLUNTING_FAIL = -2
+    TENSOR_FAIL = -4
+    BLUNTING_FAIL = -3
+    FREESTREAM_FAIL = -2
     FATAL_ERROR = -1 
     NEGATIVE_JACOBIAN = 0 # During flagging, we actually set the threshold for min mesh quality to be 0.0, this is because for example, a mesh quality of 0.05 is already bad enough for SU2 to flag it as "negative Jacobian"
     EXTRUSION_FAIL = 1

@@ -3,11 +3,12 @@ import os
 import numpy as np
 import math
 
-from .io import GMSH_Write_Exception
-from .utils import GMSH_get_mesh_height, GMSH_export_sicn_histogram
+from src.datagen.meshing.gmsh.io import GMSH_Write_Exception
+from src.datagen.meshing.gmsh.utils import GMSH_validate_tensor_numeric, GMSH_validate_te_bluntness, GMSH_validate_freestream_physicality
+from src.datagen.meshing.gmsh.utils import GMSH_get_mesh_height, GMSH_export_sicn_histogram
 
-from ...schemas import Airfoil
-from .schemas import GMSH_In, GMSH_Out, GMSH_MeshingConfig, GMSH_ExitFlag
+from src.datagen.schemas import Airfoil
+from src.datagen.meshing.gmsh.schemas import GMSH_In, GMSH_Out, GMSH_MeshingConfig, GMSH_ExitFlag
 
 import logging
 logger = logging.getLogger(__name__)
@@ -22,15 +23,46 @@ def GMSH_MeshGenerator(data: GMSH_In) -> GMSH_Out:
     Returns:
         GMSH_Out: The output data schema defined for GMSH, including the airfoil, freeflow, flag, mesh path, other stuff, and a verbose list
     """
+    # Check the physicality of the airfoil, i.e. no NaN, inf, etc.]
+    is_valid_numeric, warning_msg = GMSH_validate_tensor_numeric(coords_tensor=data.airfoil.coords_tensor)
+    if not is_valid_numeric:
+        logger.warning(warning_msg)
+        return GMSH_Out(
+            airfoil=data.airfoil,
+            freestream=data.freestream,
+            flag=GMSH_ExitFlag.TENSOR_FAIL,
+            verbose_list=[None, None, None] # No gmsh log exists yet
+        )
+    # Check the bluntness of the airfoil to see if it matches
+    is_valid_bluntness, warning_msg = GMSH_validate_te_bluntness(coords_tensor=data.airfoil.coords_tensor)
+    if not is_valid_bluntness:
+        logger.warning(warning_msg)
+        return GMSH_Out(
+            airfoil=data.airfoil,
+            freestream=data.freestream,
+            flag=GMSH_ExitFlag.BLUNTING_FAIL,
+            verbose_list=[None, None, None] # No gmsh log exists yet
+        )
+    # Check the physicality of the freestream vals, a low effort freestream check, not that robust
+    is_valid_freestream, warning_msg = GMSH_validate_freestream_physicality(freestream=data.freestream)
+    if not is_valid_freestream:
+            logger.warning(warning_msg)
+            return GMSH_Out(
+                airfoil=data.airfoil,
+                freestream=data.freestream,
+                flag=GMSH_ExitFlag.FREESTREAM_FAIL,
+                verbose_list=[None, None, None] # No gmsh log exists yet
+            )
+    
 
+    # Infer the save paths
     log_path = os.path.join(data.working_dir, f"{data.airfoil.airfoil_name}_gmsh_log.txt")
     brep_path = None # Fallback value, in case brep dump was not generated
-    
+
+    # Initialize Gmsh
     gmsh.initialize()
     gmsh.model.add("airfoil_hybrid_cmesh")
-
     gmsh.option.setNumber("General.Terminal", 0)
-
     gmsh.logger.start() 
 
     try:
@@ -39,27 +71,6 @@ def GMSH_MeshGenerator(data: GMSH_In) -> GMSH_Out:
             chord= data.airfoil.chord,
             target_yplus= data.meshing_config.target_yplus
         )
-
-        # Checks the trailing edge length, if it is too small or blunted at all
-        te_gap = np.linalg.norm(data.airfoil.coords_tensor[0] - data.airfoil.coords_tensor[-1])
-        if te_gap == 0:
-            logger.warning(f"Airfoil appears to not have been blunted. The first and last points are coincident at {data.airfoil.coords_tensor[0]}, this may cause problems with meshing")
-            return GMSH_Out(
-                airfoil=data.airfoil,
-                freestream=data.freestream,
-                flag=GMSH_ExitFlag.BLUNTING_FAIL,
-                verbose_list=[log_path, None, None]
-            )
-        elif te_gap < 1e-5:
-            logger.warning(f"Trailing edge gap is small: {te_gap}, this will most likely cause problems with TE meshing")
-            return GMSH_Out(
-                airfoil=data.airfoil,
-                freestream=data.freestream,
-                flag=GMSH_ExitFlag.BLUNTING_FAIL,
-                verbose_list=[log_path, None, None]
-            )
-        else:
-            pass
 
         # Get the mesh
         brep_path = generate_cmesh(
