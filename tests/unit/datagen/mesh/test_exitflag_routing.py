@@ -13,6 +13,7 @@ Step 2: Ensure mesh pass/fail conditions return as expected
 """
 
 import pytest
+import tempfile
 import numpy as np
 from unittest.mock import patch, MagicMock
 
@@ -24,8 +25,9 @@ from src.datagen.meshing.gmsh.run import GMSH_MeshGenerator
 def create_mock_gmsh_input():
     """Sterile input schema factory for the following tests"""
     data = MagicMock()
-    # Use "." instead of "/tmp" to prevent Windows FileNotFoundError if exceptions trigger
-    data.working_dir = "." 
+    
+    # Use tempfile.gettempfir() to prevent an additional file being written during tests and iwndows import errs
+    data.working_dir = tempfile.gettempdir()
     
     # Use .model_construct() to bypass Pydantic's strict type validation during tests
     data.airfoil = Airfoil.model_construct(

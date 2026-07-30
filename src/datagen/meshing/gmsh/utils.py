@@ -1,4 +1,6 @@
 import matplotlib.pyplot as plt
+import matplotlib.image as mpimg
+
 import torch
 from typing import Tuple
 
@@ -93,7 +95,107 @@ def GMSH_export_sicn_histogram(qualities: list[float], save_path: str) -> None:
     plt.xlabel("Signed Inverse Condition Number")
     plt.ylabel("Element Count")
     plt.grid(True, linestyle='--', alpha=0.5)
-    
     plt.tight_layout()
     plt.savefig(save_path, dpi=300)
     plt.close()
+
+def GMSH_plot_graph(save_path: str) -> None:
+    """
+    Just loads and shows a plot
+    """
+    img = mpimg.imread(save_path)
+    plt.imshow(img)
+    plt.axis('off')
+    plt.show(block=True)
+
+def GMSH_plot_mesh(mesh_path_vtk: str) -> None:
+    import pyvista as pv
+    import vtk
+    import numpy as np
+
+    grid = pv.read(mesh_path_vtk)
+    interior_indices = np.where(
+            (grid.celltypes == vtk.VTK_TRIANGLE) | 
+            (grid.celltypes == vtk.VTK_QUAD)
+        )[0]
+    fluid_domain = grid.extract_cells(interior_indices)
+
+    metrics = ['scaled_jacobian', 'skew', 'aspect_ratio', 'area']
+    
+    for metric in metrics:
+        original_arrays = set(fluid_domain.cell_data.keys())
+        temp_mesh = fluid_domain.cell_quality(quality_measure=metric)
+        new_array_name = list(set(temp_mesh.cell_data.keys()) - original_arrays)[0]
+        fluid_domain.cell_data[metric] = temp_mesh.cell_data[new_array_name]
+
+    plotter = pv.Plotter()
+
+    modes = [None] + metrics
+    state = {"index": 0}
+
+    def render_main_actor():
+        current_mode = modes[state["index"]]
+        
+        if current_mode is None:
+            for bar_title in list(plotter.scalar_bars.keys()):
+                plotter.remove_scalar_bar(bar_title)
+                
+            plotter.add_mesh(
+                fluid_domain,
+                color="purple",
+                show_edges=False,
+                name="main_fluid_surface",
+                reset_camera=False
+            )
+        else:
+            plotter.add_mesh(
+                fluid_domain,
+                scalars=current_mode,
+                cmap="jet",
+                show_edges=False,
+                name="main_fluid_surface",
+                reset_camera=False,
+                scalar_bar_args={"title": current_mode.replace("_", " ").title()}
+            )
+
+    # Initialize the base faces
+    render_main_actor()
+
+    # Create an independent copy for the wireframe and physically translate it minimally to prevent shift artifacts
+    wireframe_mesh = fluid_domain.copy()
+    wireframe_mesh.translate((0.0, 0.0, 0.000001), inplace=True)
+    
+    # Use native wireframe styling instead of edge extraction
+    edge_actor = plotter.add_mesh(
+        wireframe_mesh, 
+        style="wireframe", 
+        color="black", 
+        line_width=0.5,
+        name="elevated_edges",
+        reset_camera=False
+    )
+    edge_actor.SetVisibility(False)
+
+    def toggle_edges():
+        current_state = edge_actor.GetVisibility()
+        edge_actor.SetVisibility(not current_state)
+        plotter.render()
+
+    def toggle_quality():
+        state["index"] = (state["index"] + 1) % len(modes)
+        render_main_actor()
+        
+        active = modes[state["index"]] if modes[state["index"]] else "Solid Purple Baseline"
+        print(f"Active Render Mode: {active}")
+
+    plotter.add_key_event('t', toggle_edges)
+    plotter.add_key_event('c', toggle_quality)
+
+    plotter.view_xy()
+    plotter.enable_2d_style()
+    
+    print("\n[PyVista] Viewer launched.")
+    print("Left-click to pan. Right-click to zoom.")
+    print("Press 't' to toggle mesh edges.")
+    print("Press 'c' to cycle through quality metrics.")
+    plotter.show()

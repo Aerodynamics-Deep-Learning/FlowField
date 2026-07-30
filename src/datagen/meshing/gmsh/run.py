@@ -123,6 +123,8 @@ def GMSH_MeshGenerator(data: GMSH_In) -> GMSH_Out:
            freestream=data.freestream,
            flag=flag,
            mesh_path=mesh_path,
+           mesh_path_vtk=mesh_name_vtk,
+           hist_path=hist_path,
            min_mesh_quality=min_mesh_quality,
            num_nodes=num_nodes,
            verbose_list=verbose_list 

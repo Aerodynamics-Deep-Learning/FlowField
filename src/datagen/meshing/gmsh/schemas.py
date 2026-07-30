@@ -61,9 +61,11 @@ class GMSH_Out(BaseModel):
     freestream: Freestream
     flag: GMSH_ExitFlag
     mesh_path: Optional[str] = Field(None, description="The path of the generated mesh, if successful")
+    mesh_path_vtk: Optional[str] = Field(None, description="The path of the generated mesh in .vtk format, if successful")
+    hist_path: Optional[str] = Field(None, description="The path for the SICN number histogram plot")
     min_mesh_quality: Optional[float] = Field(None, description="Minimuum mesh element quality")
     num_nodes: Optional[int] = Field(None, description="The number of nodes in the generated mesh")
-    verbose_list: list[str | None] = Field(..., description="A list of paths for verbose output [gmsh_log_path (.txt), geometry_dump (.brep)]")
+    verbose_list: list[str | None] = Field(..., description="A list of paths for verbose output [gmsh_log_path (.txt), geometry_dump (.brep), exception (.txt)]")
 
     
 
