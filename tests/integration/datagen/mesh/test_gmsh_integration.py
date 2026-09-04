@@ -4,6 +4,8 @@ from src.datagen.meshing.gmsh.run import GMSH_MeshGenerator
 from src.datagen.meshing.gmsh.schemas import GMSH_ExitFlag
 from src.datagen.meshing.gmsh.utils import GMSH_plot_graph, GMSH_plot_mesh
 
+example_mesh_path = r"tests\integration\datagen\mesh\example_naca0012.vtk"
+
 def test_gmsh_integration(sterile_gmsh_input):
 
     out = GMSH_MeshGenerator(sterile_gmsh_input)
@@ -29,5 +31,6 @@ def test_gmsh_integration(sterile_gmsh_input):
 
     GMSH_plot_graph(hist_path)
     GMSH_plot_mesh(mesh_file_vtk)
+    GMSH_plot_mesh(example_mesh_path)
 
 

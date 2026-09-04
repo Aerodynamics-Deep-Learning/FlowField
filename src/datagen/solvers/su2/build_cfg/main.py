@@ -142,7 +142,7 @@ def _SU2_BuildCfg_Base(freestream: Freestream, airfoil: Airfoil, SolverConfig: S
         "CONVERGENCE PARAMETERS": {
             "CONV_CRITERIA": "RESIDUAL, CAUCHY",
             "CONV_RESIDUAL_MINVAL": SolverConfig.conv_residual_minval,
-            "CONV_FIELD": "RMS_DENSITY",
+            "CONV_FIELD": "RMS_DENSITY", # Continuity not density
             "CAUCHY_ELEMS": SolverConfig.cauchy_elems,
             "CAUCHY_EPS": SolverConfig.cauchy_eps,
             "CAUCHY_FUNC_FLOW": "DRAG",

@@ -208,23 +208,23 @@ def sterile_gmsh_input(integration_mesh_workspace: Path):
 
     meshing_config = GMSH_MeshingConfig(
             # Airfoil specific params
-            upper_anchor_idx = 65,
-            lower_anchor_idx = 95,
+            upper_anchor_idx = 55,
+            lower_anchor_idx = 100,
 
             # Overall params
             wake_length = 20.0,
             farfield_radius = 15.0,
-            bl_thickness = 0.4,
+            bl_thickness = 1.5,
             target_yplus = 1.0,
 
             # BL meshing configs
-            nx_le1 = 50,
-            nx_le2 = 50,
-            nx_upper = 200,
-            nx_lower = 200,
-            nx_wake = 100,
-            bl_growth_ratio = 1.1,
-            wake_progression = 1.1,
+            nx_le1 = 60, #60 
+            nx_le2 = 60, #60
+            nx_upper = 150, #150
+            nx_lower = 150, #150
+            nx_wake = 75,
+            bl_growth_ratio = 1.05,
+            wake_progression = 1.175,
             te_coarsen_factor = 60.0,
             chord_bump = 0.75,
 
