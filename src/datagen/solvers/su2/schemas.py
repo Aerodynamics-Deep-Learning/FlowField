@@ -4,6 +4,8 @@ from typing import Optional, Union
 from pathlib import Path
 
 from ...schemas import Airfoil, Freestream
+from ...meshing.common.constants import MARKER_AIRFOIL, MARKER_FARFIELD
+# The boundary tags both meshing backends stamp onto the `.su2` they write
 
 class SU2_ConvergenceFlag(IntEnum):
     """
@@ -34,8 +36,8 @@ class SU2_SolverConfig(BaseModel):
     will be chosen.
     """
     # Markers
-    marker_farfield: str = Field("MARKER_FARFIELD", description="Marker returned by GMSH to identify the farfield")
-    marker_airfoil: str = Field("MARKER_AIRFOIL", description="Marker returned by GMSH to identify the airfoil")
+    marker_farfield: str = Field(MARKER_FARFIELD, description="Marker returned by the meshing backend to identify the farfield")
+    marker_airfoil: str = Field(MARKER_AIRFOIL, description="Marker returned by the meshing backend to identify the airfoil")
     
     # Convergence related, applies to cold start, and restart phase of warm start
     conv_residual_minval: float = Field(-8, description="The minimum value for the residuals in log10 scale to be considered converged, if applicable to the strategy chosen")

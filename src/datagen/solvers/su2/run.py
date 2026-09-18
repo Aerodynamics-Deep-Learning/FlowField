@@ -7,6 +7,7 @@ from .runcfd import SU2_RunCFD
 from .convergence import SU2_CheckConvergence
 from .data_handling.handler import SU2_ComprWipeData
 from .manifest import SU2_UpdateManifest
+from . import _validate_su2_existance
 
 def SU2_Runner(su2_in: SU2_In) -> SU2_Out:
     """
@@ -18,6 +19,9 @@ def SU2_Runner(su2_in: SU2_In) -> SU2_Out:
     Returns:
         SU2_Out: The standard SU2 output agreement
     """
+    # Env check happens here
+    _validate_su2_existance()
+
     # Identifies the strategy first
     strategy = SU2_StrategyIdentify(su2_in.freestream)
 
