@@ -1,14 +1,24 @@
-import gmsh
+try:
+    import gmsh
+except ImportError as e:  # the SDK is required here and nowhere else in this package
+    raise EnvironmentError(
+        "Cannot initialize meshing modules, please 'pip install gmsh' in your venv. Terminating."
+    ) from e
+
 import os
 import numpy as np
 import math
 
 from src.datagen.meshing.gmsh.io import GMSH_Write_Exception
-from src.datagen.meshing.gmsh.utils import GMSH_validate_tensor_numeric, GMSH_validate_te_bluntness, GMSH_validate_freestream_physicality
-from src.datagen.meshing.gmsh.utils import GMSH_get_mesh_height, GMSH_export_sicn_histogram
+from src.datagen.meshing.gmsh.utils import GMSH_get_mesh_height, GMSH_scale_by_chord
 
 from src.datagen.schemas import Airfoil
-from src.datagen.meshing.gmsh.schemas import GMSH_In, GMSH_Out, GMSH_MeshingConfig, GMSH_ExitFlag
+from src.datagen.meshing.gmsh.schemas import (
+    GMSH_In, GMSH_Out, GMSH_ExitFlag, GMSH_Topology, GMSH_CMeshingConfig, GMSH_OMeshingConfig
+)
+from src.datagen.meshing.common.constants import MARKER_AIRFOIL, MARKER_FARFIELD
+# The names given to the two physical groups below, shared with c2d's writer and with
+# `solvers/su2/schemas.py`'s marker defaults so one SU2 config drives meshes from either backend.
 
 import logging
 logger = logging.getLogger(__name__)
@@ -18,93 +28,51 @@ def GMSH_MeshGenerator(data: GMSH_In) -> GMSH_Out:
     Orchestrates the entire pipeline of mesh generation using GMSH, including flagging, io, etc.
 
     Args:
-        data (GMSH_In): The input data schema defined for GMSH, includign the meshing configs, airfoil geometry, freeflow, and utils such as io
+        data (GMSH_In): The input data schema defined for GMSH, including the meshing 
+            configs, airfoil geometry, freestream, and utils such as io
     
     Returns:
-        GMSH_Out: The output data schema defined for GMSH, including the airfoil, freeflow, flag, mesh path, other stuff, and a verbose list
+        GMSH_Out: The output data schema defined for GMSH, including the airfoil, 
+            freestream, flag, mesh path, other stuff, and a verbose list
     """
-    # Check the physicality of the airfoil, i.e. no NaN, inf, etc.]
-    is_valid_numeric, warning_msg = GMSH_validate_tensor_numeric(coords_tensor=data.airfoil.coords_tensor)
-    if not is_valid_numeric:
-        logger.warning(warning_msg)
-        return GMSH_Out(
-            airfoil=data.airfoil,
-            freestream=data.freestream,
-            flag=GMSH_ExitFlag.TENSOR_FAIL,
-            verbose_list=[None, None, None] # No gmsh log exists yet
-        )
-    # Check the bluntness of the airfoil to see if it matches
-    is_valid_bluntness, warning_msg = GMSH_validate_te_bluntness(coords_tensor=data.airfoil.coords_tensor)
-    if not is_valid_bluntness:
-        logger.warning(warning_msg)
-        return GMSH_Out(
-            airfoil=data.airfoil,
-            freestream=data.freestream,
-            flag=GMSH_ExitFlag.BLUNTING_FAIL,
-            verbose_list=[None, None, None] # No gmsh log exists yet
-        )
-    # Check the physicality of the freestream vals, a low effort freestream check, not that robust
-    is_valid_freestream, warning_msg = GMSH_validate_freestream_physicality(freestream=data.freestream)
-    if not is_valid_freestream:
-            logger.warning(warning_msg)
-            return GMSH_Out(
-                airfoil=data.airfoil,
-                freestream=data.freestream,
-                flag=GMSH_ExitFlag.FREESTREAM_FAIL,
-                verbose_list=[None, None, None] # No gmsh log exists yet
-            )
-    
-
     # Infer the save paths
     log_path = os.path.join(data.working_dir, f"{data.airfoil.airfoil_name}_gmsh_log.txt")
     brep_path = None # Fallback value, in case brep dump was not generated
 
     # Initialize Gmsh
     gmsh.initialize()
-    gmsh.model.add("airfoil_hybrid_cmesh")
+    gmsh.model.add("airfoil_mesh")
     gmsh.option.setNumber("General.Terminal", 0)
-    gmsh.logger.start() 
+    gmsh.logger.start()
 
     try:
-        h_first = GMSH_get_mesh_height(
-            Re= data.freestream.Re,
-            chord= data.airfoil.chord,
-            target_yplus= data.meshing_config.target_yplus
-        )
-
         # Get the mesh
-        brep_path = generate_cmesh(
-            meshing_config= data.meshing_config,
-            airfoil= data.airfoil,
-            h_first= h_first,
-            working_dir=data.working_dir
-        )
+        if data.topology == GMSH_Topology.CGRD:
+            h_first = GMSH_get_mesh_height(
+                Re= data.freestream.Re,
+                chord= data.airfoil.chord,
+                target_yplus= data.meshing_config.target_yplus
+            )
+            brep_path = GMSH_generate_cmesh(
+                meshing_config= data.meshing_config,
+                airfoil= data.airfoil,
+                h_first= h_first,
+                working_dir=data.working_dir
+            )
+        else: # OGRD case
+            brep_path = GMSH_generate_omesh(
+                meshing_config= data.meshing_config,
+                airfoil= data.airfoil,
+                working_dir=data.working_dir
+            )
 
-        # Flagging and metrics
-        min_mesh_quality = 0.0
-        # Extract tags for 2D traingles and quads
-        tri_tags, _ = gmsh.model.mesh.getElementsByType(2)
+        # Structural metrics only; quality is scored centrally by
+        # common.quality.Common_evaluate_mesh_quality from the written .su2, never here
         quad_tags, _ = gmsh.model.mesh.getElementsByType(3)
-        all_2d_tags = np.concatenate([tri_tags, quad_tags]).astype(np.uint64)
-        if len(all_2d_tags) > 0:
-            qualities = gmsh.model.mesh.getElementQualities(elementTags=all_2d_tags, qualityName="minSICN")
-            min_mesh_quality = min(qualities)
-            print(f"Min mesh quality: {min_mesh_quality}")
-            hist_path = os.path.join(data.working_dir, f"{data.airfoil.airfoil_name}_sicn_hist.png")
-            GMSH_export_sicn_histogram(qualities, hist_path)
-        else:
-            flag = GMSH_ExitFlag.EXTRUSION_FAIL
 
         num_nodes = len(gmsh.model.mesh.getNodes()[0])
         num_quads = len(quad_tags)
-        print(f"Num nodes: {num_nodes}, num quads: {num_quads}")
-
-        if (num_quads == 0):
-            flag = GMSH_ExitFlag.EXTRUSION_FAIL
-        elif min_mesh_quality <= 0.0:
-            flag = GMSH_ExitFlag.NEGATIVE_JACOBIAN
-        else:
-            flag = GMSH_ExitFlag.SUCCESS
+        flag = GMSH_ExitFlag.EXTRUSION_FAIL if num_quads == 0 else GMSH_ExitFlag.SUCCESS
 
         gmsh.option.setNumber("Mesh.SaveAll", 0)
         mesh_name = f"{data.airfoil.airfoil_name}_mesh.su2"
@@ -123,17 +91,19 @@ def GMSH_MeshGenerator(data: GMSH_In) -> GMSH_Out:
            freestream=data.freestream,
            flag=flag,
            mesh_path=mesh_path,
-           mesh_path_vtk=mesh_name_vtk,
-           hist_path=hist_path,
-           min_mesh_quality=min_mesh_quality,
+           mesh_path_vtk=mesh_path_vtk,
            num_nodes=num_nodes,
            verbose_list=verbose_list 
         )
 
     except Exception as e:
-
-        # Build the verbose list here
-        exception_path = GMSH_Write_Exception(e, data.working_dir)
+        # Build the verbose list here. The writer creates the dir it needs, but can still fail on
+        # permissions or an unusable path, it must not replace the real exception with an IO one.
+        try:
+            exception_path = GMSH_Write_Exception(e, data.working_dir)
+        except Exception:
+            logger.exception("Could not write the gmsh exception file to %s", data.working_dir)
+            exception_path = None
         verbose_list = [log_path, brep_path, exception_path]
 
         return GMSH_Out(
@@ -154,12 +124,108 @@ def GMSH_MeshGenerator(data: GMSH_In) -> GMSH_Out:
             pass
         gmsh.finalize()
 
-def generate_cmesh(meshing_config: GMSH_MeshingConfig, airfoil: Airfoil, h_first: float, working_dir: str) -> str:
+def GMSH_generate_omesh(meshing_config: GMSH_OMeshingConfig, airfoil: Airfoil, working_dir: str) -> str:
+    """
+    Generates an O-mesh given the configs and airfoil geometry. Requires a sharp (unblunted)
+    trailing edge -- the airfoil's upper and lower surfaces are treated as meeting at one point.
+
+    Args:
+        meshing_config (GMSH_OMeshingConfig): The O-mesh config data schema
+        airfoil (Airfoil): The airfoil geometry data schema
+        working_dir (str): The string of the working directory
+
+    Returns:
+        str: The path string representing the .brep dump
+    """
+
+    # Uses the OCC kernel (not the built-in "geo" kernel) so that the .brep dump below succeeds --
+    # gmsh.write(*.brep) requires OpenCASCADE CAD data, same as GMSH_generate_cmesh.
+    occ = gmsh.model.occ
+    mesh = gmsh.model.mesh
+
+    ## 1- INFER DATA, UNPACK ##
+    nx_afoil = meshing_config.nx_afoil
+    nr_farfield = meshing_config.nr_farfield
+    radial_growth_ratio = meshing_config.radial_growth_ratio
+    # Chord-scaled lengths, pipeline normalizes chord to 1.0 upstream, so this is a no-op
+    # multiply by 1 in the normal case; see GMSH_scale_by_chord
+    farfield_radius = GMSH_scale_by_chord(meshing_config.farfield_radius, airfoil.chord)
+    farfield_center_offset = GMSH_scale_by_chord(meshing_config.farfield_center_offset, airfoil.chord)
+
+    # Unpack the coords: [te_upper -> ... -> le -> ... -> te_lower], with te_upper == te_lower
+    # for an unblunted (sharp-TE) airfoil. Scaled to physical size, same as the config lengths above
+    # the tensor is chord-normalized by contract, so this is what puts both in one space
+    coords = airfoil.coords_tensor.numpy() * airfoil.chord
+    n_pts = coords.shape[0]
+    le_idx = airfoil.le_idx
+    le_x, le_y = coords[le_idx, 0], coords[le_idx, 1]
+    te_x, te_y = coords[0, 0], coords[0, 1]
+
+    ## 2- AIRFOIL AND OUTER CIRCLE CURVES ##
+    def P(x, y):
+        return occ.addPoint(float(x), float(y), 0.0)
+
+    # LE and TE shared points
+    LE = P(le_x, le_y)
+    TE = P(te_x, te_y)
+    upper_interior = [P(coords[i, 0], coords[i, 1]) for i in range(le_idx - 1, 0, -1)]
+    lower_interior = [P(coords[i, 0], coords[i, 1]) for i in range(le_idx + 1, n_pts - 1)]
+    pu = [LE] + upper_interior + [TE]  # LE->TE upper
+    pl = [LE] + lower_interior + [TE]  # LE->TE lower
+    c_af_up = occ.addSpline(pu)   # LE->TE upper
+    c_af_lo = occ.addSpline(pl)   # LE->TE lower
+
+    # Outer circle points, centered on (le_x + farfield_center_offset, le_y)
+    cx = le_x + farfield_center_offset
+    cy = le_y
+    F = P(cx - farfield_radius, cy)
+    B = P(cx + farfield_radius, cy)
+    ang_up = np.linspace(0, np.pi, nx_afoil)        # B(0) -> top -> F(pi)
+    ang_lo = np.linspace(np.pi, 2*np.pi, nx_afoil)  # F -> bottom -> B
+    cu = [B] + [P(cx + farfield_radius*np.cos(a), cy + farfield_radius*np.sin(a)) for a in ang_up[1:-1]] + [F]
+    cl = [F] + [P(cx + farfield_radius*np.cos(a), cy + farfield_radius*np.sin(a)) for a in ang_lo[1:-1]] + [B]
+    c_ci_up = occ.addSpline(cu)   # B->F upper half
+    c_ci_lo = occ.addSpline(cl)   # F->B lower half
+
+    # Radial seams
+    s_le = occ.addLine(LE, F)     # LE->F
+    s_te = occ.addLine(TE, B)     # TE->B
+
+    ## 3- SURFACES (O-grid: upper + lower, sharing the two seams) ##
+    lu = occ.addCurveLoop([c_af_up, s_te, c_ci_up, -s_le])   # LE->TE->B->F->LE
+    su = occ.addPlaneSurface([lu])
+    ll = occ.addCurveLoop([s_le, c_ci_lo, -s_te, -c_af_lo])  # LE->F->B->TE->LE
+    sl = occ.addPlaneSurface([ll])
+    occ.synchronize()
+
+    ## 4- TRANSFINITE MESHING ##
+    for c in (c_af_up, c_af_lo, c_ci_up, c_ci_lo):
+        mesh.setTransfiniteCurve(c, nx_afoil)
+    for c in (s_le, s_te):
+        mesh.setTransfiniteCurve(c, nr_farfield, "Progression", radial_growth_ratio)
+    mesh.setTransfiniteSurface(su, "Left", [LE, TE, B, F])
+    mesh.setTransfiniteSurface(sl, "Left", [LE, F, B, TE])
+    mesh.setRecombine(2, su)
+    mesh.setRecombine(2, sl)
+
+    ## 5- MARKER DEFINITIONS ##
+    gmsh.model.addPhysicalGroup(1, [c_af_up, c_af_lo], tag=1, name=MARKER_AIRFOIL)
+    gmsh.model.addPhysicalGroup(1, [c_ci_up, c_ci_lo], tag=2, name=MARKER_FARFIELD)
+    gmsh.model.addPhysicalGroup(2, [su, sl], tag=3, name="FLUID_DOMAIN")
+
+    # 6- SAVE CONFIG AND GENERATE #
+    brep_path = os.path.join(working_dir, f"{airfoil.airfoil_name}_geometry.brep")
+    gmsh.write(brep_path)
+    gmsh.model.mesh.generate(2)
+
+    return brep_path # Out the brep path
+
+def GMSH_generate_cmesh(meshing_config: GMSH_CMeshingConfig, airfoil: Airfoil, h_first: float, working_dir: str) -> str:
     """
     Generates a C-mesh given the configs, airfoil geometry, and the first cell height
 
     Args:
-        meshing_config (GMSH_MeshingConfig): The meshing config data schema
+        meshing_config (GMSH_CMeshingConfig): The meshing config data schema
         airfoil (Airfoil): The airfoil geometry data schema
         h_first (float): The height of the first cell, derived with .utils.get_mesh_height
         working_dir (str): The string of the working directory
@@ -175,10 +241,12 @@ def generate_cmesh(meshing_config: GMSH_MeshingConfig, airfoil: Airfoil, h_first
     #region Inputs and Initials
     ## 1- INFER DATA, UNPACK ##
     # 1a- Infer data from the data agreements #
-    # Infer the distance configs through the meshing_config data agreement
-    farfield_radius = meshing_config.farfield_radius
-    bl_thickness = meshing_config.bl_thickness
-    wake_length = meshing_config.wake_length
+    # Infer the distance configs through the meshing_config data agreement, scaled to the
+    # airfoil's actual chord (pipeline normalizes chord to 1.0 upstream, so this is a no-op
+    # multiply by 1 in the normal case; see GMSH_scale_by_chord)
+    farfield_radius = GMSH_scale_by_chord(meshing_config.farfield_radius, airfoil.chord)
+    bl_thickness = GMSH_scale_by_chord(meshing_config.bl_thickness, airfoil.chord)
+    wake_length = GMSH_scale_by_chord(meshing_config.wake_length, airfoil.chord)
     # Boundary layer meshing configs
     nx_le1 = meshing_config.nx_le1 # x-axis discretization for upper le
     nx_le2 = meshing_config.nx_le2 # x-axis discretization for lower le
@@ -195,7 +263,9 @@ def generate_cmesh(meshing_config: GMSH_MeshingConfig, airfoil: Airfoil, h_first
     ff_growth_ratio_inv = 1.0 / ff_growth_ratio
 
     # 1b- Unpack the coords #
-    coords_tensor = airfoil.coords_tensor # This is [te_upper -> ... upper_anchor ... -> le -> ... lower_anhor ... -> te_lower]
+    # Scaled to physical size, same as the config lengths above, the tensor is chord-normalized by
+    # contract, so this is what puts the geometry and the domain in one coordinate space
+    coords_tensor = airfoil.coords_tensor * airfoil.chord # This is [te_upper -> ... upper_anchor ... -> le -> ... lower_anhor ... -> te_lower]
     # Unpack indices
     le_idx = airfoil.le_idx
     upper_anchor_idx = meshing_config.upper_anchor_idx
@@ -464,7 +534,7 @@ def generate_cmesh(meshing_config: GMSH_MeshingConfig, airfoil: Airfoil, h_first
     ## 7- MARKER DEFINITIONS ##
     # 7a- AIRFOIL SURFACE, NO SLIP WALL #
     airfoil_wall_curves = [lower_curve, le2_curve, le1_curve, upper_curve, te_blunt_line]
-    gmsh.model.addPhysicalGroup(1, airfoil_wall_curves, tag=1, name="MARKER_AIRFOIL")
+    gmsh.model.addPhysicalGroup(1, airfoil_wall_curves, tag=1, name=MARKER_AIRFOIL)
 
     # 7b- FARFIELD AND EXHAUST BOUNDARIES #
     # This encompasses the entire outer envelope of the mesh
@@ -473,7 +543,7 @@ def generate_cmesh(meshing_config: GMSH_MeshingConfig, airfoil: Airfoil, h_first
         ff_le1_l, ff_le2_l,                 # Front leading edge farfield arcs
         ff_wu_ex_l, bl_wt_ex_l, ff_wl_ex_l  # Rear exhaust plane (Upper wake, core wake, lower wake)
     ]
-    gmsh.model.addPhysicalGroup(1, farfield_curves, tag=2, name="MARKER_FARFIELD")
+    gmsh.model.addPhysicalGroup(1, farfield_curves, tag=2, name=MARKER_FARFIELD)
 
     # 7c- FLUID DOMAIN #
     all_fluid_surfaces = bl_surfaces + ff_surfaces

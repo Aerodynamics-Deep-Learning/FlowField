@@ -2,31 +2,32 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-def _validate_gmsh_existance():
-    """
-    Validates if the Gmsh Python SDK is available
-    """
-    try:
-        import gmsh
-    except ImportError:
-        logger.error("GMSH Python API not found, will not be able to generate meshes.")
-        raise EnvironmentError("Cannot initialize meshing modules, please 'pip install gmsh' in your venv. Terminating.")
-    
-_validate_gmsh_existance()
-
-from .run import GMSH_MeshGenerator
-
 from .schemas import (
-    GMSH_In, 
-    GMSH_Out, 
-    GMSH_ExitFlag, 
-    GMSH_MeshingConfig
+    GMSH_In,
+    GMSH_Out,
+    GMSH_ExitFlag,
+    GMSH_Topology,
+    GMSH_CMeshingConfig,
+    GMSH_OMeshingConfig,
 )
+
+# `run` is imported lazily: it is the only module here that needs the gmsh SDK, so importing the
+# schemas must not drag the SDK in. `common/` imports these schemas, so an eager import would make
+# all of common, and the whole unit test tier, unusable without gmsh installed.
+def __getattr__(name):
+    if name == "GMSH_MeshGenerator":
+        from .run import GMSH_MeshGenerator
+
+        return GMSH_MeshGenerator
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
 
 __all__ = [
     "GMSH_MeshGenerator",
     "GMSH_In",
     "GMSH_Out",
     "GMSH_ExitFlag",
-    "GMSH_MeshingConfig"
+    "GMSH_Topology",
+    "GMSH_CMeshingConfig",
+    "GMSH_OMeshingConfig",
 ]
