@@ -29,6 +29,7 @@ class C2D_MeshingConfig(BaseModel):
     """
     Contract for the configs of C2D.
     """
+    model_config = {"extra": "forbid"}
 
     topo: Optional[Literal["OGRD", "CGRD"]] = Field(
         None, description="The topology option. Left unset, it's filled in automatically from "

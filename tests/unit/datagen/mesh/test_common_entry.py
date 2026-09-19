@@ -5,8 +5,9 @@ Step 1: Ensure the shared input-validation short-circuits route to the unified M
     - test_entry_tensor_fail_routing
     - test_entry_te_topology_fail_routing
     - test_entry_freestream_fail_routing
-Step 2: Ensure a gmsh GMSH_ExitFlag maps onto the equivalent MeshExitFlag
+Step 2: Ensure each backend's own exit flag maps onto the equivalent MeshExitFlag
     - test_entry_gmsh_flag_mapping
+    - test_entry_c2d_flag_mapping
 Step 3: Ensure a TE-shape/topology mismatch costs what that backend says it costs
     - test_entry_gmsh_te_mismatch_is_rejected
     - test_entry_c2d_te_mismatch_warns_and_proceeds
@@ -19,6 +20,10 @@ Step 5: Ensure nothing escapes as an exception -- every failure leaves as a Mesh
     - test_entry_backend_exception_becomes_flag
     - test_entry_unparseable_mesh_keeps_its_paths
     - test_entry_quality_exception_becomes_flag
+    - test_entry_geo_dev_exception_becomes_flag
+Step 6: Ensure the config MeshIn resolved reaches the backend unmodified
+    - test_entry_forwards_the_resolved_config_to_gmsh
+    - test_entry_forwards_the_resolved_config_to_c2d
 
 Scope: this file covers the dispatcher only. Each backend's own runner is tested in
 test_gmsh_runner.py / test_c2d_runner.py, the shared validators in test_common_utils.py, and the
@@ -38,9 +43,9 @@ pytest.importorskip("gmsh", reason="gmsh Python SDK not installed")
 
 from src.datagen.schemas import Airfoil, Freestream
 from src.datagen.meshing.gmsh.schemas import (
-    GMSH_CMeshingConfig, GMSH_OMeshingConfig, GMSH_ExitFlag,
+    GMSH_CMeshingConfig, GMSH_OMeshingConfig, GMSH_ExitFlag, GMSH_Topology,
 )
-from src.datagen.meshing.c2d.schemas import C2D_ExitFlag, C2D_MeshingConfig
+from src.datagen.meshing.c2d.schemas import C2D_ExitFlag, C2D_MeshingConfig, C2D_Topology
 from src.datagen.meshing.common.schemas import MeshIn, MeshBackend, MeshTopology, MeshExitFlag
 from src.datagen.meshing.common.entry import Common_GenerateMesh
 
@@ -100,6 +105,41 @@ def test_entry_gmsh_flag_mapping(mock_generator, *args):
     out = Common_GenerateMesh(_mock_mesh_in())
     assert out.flag == MeshExitFlag.CONVERSION_FAIL
     assert out.backend == MeshBackend.GMSH
+
+
+def _mock_backend_out(flag):
+    """A minimal stand-in for a backend's own `*_Out`, carrying nothing but the flag."""
+    out = MagicMock()
+    out.flag = flag
+    out.mesh_path = None
+    out.mesh_path_vtk = None
+    out.num_nodes = None
+    out.verbose_list = []
+    return out
+
+
+@pytest.mark.parametrize("c2d_flag, expected", [
+    (C2D_ExitFlag.EXECUTABLE_NOT_FOUND, MeshExitFlag.EXECUTABLE_NOT_FOUND),
+    (C2D_ExitFlag.SUBPROCESS_FAIL, MeshExitFlag.SUBPROCESS_FAIL),
+    (C2D_ExitFlag.FATAL_ERROR, MeshExitFlag.FATAL_ERROR),
+    (C2D_ExitFlag.CONVERSION_FAIL, MeshExitFlag.CONVERSION_FAIL),
+    (-99, MeshExitFlag.FATAL_ERROR),  # unmapped: _C2D_FLAG_MAP.get's default, as a new flag would be
+])
+@patch("src.datagen.meshing.common.entry.C2D_MeshGenerator")
+def test_entry_c2d_flag_mapping(mock_generator, c2d_flag, expected):
+    # gmsh's three-entry map has `test_entry_gmsh_flag_mapping`; c2d's five-entry one had only
+    # SUBPROCESS_FAIL, and only incidentally (via the TE-mismatch test). c2d is the backend that
+    # owns EXECUTABLE_NOT_FOUND/SUBPROCESS_FAIL, so a mistranslation there reads as a mesher fault
+    # rather than a missing exe. SUCCESS is excluded: it continues into `_score_mesh`, which needs
+    # a real mesh, and is covered by test_cross_backend.py.
+    mock_generator.return_value = _mock_backend_out(c2d_flag)
+
+    out = Common_GenerateMesh(_blunt_mesh_in(MeshBackend.C2D, MeshTopology.OGRD,
+                                             mesh_config=C2D_MeshingConfig()))
+
+    assert out.flag == expected
+    assert out.backend == MeshBackend.C2D
+    assert out.quality is None and out.geo_dev is None  # never scored, there is no mesh
 # endregion
 
 
@@ -283,4 +323,57 @@ def test_entry_quality_exception_becomes_flag(mock_generator, mock_quality):
 
     assert out.flag == MeshExitFlag.FATAL_ERROR
     assert mock_quality.called
+
+
+@patch("src.datagen.meshing.common.entry.Common_evaluate_mesh_geo_dev")
+@patch("src.datagen.meshing.common.entry.Common_evaluate_mesh_quality")
+@patch("src.datagen.meshing.common.entry.GMSH_MeshGenerator")
+def test_entry_geo_dev_exception_becomes_flag(mock_generator, mock_quality, mock_geo_dev):
+    # The counterpart to the test above: `Common_evaluate_mesh_geo_dev` has no handler of its own
+    # either, and runs second, so it is the one scoring pass that raises with a mesh already on
+    # disk and a quality verdict already passed.
+    mock_generator.return_value = _mock_backend_out(GMSH_ExitFlag.SUCCESS)
+    mock_quality.return_value = (MeshExitFlag.SUCCESS, None, 1234)
+    mock_geo_dev.side_effect = ValueError("unreadable MARKER_AIRFOIL block")
+
+    out = Common_GenerateMesh(_blunt_mesh_in(MeshBackend.GMSH, MeshTopology.CGRD))
+
+    assert out.flag == MeshExitFlag.FATAL_ERROR
+    assert mock_geo_dev.called  # the quality pass did hand over
+# endregion
+
+
+# region Step 6
+@patch("src.datagen.meshing.common.entry.GMSH_MeshGenerator")
+def test_entry_forwards_the_resolved_config_to_gmsh(mock_generator):
+    # Every other dispatcher test meshes with a default config, so a `_run_gmsh` that dropped
+    # `mesh_config` and let `GMSH_In`'s resolver default it would pass all of them while silently
+    # meshing at the wrong resolution. This is the knobs-actually-arrive test.
+    mock_generator.return_value = _mock_backend_out(GMSH_ExitFlag.EXTRUSION_FAIL)
+
+    Common_GenerateMesh(_blunt_mesh_in(
+        MeshBackend.GMSH, MeshTopology.CGRD,
+        mesh_config=GMSH_CMeshingConfig(nx_upper=321, nx_wake=77)))
+
+    gmsh_in = mock_generator.call_args.args[0]
+    assert gmsh_in.meshing_config.nx_upper == 321
+    assert gmsh_in.meshing_config.nx_wake == 77
+    assert gmsh_in.topology == GMSH_Topology.CGRD
+
+
+@patch("src.datagen.meshing.common.entry.C2D_MeshGenerator")
+def test_entry_forwards_the_resolved_config_to_c2d(mock_generator):
+    # c2d's half of the above. `topo` is additionally asserted because it is the one field the
+    # dispatcher does not pass: `C2D_In`'s validator fills it from `topology` on the way through.
+    mock_generator.return_value = _mock_backend_out(C2D_ExitFlag.SUBPROCESS_FAIL)
+
+    Common_GenerateMesh(_blunt_mesh_in(
+        MeshBackend.C2D, MeshTopology.OGRD,
+        mesh_config=C2D_MeshingConfig(nsrf=500, jmax=321)))
+
+    c2d_in = mock_generator.call_args.args[0]
+    assert c2d_in.meshing_config.nsrf == 500
+    assert c2d_in.meshing_config.jmax == 321
+    assert c2d_in.topology == C2D_Topology.OGRD
+    assert c2d_in.meshing_config.topo == "OGRD"
 # endregion

@@ -11,6 +11,7 @@ Step 3: Ensure the resolution holds when the model is validated from a raw paylo
     - test_mesh_config_resolved_when_validated_from_payload
 Step 4: Ensure a mistyped keyword can't silently fall back to the default config
     - test_unknown_keyword_rejected
+    - test_config_unknown_key_rejected_per_pairing
 """
 
 import tempfile
@@ -106,4 +107,19 @@ def test_unknown_keyword_rejected():
     # dropped silently and the mesh is built from defaults instead of the config that was passed.
     with pytest.raises(ValidationError, match="gmsh_cmesh_config"):
         _mesh_in(MeshBackend.GMSH, MeshTopology.CGRD, gmsh_cmesh_config=GMSH_CMeshingConfig())
+
+
+@pytest.mark.parametrize("backend, topology, typo", [
+    (MeshBackend.GMSH, MeshTopology.CGRD, "nx_uppper"),
+    (MeshBackend.GMSH, MeshTopology.OGRD, "nx_afoill"),
+    (MeshBackend.C2D, MeshTopology.CGRD, "nsrff"),
+    (MeshBackend.C2D, MeshTopology.OGRD, "jmaxx"),
+])
+def test_config_unknown_key_rejected_per_pairing(backend, topology, typo):
+    # `MeshIn`'s own forbid covers its own fields only; it stops at the `mesh_config` boundary, so
+    # each config class has to carry one too or `_resolve_mesh_config`'s `expected(**config)` drops
+    # the key and meshes at that field's default. Parametrized over every pairing rather than
+    # spot-checked, so a config class added to `_CONFIG_FOR_PAIRING` without a forbid is caught.
+    with pytest.raises(ValidationError, match=typo):
+        _mesh_in(backend, topology, mesh_config={typo: 42})
 # endregion

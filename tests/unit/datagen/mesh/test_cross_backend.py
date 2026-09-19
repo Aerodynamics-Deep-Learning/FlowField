@@ -4,13 +4,16 @@ through each, landing on a `MeshOut` the shared `.su2` quality path can score, i
 
 Step 1: Ensure the gmsh backend lands on a scorable `.su2` carrying the SU2 boundary markers
     - test_gmsh_backend_produces_scorable_su2
-Step 2: Ensure the c2d backend lands on the same, under the topology *it* builds for a blunt TE
+Step 2: Ensure the c2d backend lands on the same, under the topology *it* builds for a blunt TE,
+        and that this pairing (the production one) scores clean on *both* verdict passes
     - test_c2d_backend_produces_scorable_su2
 
 Scope: both backends mesh for real here, so this is the one place the two are held against each
 other rather than against mocks. The dispatcher's own routing is covered in test_common_entry.py.
 The c2d half is skipped when its executable isn't built in the environment.
 """
+
+from pathlib import Path
 
 import pytest
 import torch
@@ -83,6 +86,9 @@ def test_gmsh_backend_produces_scorable_su2(tmp_path):
     assert out.mesh_path is not None
     assert out.quality is not None
     assert _su2_marker_tags(out.mesh_path) == _EXPECTED_MARKERS
+    # `_score_mesh` measures deviation only on a mesh the quality pass accepted, so the two are
+    # tied. 
+    assert (out.geo_dev is not None) == (out.flag == MeshExitFlag.SUCCESS)
 # endregion
 
 
@@ -97,9 +103,17 @@ def test_c2d_backend_produces_scorable_su2(tmp_path):
     )
     out = Common_GenerateMesh(data)
 
-    assert out.flag in (MeshExitFlag.SUCCESS, MeshExitFlag.LOW_QUALITY), out.flag
+    # Strict SUCCESS, unlike the gmsh half above: this is the pairing the pipeline is meant to run
+    # in production, and it clears the gates with room, so anything less is a regression rather than a tight bar.
+    assert out.flag == MeshExitFlag.SUCCESS, out.flag
     assert out.mesh_path is not None
-    assert out.quality is not None
+    assert out.quality is not None and out.quality.acceptable
+    assert Path(out.mesh_path).is_file() and Path(out.mesh_path_vtk).is_file()
     # Same marker names as gmsh writes (one SU2 config has to drive either backend's mesh)
     assert _su2_marker_tags(out.mesh_path) == _EXPECTED_MARKERS
+    # The second verdict pass, which nothing else observes arriving on a MeshOut: the integration
+    # tier scores deviation by calling `Common_evaluate_mesh_geo_dev` directly, never through the
+    # dispatcher, so without this `MeshOut.geo_dev` could stay None on a clean run undetected.
+    assert out.geo_dev is not None, "quality passed but deviation was never measured"
+    assert out.geo_dev.acceptable, out.geo_dev
 # endregion

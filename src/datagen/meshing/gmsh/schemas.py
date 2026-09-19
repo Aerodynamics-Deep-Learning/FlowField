@@ -25,6 +25,8 @@ class GMSH_CMeshingConfig(BaseModel):
     """
     Contract for the configs of GMSH's C-mesh topology (blunt trailing edge)
     """
+    model_config = {"extra": "forbid"}
+
     # Airfoil specific params
     upper_anchor_idx: int = Field(65, ge=0, description="The index of the upper anchor point on the airfoil, which is a point of interest for meshing, typically where the curvature changes significantly")
     lower_anchor_idx: int = Field(95, ge=0, description="The index of the lower anchor point on the airfoil, which is a point of interest for meshing, typically where the curvature changes significantly")
@@ -53,6 +55,8 @@ class GMSH_OMeshingConfig(BaseModel):
     """
     Contract for the configs of GMSH's O-mesh topology (sharp trailing edge)
     """
+    model_config = {"extra": "forbid"}
+
     # Airfoil surface discretization
     nx_afoil: int = Field(120, gt=10, description="Number of mesh points along each of the upper and lower airfoil splines (LE to TE)")
 
