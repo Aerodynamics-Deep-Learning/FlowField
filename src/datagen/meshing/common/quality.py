@@ -58,7 +58,8 @@ def _read_su2(path):
     tris = []
     markers = {}
     with open(path) as f:
-        lines = [ln.strip() for ln in f if ln.strip() and not ln.startswith("%")]
+        # Strip before testing for '%', or an indented comment parses as data
+        lines = [s for s in (ln.strip() for ln in f) if s and not s.startswith("%")]
     i = 0
     n = len(lines)
     while i < n:

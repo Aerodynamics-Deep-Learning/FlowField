@@ -48,7 +48,7 @@ _C2D_FLAG_MAP = {
 
 # What a TE-shape/topology mismatch costs, per backend; whether fatal or not
 _TE_MISMATCH_IS_FATAL = {
-    MeshBackend.GMSH: True, # Is completely fatal, crashes occ
+    MeshBackend.GMSH: True, # CGRD on a sharp TE crashes occ; OGRD on a blunt one silently meshes a closed TE
     MeshBackend.C2D: False, # Is not fatal, gives a mesh albeit a bad one
 }
 

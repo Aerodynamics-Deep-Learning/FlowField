@@ -38,7 +38,7 @@ class C2D_MeshingConfig(BaseModel):
     slvr: Literal["HYPR", "ELLP"] = Field("HYPR", description="The solver option")
 
     # Surface/wake resolution (fixed)
-    nsrf: int = Field(300, gt=10, description="Number of points around the airfoil surface")
+    nsrf: int = Field(300, gt=10, le=1000, description="Number of points around the airfoil surface")
     jmax: int = Field(200, gt=10, description="Number of points normal to the surface (wall to farfield)")
     nwke: int = Field(100, gt=1, description="Number of points along the wake")
     lesp: float = Field(3.0e-4, gt=0.0, description="Leading-edge point spacing (fraction of chord)")
@@ -98,14 +98,17 @@ class C2D_In(BaseModel):
 
 class C2D_Out(BaseModel):
     """
-    Contract for the output from GMSH post-mesh generation
+    Contract for the output from c2d post-mesh generation
     """
+    # extra="forbid": see MeshIn, keeps the output contract self-enforcing for out-of-tree callers
+    model_config = {"extra": "forbid"}
+
     airfoil: Airfoil
     freestream: Freestream
     flag: C2D_ExitFlag
     mesh_path: Optional[str] = Field(None, description="The path of the generated mesh, if successful")
     mesh_path_vtk: Optional[str] = Field(None, description="The path of the generated mesh in .vtk format, if successful")
     num_nodes: Optional[int] = Field(None, description="The number of nodes in the generated mesh")
-    verbose_list: list[str | None] = Field(..., description="A list of paths for verbose output [c2d_log_path (.txt), geometry_dump (.brep), exception (.txt)]")
+    verbose_list: list[str | None] = Field(..., description="A list of paths for verbose output [c2d_log_path (.txt), airfoil_input (.dat), nmf (.nmf) on success or exception (.txt) on failure]")
 
     

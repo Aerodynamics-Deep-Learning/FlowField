@@ -138,7 +138,7 @@ class MeshGeoDeviationSummary(BaseModel):
 
 class MeshOut(BaseModel):
     """Backend-agnostic contract for the output from mesh generation."""
-    model_config = {"arbitrary_types_allowed": True}
+    model_config = {"arbitrary_types_allowed": True, "extra": "forbid"}
 
     airfoil: Airfoil
     freestream: Freestream

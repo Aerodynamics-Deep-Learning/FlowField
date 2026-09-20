@@ -19,7 +19,7 @@ class GMSH_Topology(str, Enum):
     edges; O-mesh (O-grid) requires a sharp/curved trailing edge (upper/lower surfaces meeting at one point).
     """
     CGRD = "CGRID"
-    OGRD = "GRID"
+    OGRD = "OGRID"
 
 class GMSH_CMeshingConfig(BaseModel):
     """
@@ -46,7 +46,7 @@ class GMSH_CMeshingConfig(BaseModel):
     bl_growth_ratio: float = Field(1.075, gt=1.01, le=1.2, description="The growth ratio within the boundary layer meshing, to ensure smooth growth of mesh cells")
     wake_progression: float = Field(1.001, description="Wake progression")
     te_coarsen_factor: float = Field(600.0, gt=1.0, description="The coarsening factor for the trailing edge region, to allow for smoother transition from the fine mesh near the trailing edge to the coarser mesh in the wake, while avoiding abrupt changes in cell sizes that can lead to poor mesh quality")
-    chord_bump: float = Field(50.0, gt=0.0, description="The chord bump is a small extension added to the chord length of the airfoil for meshing purposes, to ensure that the trailing edge region is properly resolved and to avoid issues with mesh generation at the trailing edge where the upper and lower surfaces meet. This helps in creating a more robust mesh around the trailing edge, which is critical for accurately capturing the flow features in that region")
+    chord_bump: float = Field(50.0, gt=0.0, description="Transfinite 'Bump' clustering coefficient along the chordwise block edges; dimensionless, not a length, so it is never scaled by chord")
 
     # Farfield meshing configs
     ff_growth_ratio: float = Field(1.1, gt=1.01, le=1.3, description="The growth ratio for the farfield meshing, to ensure smooth growth of mesh cells in the farfield region")
@@ -128,6 +128,9 @@ class GMSH_Out(BaseModel):
     """
     Contract for the output from GMSH post-mesh generation
     """
+    # extra="forbid": see MeshIn, keeps the output contract self-enforcing for out-of-tree callers
+    model_config = {"extra": "forbid"}
+
     airfoil: Airfoil
     freestream: Freestream
     flag: GMSH_ExitFlag
