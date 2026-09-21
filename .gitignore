@@ -23,7 +23,16 @@ runs/*
 # Weights and Biases files
 wandb/
 
+# Agents
+.claude/
+CLAUDE.md
+
 # Parquet files
 *.parquet
 
 /tests/datagen/meshing/gmsh/test_sicn/old
+
+# C2D executable (built/installed locally per an upcoming setup script; never commit
+# the binary itself: see src/datagen/meshing/c2d/run.py:C2D_find_exe)
+src/datagen/meshing/c2d/bin/*
+!src/datagen/meshing/c2d/bin/.gitkeep
