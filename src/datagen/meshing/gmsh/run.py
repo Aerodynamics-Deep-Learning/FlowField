@@ -539,9 +539,9 @@ def GMSH_generate_cmesh(meshing_config: GMSH_CMeshingConfig, airfoil: Airfoil, h
     # 7b- FARFIELD AND EXHAUST BOUNDARIES #
     # This encompasses the entire outer envelope of the mesh
     farfield_curves = [
-        ff_up_up_l, ff_lo_lo_l,             # Top and Bottom farfield lines
-        ff_le1_l, ff_le2_l,                 # Front leading edge farfield arcs
-        ff_wu_ex_l, bl_wt_ex_l, ff_wl_ex_l  # Rear exhaust plane (Upper wake, core wake, lower wake)
+        ff_up_up_l, ff_wu_up_l, ff_lo_lo_l, ff_wl_lo_l,             # Top and bottom, over the chord and the wake
+        ff_le1_l, ff_le2_l,                                         # Front leading edge farfield arcs
+        ff_wu_ex_l, bl_wu_ex_l, bl_wt_ex_l, bl_wl_ex_l, ff_wl_ex_l  # Exhaust plane, top to bottom
     ]
     gmsh.model.addPhysicalGroup(1, farfield_curves, tag=2, name=MARKER_FARFIELD)
 

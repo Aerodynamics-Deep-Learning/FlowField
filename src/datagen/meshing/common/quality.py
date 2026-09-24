@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 def Common_evaluate_mesh_quality(mesh_path: str | None) -> tuple[MeshExitFlag, MeshQualitySummary | None, int | None]:
     """
     The single `.su2` based quality verdict both backends converge on. This reads the `.su2` file directly
-    and owns UNACCEPTABLE_QUALITY/LOW_QUALITY/SUCCESS.
+    and owns UNACCEPTABLE_QUALITY/LOW_QUALITY/SUCCESS, plus CONVERSION_FAIL for a `.su2` SU2 cannot use.
 
     Args:
         mesh_path (str | none): Mesh path either string or none
@@ -40,6 +40,11 @@ def Common_evaluate_mesh_quality(mesh_path: str | None) -> tuple[MeshExitFlag, M
     except Exception:
         logger.exception("Could not analyze the .su2 mesh at %s", mesh_path)
         return MeshExitFlag.CONVERSION_FAIL, None, None
+
+    # SU2 loads a mesh with unmarked boundary edges without a warning and gives them no boundary condition
+    if a["unmarked"] > 0:
+        logger.warning("Mesh at %s has %d boundary edges in no marker.", mesh_path, a["unmarked"])
+        return MeshExitFlag.CONVERSION_FAIL, quality, a["nnode"]
 
     # A folded corner is as unusable to a solver as an inverted cell, so it joins `neg` on the severe
     # verdict rather than the graded one; the other three gates only ever grade down to LOW_QUALITY.
@@ -171,6 +176,20 @@ def _orthogonal_quality(nodes, blocks):
     return np.concatenate(out)
 
 
+def _unmarked_boundary_edges(nnode, blocks, markers):
+    """
+    Number of cell faces used by exactly one cell that no marker lists, in either node order.
+    """
+    faces = [np.stack([conn.ravel(), np.roll(conn, -1, axis=1).ravel()], axis=1) for conn, _k in blocks]
+    if not faces:
+        return 0
+    faces = np.sort(np.concatenate(faces), axis=1).astype(np.int64)
+    key, count = np.unique(faces[:, 0] * nnode + faces[:, 1], return_counts=True)
+    marked = np.asarray([e for edges in markers.values() for e in edges], np.int64).reshape(-1, 2)
+    marked = np.sort(marked, axis=1)
+    return int(np.isin(key[count == 1], marked[:, 0] * nnode + marked[:, 1], invert=True).sum())
+
+
 def _analyze_su2(su2_path):
     """
     Reads a `.su2` and reduces it to the per-mesh quality metrics the verdict is built on.
@@ -202,7 +221,8 @@ def _analyze_su2(su2_path):
     return dict(nodes=nodes, polys=polys, skew=skew, ar=ar, area=area, jac=jac,
                 ncell=ncell, nnode=len(nodes), nquad=len(quads), ntri=len(tris),
                 neg=neg, max_skew=max_skew, min_ortho=min_ortho, max_ar=max_ar, min_jac=min_jac,
-                markers={k: len(v) for k, v in markers.items()}, acceptable=ok)
+                markers={k: len(v) for k, v in markers.items()},
+                unmarked=_unmarked_boundary_edges(len(nodes), blocks, markers), acceptable=ok)
 
 def _summary_from_analysis(a) -> dict:
     """

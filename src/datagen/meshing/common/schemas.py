@@ -47,7 +47,7 @@ class MeshExitFlag(IntEnum):
     EXECUTABLE_NOT_FOUND = -7   # c2d only: the C2D exe isn't built/found
     SUBPROCESS_FAIL = -6        # c2d only: the exe crashed or timed out
     FATAL_ERROR = -5            # unhandled exception in either backend
-    CONVERSION_FAIL = -4        # gmsh's extrusion produced 0 elements / c2d's p3d->su2 conversion failed
+    CONVERSION_FAIL = -4        # gmsh's extrusion produced 0 elements / c2d's p3d->su2 conversion failed / a boundary edge is in no marker
     UNACCEPTABLE_QUALITY = -3   # mesh produced but has inverted/zero-area cells (or minSICN <= 0) or quality that is unacceptable
     GEOMETRY_DEVIATION_FAIL = -2 # well-formed mesh, but its MARKER_AIRFOIL boundary does not reproduce the input geometry
     LOW_QUALITY = -1             # valid mesh, but exceeds the skew/growth/aspect-ratio acceptance thresholds

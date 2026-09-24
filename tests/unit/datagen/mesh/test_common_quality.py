@@ -22,6 +22,7 @@ Step 3: Ensure `_analyze_su2` reduces a mesh to the right metrics
     - test_analyze_su2_flags_inverted_cells
     - test_analyze_su2_boundary_layer_aspect_ratio_stays_acceptable
     - test_analyze_su2_collapsed_edge_fails_the_aspect_ratio_gate
+    - test_analyze_su2_counts_unmarked_boundary_edges
 Step 4: Ensure `Common_evaluate_mesh_quality` maps those metrics onto the right MeshExitFlag
     - test_quality_missing_or_absent_path
     - test_quality_clean_mesh_succeeds
@@ -30,6 +31,8 @@ Step 4: Ensure `Common_evaluate_mesh_quality` maps those metrics onto the right 
     - test_quality_folded_cells_are_unacceptable
     - test_quality_skewed_cells_are_low_quality
     - test_quality_extreme_aspect_ratio_is_low_quality
+    - test_quality_unmarked_boundary_is_conversion_fail
+    - test_quality_fully_marked_boundary_succeeds
     - test_quality_unparseable_su2_is_conversion_fail
 Step 5: Ensure the summary helpers narrow/format the analysis correctly
     - test_summary_from_analysis_matches_the_schema
@@ -66,6 +69,10 @@ _EQUILATERAL = [[0.0, 0.0], [1.0, 0.0], [0.5, 3 ** 0.5 / 2]]
 _FOLDED = [[0.0, 0.0], [1.0, 0.0], [0.2, 0.2], [0.0, 1.0]]
 # 1 x 1e-8 rectangle: aspect ratio 1e8, past ASPECT_RATIO_LIMIT, but otherwise a perfect cell
 _NEEDLE = [[0.0, 0.0], [1.0, 0.0], [1.0, 1e-8], [0.0, 1e-8]]
+# Two unit squares sharing the face (1, 4): six boundary edges around one interior face
+_STRIP_NODES = [[0.0, 0.0], [1.0, 0.0], [2.0, 0.0], [2.0, 1.0], [1.0, 1.0], [0.0, 1.0]]
+_STRIP_QUADS = [[0, 1, 4, 5], [1, 2, 3, 4]]
+_STRIP_BOUNDARY = [(0, 1), (1, 2), (2, 3), (3, 4), (4, 5), (5, 0)]
 
 
 def _write_su2(path, nodes, quads=(), tris=(), markers=None):
@@ -90,7 +97,9 @@ def _write_su2(path, nodes, quads=(), tris=(), markers=None):
 
 
 def _one_quad(tmp_path, corners, name="mesh.su2", **kw):
-    """A single-cell mesh whose four nodes are `corners`, for metric-level assertions."""
+    """A single-cell mesh whose four nodes are `corners`, for metric-level assertions. Fully marked
+    unless `markers` is given, so the verdict judges the cell rather than an open boundary."""
+    kw.setdefault("markers", {"MARKER_FARFIELD": [(0, 1), (1, 2), (2, 3), (3, 0)]})
     return _write_su2(tmp_path / name, corners, quads=[[0, 1, 2, 3]], **kw)
 
 
@@ -311,6 +320,17 @@ def test_analyze_su2_collapsed_edge_fails_the_aspect_ratio_gate(tmp_path):
     assert a["min_jac"] == pytest.approx(1.0)
     assert a["neg"] == 0
     assert a["acceptable"] is False
+
+
+def test_analyze_su2_counts_unmarked_boundary_edges(tmp_path):
+    # The interior face (1, 4) needs no marker, and (3, 2) is listed backwards but still covers its
+    # edge, so (5, 0) is the one boundary edge left out
+    markers = {"MARKER_AIRFOIL": [(0, 1), (1, 2)], "MARKER_FARFIELD": [(3, 2), (3, 4), (4, 5)]}
+    a = _analyze_su2(_write_su2(tmp_path / "strip.su2", _STRIP_NODES, quads=_STRIP_QUADS,
+                                markers=markers))
+
+    assert a["unmarked"] == 1
+    assert a["acceptable"] is True  # a cell-shape verdict; the open boundary is judged separately
 # endregion
 
 
@@ -338,7 +358,7 @@ def test_quality_inverted_cells_are_unacceptable(tmp_path):
     flag, quality, nnode = Common_evaluate_mesh_quality(_one_quad(tmp_path, _SQUARE_CW))
 
     assert flag == MeshExitFlag.UNACCEPTABLE_QUALITY
-    # Unlike the conversion failures, this one still reports what it measured
+    # Unlike a file that fails to parse, this one still reports what it measured
     assert quality is not None and quality.acceptable is False
     assert nnode == 4
 
@@ -372,6 +392,26 @@ def test_quality_extreme_aspect_ratio_is_low_quality(tmp_path):
 
     assert flag == MeshExitFlag.LOW_QUALITY
     assert quality.max_ar > ASPECT_RATIO_LIMIT
+
+
+def test_quality_unmarked_boundary_is_conversion_fail(tmp_path):
+    # Both cells are perfect, so the one edge left out of the markers is all that fails this mesh.
+    # SU2 would load it without a warning and give that edge no boundary condition.
+    path = _write_su2(tmp_path / "open.su2", _STRIP_NODES, quads=_STRIP_QUADS,
+                      markers={"MARKER_FARFIELD": _STRIP_BOUNDARY[:-1]})
+    flag, quality, nnode = Common_evaluate_mesh_quality(path)
+
+    assert flag == MeshExitFlag.CONVERSION_FAIL
+    # The cells were measured, so unlike an unparseable file the summary still comes back
+    assert quality is not None and quality.acceptable is True
+    assert nnode == 6
+
+
+def test_quality_fully_marked_boundary_succeeds(tmp_path):
+    path = _write_su2(tmp_path / "closed.su2", _STRIP_NODES, quads=_STRIP_QUADS,
+                      markers={"MARKER_FARFIELD": _STRIP_BOUNDARY})
+
+    assert Common_evaluate_mesh_quality(path)[0] == MeshExitFlag.SUCCESS
 
 
 @pytest.mark.parametrize("body, reason", [
