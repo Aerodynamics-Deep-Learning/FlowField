@@ -52,7 +52,7 @@ class C2D_MeshingConfig(BaseModel):
 
     # Boundary-layer physics (fixed)
     ypls: float = Field(0.7, gt=0.0, description="Target y+ for the first cell")
-    recd: float = Field(5.0e6, gt=0.0, description="Reynolds number used to size the first cell")
+    recd: float = Field(1.5e7, gt=0.0, description="Reynolds number used to size the first cell")
 
     # Solver iteration controls (fixed)
     stp1: int = Field(1000, gt=0, description="Coarse solver iterations")

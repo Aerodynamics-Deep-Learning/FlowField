@@ -10,6 +10,8 @@ Step 1: Ensure gmsh-specific structural failure modes route to the expected GMSH
 Step 2: Ensure the two regressions found in the gmsh audit stay fixed
     - test_mesh_path_vtk_is_full_path_not_bare_filename
     - test_empty_extrusion_does_not_raise_nameerror
+Step 3: Ensure a call off the main thread is flagged without touching gmsh
+    - test_runner_off_main_thread_touches_no_gmsh
 
 The c2d counterpart is test_c2d_runner.py. Input-validation short-circuit routing
 (tensor/TE-shape/freestream) is NOT here: GMSH_MeshGenerator used to run those checks itself, but
@@ -18,6 +20,7 @@ Step 1, and test_common_utils.py for the validators themselves).
 """
 
 import tempfile
+from concurrent.futures import ThreadPoolExecutor
 from unittest.mock import patch, MagicMock
 
 import numpy as np
@@ -135,4 +138,25 @@ def test_empty_extrusion_does_not_raise_nameerror(mock_gmsh, *args):
     out = GMSH_MeshGenerator(mock_input)
 
     assert out.flag == GMSH_ExitFlag.EXTRUSION_FAIL
+# endregion
+
+
+# region Step 3
+@apply_api_patches
+def test_runner_off_main_thread_touches_no_gmsh(mock_gmsh, *args):
+    # gmsh is process-global, so a rejected thread must not even finalize, or it could end another's live session
+    mock_input = _mock_gmsh_input()
+
+    with patch("src.datagen.meshing.gmsh.run.GMSH_Write_Exception") as mock_writer:
+        mock_writer.return_value = "/tmp/exception.txt"
+        with ThreadPoolExecutor(1) as ex:
+            out = ex.submit(GMSH_MeshGenerator, mock_input).result()
+
+    assert out.flag == GMSH_ExitFlag.FATAL_ERROR
+    assert out.verbose_list[2] == "/tmp/exception.txt"
+    raised = mock_writer.call_args.args[0]
+    assert isinstance(raised, RuntimeError) and "main thread" in str(raised)
+    mock_gmsh.initialize.assert_not_called()
+    mock_gmsh.isInitialized.assert_not_called()
+    mock_gmsh.finalize.assert_not_called()
 # endregion

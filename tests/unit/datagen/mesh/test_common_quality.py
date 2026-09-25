@@ -16,6 +16,10 @@ Step 2: Ensure the metric helpers score known geometry correctly -- `_cell_metri
     - test_orthogonal_quality_reads_the_neighbour_across_a_shared_face
     - test_orthogonal_quality_is_float32_safe
     - test_orthogonal_quality_keeps_block_order
+    - test_size_ratio_uniform_grid_is_one
+    - test_size_ratio_reads_a_geometric_progression
+    - test_size_ratio_pairs_cells_across_blocks
+    - test_size_ratio_single_cell_has_no_interior_face
 Step 3: Ensure `_analyze_su2` reduces a mesh to the right metrics
     - test_analyze_su2_on_a_clean_mesh
     - test_analyze_su2_empty_mesh_is_not_acceptable
@@ -23,6 +27,7 @@ Step 3: Ensure `_analyze_su2` reduces a mesh to the right metrics
     - test_analyze_su2_boundary_layer_aspect_ratio_stays_acceptable
     - test_analyze_su2_collapsed_edge_fails_the_aspect_ratio_gate
     - test_analyze_su2_counts_unmarked_boundary_edges
+    - test_analyze_su2_size_jump_fails_the_size_ratio_gate
 Step 4: Ensure `Common_evaluate_mesh_quality` maps those metrics onto the right MeshExitFlag
     - test_quality_missing_or_absent_path
     - test_quality_clean_mesh_succeeds
@@ -31,6 +36,8 @@ Step 4: Ensure `Common_evaluate_mesh_quality` maps those metrics onto the right 
     - test_quality_folded_cells_are_unacceptable
     - test_quality_skewed_cells_are_low_quality
     - test_quality_extreme_aspect_ratio_is_low_quality
+    - test_quality_abrupt_size_change_is_low_quality
+    - test_quality_growth_within_the_size_ratio_limit_succeeds
     - test_quality_unmarked_boundary_is_conversion_fail
     - test_quality_fully_marked_boundary_succeeds
     - test_quality_unparseable_su2_is_conversion_fail
@@ -45,11 +52,11 @@ import pytest
 
 from src.datagen.meshing.common.schemas import MeshExitFlag, MeshQualitySummary
 from src.datagen.meshing.common.quality import (
-    Common_evaluate_mesh_quality, _read_su2, _cell_metrics, _orthogonal_quality, _analyze_su2,
-    _summary_from_analysis,
+    Common_evaluate_mesh_quality, _read_su2, _cell_metrics, _orthogonal_quality, _size_ratio,
+    _analyze_su2, _summary_from_analysis,
 )
 from src.datagen.meshing.common.constants import (
-    SKEWNESS_LIMIT, ORTHO_MIN, JACOBIAN_LIMIT, ASPECT_RATIO_LIMIT,
+    SKEWNESS_LIMIT, ORTHO_MIN, JACOBIAN_LIMIT, ASPECT_RATIO_LIMIT, SIZE_RATIO_LIMIT,
 )
 
 
@@ -101,6 +108,32 @@ def _one_quad(tmp_path, corners, name="mesh.su2", **kw):
     unless `markers` is given, so the verdict judges the cell rather than an open boundary."""
     kw.setdefault("markers", {"MARKER_FARFIELD": [(0, 1), (1, 2), (2, 3), (3, 0)]})
     return _write_su2(tmp_path / name, corners, quads=[[0, 1, 2, 3]], **kw)
+
+
+def _strip_mesh(widths):
+    """Unit-height rectangles side by side with the given widths: every cell is perfectly shaped, so
+    neighbour size is the only thing that varies. Returns nodes, quads, and the boundary edges."""
+    xs = np.concatenate([[0.0], np.cumsum(widths)])
+    n = len(xs)
+    nodes = [[x, 0.0] for x in xs] + [[x, 1.0] for x in xs]
+    quads = [[i, i + 1, n + i + 1, n + i] for i in range(n - 1)]
+    boundary = ([(i, i + 1) for i in range(n - 1)] + [(n - 1, 2 * n - 1)]
+                + [(n + i + 1, n + i) for i in range(n - 1)] + [(n, 0)])
+    return nodes, quads, boundary
+
+
+def _strip(tmp_path, widths, name="strip_widths.su2"):
+    """`_strip_mesh` written out fully marked, so the verdict judges only the cells."""
+    nodes, quads, boundary = _strip_mesh(widths)
+    return _write_su2(tmp_path / name, nodes, quads=quads, markers={"MARKER_FARFIELD": boundary})
+
+
+def _size_ratio_of(nodes, *blocks):
+    """`_size_ratio` fed the way `_analyze_su2` feeds it: areas concatenated in `blocks` order."""
+    nodes = np.asarray(nodes, float)
+    blocks = [(np.asarray(conn, int), len(conn[0])) for conn in blocks]
+    area = np.concatenate([_cell_metrics(nodes[conn])[0] for conn, _k in blocks])
+    return _size_ratio(len(nodes), blocks, area)
 
 
 # region Step 1
@@ -263,6 +296,38 @@ def test_orthogonal_quality_keeps_block_order():
     assert ortho.shape == (2,)
     assert ortho[0] == pytest.approx(_orthogonal_quality(nodes, [(quads, 4)])[0])
     assert ortho[1] == pytest.approx(_orthogonal_quality(nodes, [(tris, 3)])[0])
+
+
+def test_size_ratio_uniform_grid_is_one():
+    # 2 x 2 unit squares: four interior faces, all between equal cells
+    nodes = [[x, y] for y in (0.0, 1.0, 2.0) for x in (0.0, 1.0, 2.0)]
+    quads = [[0, 1, 4, 3], [1, 2, 5, 4], [3, 4, 7, 6], [4, 5, 8, 7]]
+
+    ratio = _size_ratio_of(nodes, quads)
+
+    assert ratio.shape == (4,)
+    np.testing.assert_allclose(ratio, 1.0)
+
+
+def test_size_ratio_reads_a_geometric_progression():
+    # In a structured grid the ratio is the growth rate across the face, whichever way it runs
+    nodes, quads, _ = _strip_mesh([1.0, 1.2, 1.44])
+
+    np.testing.assert_allclose(_size_ratio_of(nodes, quads), [1.2, 1.2])
+
+
+def test_size_ratio_pairs_cells_across_blocks():
+    # A unit quad and a half-area triangle sharing the face (1, 2). `_analyze_su2` concatenates the
+    # quad block's areas before the triangles', so the pairing has to index across that boundary.
+    nodes = [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0], [2.0, 0.5]]
+
+    ratio = _size_ratio_of(nodes, [[0, 1, 2, 3]], [[1, 4, 2]])
+
+    np.testing.assert_allclose(ratio, [2.0])
+
+
+def test_size_ratio_single_cell_has_no_interior_face():
+    assert _size_ratio_of(_SQUARE, [[0, 1, 2, 3]]).shape == (0,)
 # endregion
 
 
@@ -276,6 +341,7 @@ def test_analyze_su2_on_a_clean_mesh(tmp_path):
     assert a["max_skew"] == pytest.approx(0.0, abs=1e-12)
     assert a["min_ortho"] == pytest.approx(1.0)
     assert a["min_jac"] == pytest.approx(1.0)
+    assert a["max_size_ratio"] == 1.0  # one cell, no neighbour to jump to
     assert a["acceptable"] is True
     assert a["markers"] == {"MARKER_AIRFOIL": 2}  # narrowed to edge counts
 
@@ -331,6 +397,19 @@ def test_analyze_su2_counts_unmarked_boundary_edges(tmp_path):
 
     assert a["unmarked"] == 1
     assert a["acceptable"] is True  # a cell-shape verdict; the open boundary is judged separately
+
+
+def test_analyze_su2_size_jump_fails_the_size_ratio_gate(tmp_path):
+    # Two flawless rectangles, the second twice the first: every per-cell gate passes, so the jump
+    # between them is the only thing that can reject this mesh
+    a = _analyze_su2(_strip(tmp_path, [1.0, 2.0]))
+
+    assert a["max_size_ratio"] == pytest.approx(2.0)
+    assert a["max_size_ratio"] > SIZE_RATIO_LIMIT
+    assert a["max_skew"] == pytest.approx(0.0, abs=1e-12)
+    assert a["min_ortho"] == pytest.approx(1.0)
+    assert a["min_jac"] == pytest.approx(1.0)
+    assert a["acceptable"] is False
 # endregion
 
 
@@ -392,6 +471,23 @@ def test_quality_extreme_aspect_ratio_is_low_quality(tmp_path):
 
     assert flag == MeshExitFlag.LOW_QUALITY
     assert quality.max_ar > ASPECT_RATIO_LIMIT
+
+
+def test_quality_abrupt_size_change_is_low_quality(tmp_path):
+    # Graded, not severe: the cells are usable, the transition between them is what is out of spec
+    flag, quality, _ = Common_evaluate_mesh_quality(_strip(tmp_path, [1.0, 2.0]))
+
+    assert flag == MeshExitFlag.LOW_QUALITY
+    assert quality.max_size_ratio == pytest.approx(2.0)
+
+
+def test_quality_growth_within_the_size_ratio_limit_succeeds(tmp_path):
+    # 1.2 growth, the far side of the gate: stretched gradually, which is what a mesh is meant to do
+    flag, quality, _ = Common_evaluate_mesh_quality(_strip(tmp_path, [1.0, 1.2, 1.44]))
+
+    assert flag == MeshExitFlag.SUCCESS
+    assert quality.max_size_ratio == pytest.approx(1.2)
+    assert quality.max_size_ratio < SIZE_RATIO_LIMIT
 
 
 def test_quality_unmarked_boundary_is_conversion_fail(tmp_path):

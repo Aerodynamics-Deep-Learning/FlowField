@@ -8,10 +8,10 @@ import logging
 import numpy as np
 
 from .schemas import MeshQualitySummary, MeshExitFlag
-from .constants import SKEWNESS_LIMIT, ORTHO_MIN, JACOBIAN_LIMIT, ASPECT_RATIO_LIMIT
-# The four cell-shape gates `_analyze_su2` applies together, all as worst-cell values: equiangle
-# skewness, orthogonal quality, scaled Jacobian, and aspect ratio `constants.py` carries the logic 
-# for meshes each was calibrated against.
+from .constants import SKEWNESS_LIMIT, ORTHO_MIN, JACOBIAN_LIMIT, ASPECT_RATIO_LIMIT, SIZE_RATIO_LIMIT
+# The five gates `_analyze_su2` applies together, all as worst values: equiangle skewness,
+# orthogonal quality, scaled Jacobian, aspect ratio, and the neighbour size ratio. `constants.py`
+# carries the meshes each was calibrated against.
 
 logger = logging.getLogger(__name__)
 
@@ -135,35 +135,44 @@ def _cos(u, v):
         np.linalg.norm(u, axis=1) * np.linalg.norm(v, axis=1), 1e-30)
 
 
+def _faces(nnode, blocks):
+    """
+    Every cell face, in the order `blocks` lists the cells: its two nodes, its owning cell, and the
+    face-index pairs (i0, i1) that are the two sides of one interior face.
+    """
+    face_a = []; face_b = []; face_cell = []
+    offset = 0
+    for conn, _k in blocks:
+        M, k = conn.shape
+        face_a.append(conn.ravel())
+        face_b.append(np.roll(conn, -1, axis=1).ravel())
+        face_cell.append(np.repeat(np.arange(offset, offset + M), k))
+        offset += M
+    fa = np.concatenate(face_a); fb = np.concatenate(face_b); fc = np.concatenate(face_cell)
+
+    # Two faces carrying the same node pair are the two sides of one interior face; sorting by that
+    # pair puts them adjacent. A non-manifold edge (>2 uses) would only get its first two sides
+    # paired, which neither backend's structured output produces.
+    key = np.minimum(fa, fb).astype(np.int64) * nnode + np.maximum(fa, fb)
+    order = np.argsort(key, kind="stable")
+    shared = np.flatnonzero(key[order][:-1] == key[order][1:])
+    return fa, fb, fc, order[shared], order[shared + 1]
+
+
 def _orthogonal_quality(nodes, blocks):
     """
     Orthogonal quality per cell, in the order `blocks` lists them.
     """
     nodes = np.asarray(nodes, dtype=np.float64)
-    centroids = []; face_a = []; face_b = []; face_cell = []
-    offset = 0
-    for conn, _k in blocks:
-        M, k = conn.shape
-        centroids.append(nodes[conn].mean(axis=1))
-        face_a.append(conn.ravel())
-        face_b.append(np.roll(conn, -1, axis=1).ravel())
-        face_cell.append(np.repeat(np.arange(offset, offset + M), k))
-        offset += M
-    centroid = np.concatenate(centroids)
-    fa = np.concatenate(face_a); fb = np.concatenate(face_b); fc = np.concatenate(face_cell)
+    centroid = np.concatenate([nodes[conn].mean(axis=1) for conn, _k in blocks])
+    fa, fb, fc, i0, i1 = _faces(len(nodes), blocks)
 
     A = nodes[fa]; B = nodes[fb]
     edge = B - A
     normal = np.stack([edge[:, 1], -edge[:, 0]], axis=1)   # outward while the cell is wound CCW
     score = _cos(normal, 0.5 * (A + B) - centroid[fc])
 
-    # Neighbour term. Two faces carrying the same node pair are the two sides of one interior face;
-    # sorting by that pair puts them adjacent. A non-manifold edge (>2 uses) would only get its first
-    # two sides paired, which neither backend's structured output produces.
-    key = np.minimum(fa, fb).astype(np.int64) * len(nodes) + np.maximum(fa, fb)
-    order = np.argsort(key, kind="stable")
-    shared = np.flatnonzero(key[order][:-1] == key[order][1:])
-    i0 = order[shared]; i1 = order[shared + 1]
+    # Neighbour term, across each interior face
     joins = centroid[fc[i1]] - centroid[fc[i0]]
     score[i0] = np.minimum(score[i0], _cos(normal[i0], joins))
     score[i1] = np.minimum(score[i1], _cos(normal[i1], -joins))
@@ -174,6 +183,15 @@ def _orthogonal_quality(nodes, blocks):
         out.append(score[start:start + M * k].reshape(M, k).min(axis=1))
         start += M * k
     return np.concatenate(out)
+
+
+def _size_ratio(nnode, blocks, area):
+    """
+    Larger over smaller cell area across each interior face. `area` is per cell in `blocks` order.
+    """
+    _fa, _fb, fc, i0, i1 = _faces(nnode, blocks)
+    a0 = np.abs(area[fc[i0]]); a1 = np.abs(area[fc[i1]])
+    return np.maximum(a0, a1) / np.maximum(np.minimum(a0, a1), 1e-30)
 
 
 def _unmarked_boundary_edges(nnode, blocks, markers):
@@ -209,18 +227,22 @@ def _analyze_su2(su2_path):
     area = np.concatenate(area_all) if area_all else np.zeros(0)
     jac = np.concatenate(jac_all) if jac_all else np.zeros(0)
     ortho = _orthogonal_quality(nodes, blocks) if blocks else np.zeros(0)
+    size_ratio = _size_ratio(len(nodes), blocks, area) if blocks else np.zeros(0)
     ncell = len(skew)
     neg = int(np.sum(area <= 0))
     max_skew = float(skew.max()) if ncell else 0.0
     min_ortho = float(ortho.min()) if ncell else 1.0
     max_ar = float(ar.max()) if ncell else 0.0
     min_jac = float(jac.min()) if ncell else 1.0
-    # `ncell > 0` first: with no cells the rest pass vacuously (0 skew/ar, 0 neg, 1.0 ortho/jac)
+    max_size_ratio = float(size_ratio.max()) if len(size_ratio) else 1.0  # No interior face, no jump
+    # `ncell > 0` first: with no cells the rest pass vacuously (0 skew/ar, 0 neg, 1.0 ortho/jac/size ratio)
     ok = (ncell > 0 and (neg == 0) and (max_skew <= SKEWNESS_LIMIT) and (min_ortho >= ORTHO_MIN)
-          and (min_jac >= JACOBIAN_LIMIT) and (max_ar <= ASPECT_RATIO_LIMIT))
+          and (min_jac >= JACOBIAN_LIMIT) and (max_ar <= ASPECT_RATIO_LIMIT)
+          and (max_size_ratio <= SIZE_RATIO_LIMIT))
     return dict(nodes=nodes, polys=polys, skew=skew, ar=ar, area=area, jac=jac,
                 ncell=ncell, nnode=len(nodes), nquad=len(quads), ntri=len(tris),
                 neg=neg, max_skew=max_skew, min_ortho=min_ortho, max_ar=max_ar, min_jac=min_jac,
+                max_size_ratio=max_size_ratio,
                 markers={k: len(v) for k, v in markers.items()},
                 unmarked=_unmarked_boundary_edges(len(nodes), blocks, markers), acceptable=ok)
 
@@ -229,4 +251,5 @@ def _summary_from_analysis(a) -> dict:
     Narrow an `analyze_su2()` result to the fields `common.schemas.MeshQualitySummary` needs.
     """
     return dict(ncell=a["ncell"], max_skew=a["max_skew"], min_ortho=a["min_ortho"],
-                min_jac=a["min_jac"], max_ar=a["max_ar"], acceptable=a["acceptable"])
+                min_jac=a["min_jac"], max_ar=a["max_ar"], max_size_ratio=a["max_size_ratio"],
+                acceptable=a["acceptable"])

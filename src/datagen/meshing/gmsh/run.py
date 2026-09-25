@@ -6,11 +6,12 @@ except ImportError as e:  # the SDK is required here and nowhere else in this pa
     ) from e
 
 import os
+import threading
 import numpy as np
 import math
 
 from src.datagen.meshing.gmsh.io import GMSH_Write_Exception
-from src.datagen.meshing.gmsh.utils import GMSH_get_mesh_height, GMSH_scale_by_chord
+from src.datagen.meshing.gmsh.utils import GMSH_get_mesh_height, GMSH_get_layer_nodes, GMSH_scale_by_chord
 
 from src.datagen.schemas import Airfoil
 from src.datagen.meshing.gmsh.schemas import (
@@ -38,21 +39,27 @@ def GMSH_MeshGenerator(data: GMSH_In) -> GMSH_Out:
     # Infer the save paths
     log_path = os.path.join(data.working_dir, f"{data.airfoil.airfoil_name}_gmsh_log.txt")
     brep_path = None # Fallback value, in case brep dump was not generated
-
-    # Initialize Gmsh
-    gmsh.initialize()
-    gmsh.model.add("airfoil_mesh")
-    gmsh.option.setNumber("General.Terminal", 0)
-    gmsh.logger.start()
+    started = False # Whether this call initialized gmsh, so only its own session is finalized
 
     try:
+        # gmsh is one global instance per process, and initialize() needs the main thread for its SIGINT handler
+        if threading.current_thread() is not threading.main_thread():
+            raise RuntimeError("gmsh must run on the main thread of its own process; parallelize by process, not thread")
+
+        # Initialize Gmsh
+        started = True
+        gmsh.initialize()
+        gmsh.model.add("airfoil_mesh")
+        gmsh.option.setNumber("General.Terminal", 0)
+        gmsh.logger.start()
+
         # Get the mesh
+        h_first = GMSH_get_mesh_height(
+            Re= data.freestream.Re,
+            chord= data.airfoil.chord,
+            target_yplus= data.meshing_config.target_yplus
+        )
         if data.topology == GMSH_Topology.CGRD:
-            h_first = GMSH_get_mesh_height(
-                Re= data.freestream.Re,
-                chord= data.airfoil.chord,
-                target_yplus= data.meshing_config.target_yplus
-            )
             brep_path = GMSH_generate_cmesh(
                 meshing_config= data.meshing_config,
                 airfoil= data.airfoil,
@@ -63,6 +70,7 @@ def GMSH_MeshGenerator(data: GMSH_In) -> GMSH_Out:
             brep_path = GMSH_generate_omesh(
                 meshing_config= data.meshing_config,
                 airfoil= data.airfoil,
+                h_first= h_first,
                 working_dir=data.working_dir
             )
 
@@ -114,24 +122,26 @@ def GMSH_MeshGenerator(data: GMSH_In) -> GMSH_Out:
         )
 
     finally:
-        try:
-            log_messages = gmsh.logger.get()
-            with open(log_path, "w") as log_file:
-                for msg in log_messages:
-                    log_file.write(f"{msg}\n")
-            gmsh.logger.stop()
-        except Exception:
-            pass
-        gmsh.finalize()
+        if started and gmsh.isInitialized():
+            try:
+                log_messages = gmsh.logger.get()
+                with open(log_path, "w") as log_file:
+                    for msg in log_messages:
+                        log_file.write(f"{msg}\n")
+                gmsh.logger.stop()
+            except Exception:
+                pass
+            gmsh.finalize()
 
-def GMSH_generate_omesh(meshing_config: GMSH_OMeshingConfig, airfoil: Airfoil, working_dir: str) -> str:
+def GMSH_generate_omesh(meshing_config: GMSH_OMeshingConfig, airfoil: Airfoil, h_first: float, working_dir: str) -> str:
     """
-    Generates an O-mesh given the configs and airfoil geometry. Requires a sharp (unblunted)
-    trailing edge -- the airfoil's upper and lower surfaces are treated as meeting at one point.
+    Generates an O-mesh given the configs, airfoil geometry, and the first cell height. Requires a
+    sharp (unblunted) trailing edge -- the airfoil's upper and lower surfaces are treated as meeting at one point.
 
     Args:
         meshing_config (GMSH_OMeshingConfig): The O-mesh config data schema
         airfoil (Airfoil): The airfoil geometry data schema
+        h_first (float): The height of the first cell, derived with .utils.get_mesh_height
         working_dir (str): The string of the working directory
 
     Returns:
@@ -145,12 +155,13 @@ def GMSH_generate_omesh(meshing_config: GMSH_OMeshingConfig, airfoil: Airfoil, w
 
     ## 1- INFER DATA, UNPACK ##
     nx_afoil = meshing_config.nx_afoil
-    nr_farfield = meshing_config.nr_farfield
-    radial_growth_ratio = meshing_config.radial_growth_ratio
+    bl_growth_ratio = meshing_config.bl_growth_ratio
+    ff_growth_ratio = meshing_config.ff_growth_ratio
     # Chord-scaled lengths, pipeline normalizes chord to 1.0 upstream, so this is a no-op
     # multiply by 1 in the normal case; see GMSH_scale_by_chord
     farfield_radius = GMSH_scale_by_chord(meshing_config.farfield_radius, airfoil.chord)
     farfield_center_offset = GMSH_scale_by_chord(meshing_config.farfield_center_offset, airfoil.chord)
+    bl_thickness = GMSH_scale_by_chord(meshing_config.bl_thickness, airfoil.chord)
 
     # Unpack the coords: [te_upper -> ... -> le -> ... -> te_lower], with te_upper == te_lower
     # for an unblunted (sharp-TE) airfoil. Scaled to physical size, same as the config lengths above
@@ -178,8 +189,9 @@ def GMSH_generate_omesh(meshing_config: GMSH_OMeshingConfig, airfoil: Airfoil, w
     # Outer circle points, centered on (le_x + farfield_center_offset, le_y)
     cx = le_x + farfield_center_offset
     cy = le_y
-    F = P(cx - farfield_radius, cy)
-    B = P(cx + farfield_radius, cy)
+    f_xy, b_xy = np.array([cx - farfield_radius, cy]), np.array([cx + farfield_radius, cy])
+    F = P(*f_xy)
+    B = P(*b_xy)
     ang_up = np.linspace(0, np.pi, nx_afoil)        # B(0) -> top -> F(pi)
     ang_lo = np.linspace(np.pi, 2*np.pi, nx_afoil)  # F -> bottom -> B
     cu = [B] + [P(cx + farfield_radius*np.cos(a), cy + farfield_radius*np.sin(a)) for a in ang_up[1:-1]] + [F]
@@ -187,22 +199,36 @@ def GMSH_generate_omesh(meshing_config: GMSH_OMeshingConfig, airfoil: Airfoil, w
     c_ci_up = occ.addSpline(cu)   # B->F upper half
     c_ci_lo = occ.addSpline(cl)   # F->B lower half
 
-    # Radial seams
-    s_le = occ.addLine(LE, F)     # LE->F
-    s_te = occ.addLine(TE, B)     # TE->B
+    # Radial seams, each split at bl_thickness so the BL and farfield get their own progressions
+    le_xy, te_xy = np.array([le_x, le_y]), np.array([te_x, te_y])
+    BLE = P(*(le_xy + bl_thickness * (f_xy - le_xy) / np.linalg.norm(f_xy - le_xy)))
+    BTE = P(*(te_xy + bl_thickness * (b_xy - te_xy) / np.linalg.norm(b_xy - te_xy)))
+    s_le_bl = occ.addLine(LE, BLE)  # LE->BL edge
+    s_le_ff = occ.addLine(BLE, F)   # BL edge->F
+    s_te_bl = occ.addLine(TE, BTE)  # TE->BL edge
+    s_te_ff = occ.addLine(BTE, B)   # BL edge->B
 
     ## 3- SURFACES (O-grid: upper + lower, sharing the two seams) ##
-    lu = occ.addCurveLoop([c_af_up, s_te, c_ci_up, -s_le])   # LE->TE->B->F->LE
+    lu = occ.addCurveLoop([c_af_up, s_te_bl, s_te_ff, c_ci_up, -s_le_ff, -s_le_bl])   # LE->TE->B->F->LE
     su = occ.addPlaneSurface([lu])
-    ll = occ.addCurveLoop([s_le, c_ci_lo, -s_te, -c_af_lo])  # LE->F->B->TE->LE
+    ll = occ.addCurveLoop([s_le_bl, s_le_ff, c_ci_lo, -s_te_ff, -s_te_bl, -c_af_lo])  # LE->F->B->TE->LE
     sl = occ.addPlaneSurface([ll])
     occ.synchronize()
 
     ## 4- TRANSFINITE MESHING ##
+    # Radial node counts, same derivation as the C-mesh's: BL from h_first, farfield from the last BL cell
+    ny_bl = GMSH_get_layer_nodes(bl_thickness, h_first, bl_growth_ratio)
+    h_first_ff = h_first * (bl_growth_ratio ** (ny_bl - 2))
+    # The two farfield seams differ in length (the circle is offset), both need one count; size by the longer
+    ff_length = max(np.linalg.norm(f_xy - le_xy), np.linalg.norm(b_xy - te_xy)) - bl_thickness
+    ny_farfield = GMSH_get_layer_nodes(ff_length, h_first_ff, ff_growth_ratio)
+
     for c in (c_af_up, c_af_lo, c_ci_up, c_ci_lo):
         mesh.setTransfiniteCurve(c, nx_afoil)
-    for c in (s_le, s_te):
-        mesh.setTransfiniteCurve(c, nr_farfield, "Progression", radial_growth_ratio)
+    for c in (s_le_bl, s_te_bl):
+        mesh.setTransfiniteCurve(c, ny_bl, "Progression", bl_growth_ratio)
+    for c in (s_le_ff, s_te_ff):
+        mesh.setTransfiniteCurve(c, ny_farfield, "Progression", ff_growth_ratio)
     mesh.setTransfiniteSurface(su, "Left", [LE, TE, B, F])
     mesh.setTransfiniteSurface(sl, "Left", [LE, F, B, TE])
     mesh.setRecombine(2, su)
@@ -280,14 +306,12 @@ def GMSH_generate_cmesh(meshing_config: GMSH_CMeshingConfig, airfoil: Airfoil, h
 
     # 1c- Dynamic n_by/te/farfield calculation #
     # Boundary layer
-    n_cells_bl = math.log(1.0 + (bl_thickness / h_first) * (bl_growth_ratio - 1.0)) / math.log(bl_growth_ratio)
-    ny_bl = math.ceil(n_cells_bl) + 1
+    ny_bl = GMSH_get_layer_nodes(bl_thickness, h_first, bl_growth_ratio)
     h_last_bl = h_first * (bl_growth_ratio ** (ny_bl - 2))
     h_first_ff = h_last_bl
     # Farfield
     ff_length = farfield_radius - bl_thickness
-    n_cells_ff = math.log(1.0 + (ff_length / h_first_ff) * (ff_growth_ratio - 1.0)) / math.log(ff_growth_ratio)
-    ny_farfield = math.ceil(n_cells_ff) + 1
+    ny_farfield = GMSH_get_layer_nodes(ff_length, h_first_ff, ff_growth_ratio)
     # TE
     te_thickness = te_upper_y - te_lower_y
     te_coarsen_factor = meshing_config.te_coarsen_factor

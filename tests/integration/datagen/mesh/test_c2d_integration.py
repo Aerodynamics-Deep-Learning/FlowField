@@ -3,6 +3,9 @@ from pathlib import Path
 
 from src.datagen.meshing.c2d.run import C2D_MeshGenerator, C2D_find_exe
 from src.datagen.meshing.c2d.schemas import C2D_ExitFlag
+from src.datagen.meshing.common.constants import (
+    SKEWNESS_LIMIT, ORTHO_MIN, JACOBIAN_LIMIT, ASPECT_RATIO_LIMIT, SIZE_RATIO_LIMIT,
+)
 from src.datagen.meshing.common.quality import Common_evaluate_mesh_quality
 from src.datagen.meshing.common.schemas import MeshExitFlag
 
@@ -57,3 +60,18 @@ def test_c2d_cgrd_integration(sterile_c2d_cgrd_input):
     """C-grid counterpart on the sharp-TE fixture, the only test that meshes this pairing."""
 
     _generate_and_score(sterile_c2d_cgrd_input)
+
+
+def test_c2d_over_coarsened_grid_fails_on_size_ratio(sterile_c2d_input):
+    """A cell-count search coarsens until a gate stops it. At jmax=30 every per-cell gate still
+    passes while nearly every radial neighbour pair grows ~2.7x, so the size ratio is what rejects it."""
+    config = sterile_c2d_input.meshing_config.model_copy(update={"jmax": 30})
+    out = C2D_MeshGenerator(sterile_c2d_input.model_copy(update={"meshing_config": config}))
+    assert out.flag == C2D_ExitFlag.SUCCESS, f"c2d failed with flag {out.flag}"
+
+    flag, quality, _ = Common_evaluate_mesh_quality(out.mesh_path)
+
+    assert flag == MeshExitFlag.LOW_QUALITY, quality
+    assert quality.max_size_ratio > SIZE_RATIO_LIMIT
+    assert quality.max_skew <= SKEWNESS_LIMIT and quality.min_ortho >= ORTHO_MIN
+    assert quality.min_jac >= JACOBIAN_LIMIT and quality.max_ar <= ASPECT_RATIO_LIMIT

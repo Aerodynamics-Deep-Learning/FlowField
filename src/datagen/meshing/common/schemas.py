@@ -102,15 +102,15 @@ class MeshIn(BaseModel):
 
         config = raw.get("mesh_config")
         if config is None:
-            raw["mesh_config"] = expected()
+            config = expected()
         elif isinstance(config, dict):
-            raw["mesh_config"] = expected(**config)
+            config = expected(**config)
         elif not isinstance(config, expected):
             raise ValueError(
                 f"backend={pairing[0].value} with topology={pairing[1].value} requires "
                 f"{expected.__name__}, got {type(config).__name__}"
             )
-        return raw
+        return {**raw, "mesh_config": config}  # A copy: model_validate hands over the caller's own dict
 
 
 class MeshQualitySummary(BaseModel):
@@ -120,6 +120,7 @@ class MeshQualitySummary(BaseModel):
     min_ortho: float = Field(..., description="Worst cell's orthogonal quality, measured off face normals against the centroid-to-face and centroid-to-centroid vectors. 1 is perfectly orthogonal, 0 degenerate, negative folded. Reads a cell's neighbours, so it is not derivable from that cell's own corner angles the way skewness is")
     min_jac: float = Field(..., description="Worst cell's scaled Jacobian: 1 is a right-angled corner, 0 a collapsed one, below 0 a corner folded back on itself. The one metric here that detects a tangled cell, which skewness reads as well-shaped")
     max_ar: float # Maximum aspect ratio, self explanatory, not as hard as ortho or jac
+    max_size_ratio: float = Field(..., description="Worst neighbour size jump: larger over smaller cell area across any interior face, 1 where neighbours match. The one gate that sees how abruptly cell size changes, which every other metric scores cell by cell")
     acceptable: bool
 
 class MeshGeoDeviationSummary(BaseModel):

@@ -9,6 +9,7 @@ Step 2: Ensure a config that doesn't belong to the pairing is rejected
     - test_mesh_config_wrong_class_rejected
 Step 3: Ensure the resolution holds when the model is validated from a raw payload
     - test_mesh_config_resolved_when_validated_from_payload
+    - test_payload_is_left_untouched_for_reuse
 Step 4: Ensure a mistyped keyword can't silently fall back to the default config
     - test_unknown_keyword_rejected
     - test_config_unknown_key_rejected_per_pairing
@@ -98,6 +99,25 @@ def test_mesh_config_resolved_when_validated_from_payload():
 
     assert isinstance(restored.mesh_config, GMSH_OMeshingConfig)
     assert restored.mesh_config.nx_afoil == 77
+
+
+def test_payload_is_left_untouched_for_reuse():
+    # model_validate hands the resolver the caller's own dict; writing the resolved config into it
+    # used to leave a C-mesh config behind, which the same payload then failed on as an O-mesh
+    coords = torch.tensor([[1.0, 0.0063], [0.5, 0.06], [0.0, 0.0], [0.5, -0.06], [1.0, -0.0063]],
+                          dtype=torch.float32)
+    payload = {
+        "airfoil": Airfoil(airfoil_name="naca0012", coords_tensor=coords, chord=1.0, le_idx=2),
+        "freestream": Freestream(alpha=0.0, Re=5e6, mach=0.3, altitude_m=1.0),
+        "working_dir": tempfile.gettempdir(),
+        "backend": "gmsh",
+        "topology": "CGRID",
+    }
+    assert isinstance(MeshIn.model_validate(payload).mesh_config, GMSH_CMeshingConfig)
+    assert "mesh_config" not in payload
+
+    payload["topology"] = "OGRID"
+    assert isinstance(MeshIn.model_validate(payload).mesh_config, GMSH_OMeshingConfig)
 # endregion
 
 

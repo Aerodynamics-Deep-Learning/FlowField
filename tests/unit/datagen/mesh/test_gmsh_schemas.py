@@ -4,6 +4,7 @@ Tests for `gmsh.schemas.GMSH_In`'s topology-driven `meshing_config` resolver, i.
 Step 1: Ensure `topology` resolves the config class when none is given
     - test_meshing_config_defaults_per_topology
     - test_meshing_config_dict_is_coerced_to_the_topologys_class
+    - test_payload_is_left_untouched_for_reuse
 Step 2: Ensure a correctly-matched topology/config pair is accepted
     - test_cmesh_topology_with_cmesh_config_accepted
     - test_omesh_topology_with_omesh_config_accepted
@@ -52,6 +53,17 @@ def test_meshing_config_dict_is_coerced_to_the_topologys_class():
     )
     assert isinstance(data.meshing_config, GMSH_OMeshingConfig)
     assert data.meshing_config.nx_afoil == 55
+
+
+def test_payload_is_left_untouched_for_reuse():
+    # Mirrors MeshIn's: the resolver must not write the resolved config into the caller's dict
+    payload = {"airfoil": _airfoil(), "freestream": _freestream(), "working_dir": "/tmp",
+               "topology": "CGRID"}
+    assert isinstance(GMSH_In.model_validate(payload).meshing_config, GMSH_CMeshingConfig)
+    assert "meshing_config" not in payload
+
+    payload["topology"] = "OGRID"
+    assert isinstance(GMSH_In.model_validate(payload).meshing_config, GMSH_OMeshingConfig)
 # endregion
 
 
