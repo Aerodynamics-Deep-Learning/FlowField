@@ -5,7 +5,7 @@ from typing import Optional
 class Airfoil(BaseModel):
     model_config = {"arbitrary_types_allowed": True}
 
-    airfoil_name: Optional[str] = Field(None, description="Name of the airfoil used")
+    airfoil_name: str = Field("not_given", min_length=1, description="Name of the airfoil used, both meshing backends build their output filenames from it")
     coords_tensor: torch.Tensor = Field(..., description="The geometry tensor of the airfoil in Selig format")
     coords_path: Optional[str] = Field(None, description="The path to the geometry file in Selig format, ending with .dat")
     chord: float = Field(1, gt=0.0, description="The chord length of the parameterized airfoil")

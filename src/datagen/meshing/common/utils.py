@@ -148,8 +148,10 @@ def Common_validate_tensor_numeric(coords_tensor: torch.Tensor, chord_tol: float
     """
     if not isinstance(coords_tensor, torch.Tensor):
         return False, f"Airfoil input is not a torch.Tensor, it is: {type(coords_tensor)}"
-    elif coords_tensor.ndim != 2 or coords_tensor.shape[1] not in (2, 3):
-        return False, f"Airfoil input tensor has unexpected number of dims: {coords_tensor.ndim}, {coords_tensor.shape[1]}"
+    # Empty is rejected here too, before min/max below raise on it
+    elif coords_tensor.ndim != 2 or coords_tensor.shape[0] == 0 or coords_tensor.shape[1] not in (2, 3):
+        return False, (f"Airfoil input tensor has unexpected shape: {tuple(coords_tensor.shape)}, "
+                       f"expected (N, 2) or (N, 3) with N > 0")
     elif torch.isnan(coords_tensor).any().item():
         return False, f"Airfoil input tensor has NaN values"
     elif torch.isinf(coords_tensor).any().item():

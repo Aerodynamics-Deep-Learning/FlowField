@@ -28,10 +28,9 @@ def write_airfoil_dat(airfoil, path: str) -> str:
 
     Returns the path written.
     """
-    name = airfoil.airfoil_name or "airfoil"
     coords = airfoil.coords_tensor.detach().cpu().numpy()
     with open(path, "w") as f:
-        f.write(f"{name}\n")
+        f.write(f"{airfoil.airfoil_name}\n")
         for x, y in coords:
             f.write(f"{float(x): .8f} {float(y): .8f}\n")
     return path

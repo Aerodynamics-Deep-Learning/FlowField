@@ -88,7 +88,8 @@ class C2D_In(BaseModel):
     @model_validator(mode="after")
     def _sync_topo_with_topology(self) -> "C2D_In":
         if self.meshing_config.topo is None:
-            self.meshing_config.topo = self.topology.value
+            # A copy: pydantic keeps the caller's instance, which may be reused for the other topology
+            self.meshing_config = self.meshing_config.model_copy(update={"topo": self.topology.value})
         elif self.meshing_config.topo != self.topology:
             raise ValueError(
                 f"topology={self.topology!r} does not match meshing_config.topo="

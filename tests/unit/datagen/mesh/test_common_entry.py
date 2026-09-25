@@ -18,12 +18,14 @@ Step 5: Ensure nothing escapes as an exception -- every failure leaves as a Mesh
     - test_entry_gmsh_input_validation_error_becomes_flag
     - test_entry_c2d_input_validation_error_becomes_flag
     - test_entry_backend_exception_becomes_flag
+    - test_entry_malformed_tensor_becomes_flag
     - test_entry_unparseable_mesh_keeps_its_paths
     - test_entry_quality_exception_becomes_flag
     - test_entry_geo_dev_exception_becomes_flag
 Step 6: Ensure the config MeshIn resolved reaches the backend unmodified
     - test_entry_forwards_the_resolved_config_to_gmsh
     - test_entry_forwards_the_resolved_config_to_c2d
+    - test_entry_one_c2d_config_sweeps_both_topologies
 
 Scope: this file covers the dispatcher only. Each backend's own runner is tested in
 test_gmsh_runner.py / test_c2d_runner.py, the shared validators in test_common_utils.py, and the
@@ -280,6 +282,23 @@ def test_entry_backend_exception_becomes_flag(mock_generator):
     assert out.backend == MeshBackend.GMSH
 
 
+@pytest.mark.parametrize("bad_coords", [
+    torch.tensor([1.0, 0.5, 0.0, 0.5, 1.0]),
+    torch.tensor(1.0),
+    torch.empty((0, 2)),
+], ids=["1d", "0d", "empty"])
+@patch("src.datagen.meshing.common.entry.GMSH_MeshGenerator")
+def test_entry_malformed_tensor_becomes_flag(mock_generator, bad_coords):
+    # The real validator, unpatched: it runs ahead of the dispatch `try`, so a raise from it escapes
+    data = _blunt_mesh_in(MeshBackend.GMSH, MeshTopology.CGRD)
+    data.airfoil.coords_tensor = bad_coords
+
+    out = Common_GenerateMesh(data)
+
+    assert out.flag == MeshExitFlag.INPUT_TENSOR_FAIL
+    assert not mock_generator.called
+
+
 @patch("src.datagen.meshing.common.entry.GMSH_MeshGenerator")
 def test_entry_unparseable_mesh_keeps_its_paths(mock_generator, tmp_path):
     # The real quality pass, against a mesh that generated fine but cannot be read back. Because
@@ -376,4 +395,19 @@ def test_entry_forwards_the_resolved_config_to_c2d(mock_generator):
     assert c2d_in.meshing_config.jmax == 321
     assert c2d_in.topology == C2D_Topology.OGRD
     assert c2d_in.meshing_config.topo == "OGRD"
+
+
+@patch("src.datagen.meshing.common.entry.C2D_MeshGenerator")
+def test_entry_one_c2d_config_sweeps_both_topologies(mock_generator):
+    # A topology sweep reusing one config: the first run used to pin `topo` onto it, turning the
+    # second into a conflict reported as FATAL_ERROR
+    mock_generator.return_value = _mock_backend_out(C2D_ExitFlag.SUBPROCESS_FAIL)
+    config = C2D_MeshingConfig()
+
+    for topology in (MeshTopology.OGRD, MeshTopology.CGRD):
+        out = Common_GenerateMesh(_blunt_mesh_in(MeshBackend.C2D, topology, mesh_config=config))
+
+        assert out.flag == MeshExitFlag.SUBPROCESS_FAIL
+        assert mock_generator.call_args.args[0].meshing_config.topo == C2D_Topology[topology.name].value
+    assert config.topo is None
 # endregion

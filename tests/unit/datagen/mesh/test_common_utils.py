@@ -38,10 +38,18 @@ from src.datagen.meshing.common.utils import (
     (np.array([[1.0, 0.0], [0.5, 0.5], [0.0, 0.0], [0.5, -0.5], [1.0, 0.0]]), 
      ["not", "torch.tensor"]),
     
-    # 2. Not 2D (1D column tensor)
-    (torch.tensor([[1.0], [0.5], [0.0], [0.5], [1.0]], dtype=torch.float32), 
-     ["unexpected", "number", "dims"]),
-    
+    # 2. 2-D, but one column instead of (x, y)
+    (torch.tensor([[1.0], [0.5], [0.0], [0.5], [1.0]], dtype=torch.float32),
+     ["unexpected", "shape", "(5, 1)"]),
+
+    # 2b. Not 2-D: 1-D and 0-D, which have no shape[1] for the message to read
+    (torch.tensor([1.0, 0.5, 0.0, 0.5, 1.0], dtype=torch.float32),
+     ["unexpected", "shape", "(5,)"]),
+    (torch.tensor(1.0), ["unexpected", "shape", "()"]),
+
+    # 2c. Empty, which min()/max() raise on
+    (torch.empty((0, 2)), ["unexpected", "shape", "(0, 2)"]),
+
     # 3. Contains NaN (Note: checklist strictly lowercase)
     (torch.tensor([[1.0, torch.nan], [0.5, 0.5], [0.0, 0.0], [0.5, -0.5], [1.0, 0.0]], dtype=torch.float32), 
      ["has", "nan"]),

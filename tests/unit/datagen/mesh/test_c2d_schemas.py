@@ -9,6 +9,8 @@ Step 3: Ensure a `meshing_config.topo` conflicting with `topology` is rejected
     - test_mismatched_topo_is_rejected
 Step 4: Ensure `topology` itself is required
     - test_missing_topology_rejected
+Step 5: Ensure the sync leaves the caller's config untouched
+    - test_one_config_serves_both_topologies
 """
 
 import torch
@@ -65,4 +67,20 @@ def test_missing_topology_rejected():
             airfoil=_airfoil(), freestream=_freestream(), working_dir="/tmp",
             meshing_config=C2D_MeshingConfig(),
         )
+# endregion
+
+
+# region Step 5
+def test_one_config_serves_both_topologies():
+    # pydantic keeps a passed model instance as-is, so filling `topo` in place used to pin the
+    # caller's config to the first topology and fail the second as a conflict
+    config = C2D_MeshingConfig()
+    for topology in (C2D_Topology.OGRD, C2D_Topology.CGRD):
+        data = C2D_In(
+            airfoil=_airfoil(), freestream=_freestream(), working_dir="/tmp",
+            topology=topology, meshing_config=config,
+        )
+        assert data.meshing_config.topo == topology.value
+
+    assert config.topo is None
 # endregion
