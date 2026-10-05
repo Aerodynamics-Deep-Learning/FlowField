@@ -4,159 +4,125 @@ Tests for `GMSH_MeshGenerator`, i.e.:
 Step 1: Ensure gmsh-specific structural failure modes route to the expected GMSH_ExitFlag
     (mesh-quality acceptability is decided centrally by common.entry.Common_evaluate_mesh_quality,
     not here -- see test_common_entry.py / test_cross_backend.py)
-    - test_runner_extrusion_fail
+    - test_executable_not_found_routing
     - test_runner_fatal_error
+    - test_clean_exit_without_a_mesh_is_fatal
+    - test_runner_extrusion_fail
     - test_runner_success
-Step 2: Ensure the two regressions found in the gmsh audit stay fixed
-    - test_mesh_path_vtk_is_full_path_not_bare_filename
-    - test_empty_extrusion_does_not_raise_nameerror
-Step 3: Ensure a call off the main thread is flagged without touching gmsh
-    - test_runner_off_main_thread_touches_no_gmsh
+Step 2: Ensure a gmsh failure is caught from its output, since its exit code alone is not reliable
+    - test_run_script_raises_on_gmsh_failure
+    - test_run_script_returns_the_log_on_a_clean_run
 
-The c2d counterpart is test_c2d_runner.py. Input-validation short-circuit routing
-(tensor/TE-shape/freestream) is NOT here: GMSH_MeshGenerator used to run those checks itself, but
-they moved to common/entry.py (via common.utils.Common_validate_*; see test_common_entry.py's
-Step 1, and test_common_utils.py for the validators themselves).
+The c2d counterpart is test_c2d_runner.py. The builders run for real here, as they only write script
+text; the gmsh process is stubbed, and runs for real in the integration tier.
 """
 
-import tempfile
-from concurrent.futures import ThreadPoolExecutor
-from unittest.mock import patch, MagicMock
+import subprocess
+from pathlib import Path
+from unittest.mock import patch
 
-import numpy as np
 import pytest
-
-# gmsh/run.py imports the SDK at module scope, so it is needed even though the API is patched.
-pytest.importorskip("gmsh", reason="gmsh Python SDK not installed")
+import torch
 
 from src.datagen.schemas import Airfoil, Freestream
-from src.datagen.meshing.gmsh.schemas import GMSH_ExitFlag, GMSH_CMeshingConfig, GMSH_Topology
-from src.datagen.meshing.gmsh.run import GMSH_MeshGenerator
+from src.datagen.meshing.gmsh.geo import GeoScript
+from src.datagen.meshing.gmsh.schemas import GMSH_In, GMSH_ExitFlag, GMSH_CMeshingConfig, GMSH_Topology
+from src.datagen.meshing.gmsh.run import GMSH_MeshGenerator, GMSH_run_script
+
+RUNNER = "src.datagen.meshing.gmsh.run"
+
+_NACA0012 = [
+    [1.0, 0.00126], [0.9, 0.01055], [0.8, 0.01816], [0.7, 0.02412], [0.6, 0.02824],
+    [0.5, 0.03038], [0.4, 0.03039], [0.3, 0.02797], [0.2, 0.02285], [0.1, 0.01448],
+    [0.05, 0.00908], [0.0125, 0.00443], [0.0, 0.0],
+    [0.0125, -0.00443], [0.05, -0.00908], [0.1, -0.01448], [0.2, -0.02285],
+    [0.3, -0.02797], [0.4, -0.03039], [0.5, -0.03038], [0.6, -0.02824],
+    [0.7, -0.02412], [0.8, -0.01816], [0.9, -0.01055], [1.0, -0.00126],
+]
 
 
-def _mock_gmsh_input():
-    """Sterile `GMSH_In` stand-in for the tests below."""
-    data = MagicMock()
-
-    # tempfile.gettempdir() keeps the tests from writing into the repo (and avoids Windows path errs)
-    data.working_dir = tempfile.gettempdir()
-
-    # .model_construct() bypasses pydantic's validation, so the mocks don't need real geometry
-    data.airfoil = Airfoil.model_construct(airfoil_name="naca0012", coords_tensor=MagicMock(), chord=1.0)
-    data.freestream = Freestream.model_construct(Re=1e6, mach=0.1, alpha=0.0)
-    data.topology = GMSH_Topology.CGRD
-    data.meshing_config = GMSH_CMeshingConfig.model_construct(target_yplus=1.0)
-
-    return data
+def _gmsh_in(working_dir: str) -> GMSH_In:
+    coords = torch.tensor(_NACA0012, dtype=torch.float32)
+    return GMSH_In(
+        airfoil=Airfoil(airfoil_name="naca_test", coords_tensor=coords, chord=1.0, le_idx=12),
+        freestream=Freestream(alpha=0.0, Re=2e6, mach=0.3), topology=GMSH_Topology.CGRD,
+        meshing_config=GMSH_CMeshingConfig(upper_anchor_idx=6, lower_anchor_idx=18), working_dir=working_dir,
+    )
 
 
-# The gmsh API, the CAD/mesh builder and the BL-height helper are all stubbed: these tests are
-# about GMSH_MeshGenerator's own flagging, not about gmsh itself.
-api_patches = (
-    patch("src.datagen.meshing.gmsh.run.gmsh"),
-    patch("src.datagen.meshing.gmsh.run.GMSH_generate_cmesh", return_value="/tmp/mock.brep"),
-    patch("src.datagen.meshing.gmsh.run.GMSH_get_mesh_height", return_value=1e-5),
-)
+def _writes_su2(body: str):
+    """A `GMSH_run_script` stand-in that writes `body` where the runner expects the mesh."""
+    def run(exe, geo, geo_path, working_dir, timeout):
+        Path(geo_path).with_suffix(".su2").write_text(body)
+        return "log"
+    return run
 
 
-def apply_api_patches(func):
-    for api in api_patches:
-        func = api(func)
-    return func
+def _run(working_dir, **run_script):
+    with patch(f"{RUNNER}.find_tool", return_value="/fake/gmsh"), \
+         patch(f"{RUNNER}.GMSH_run_script", **run_script):
+        return GMSH_MeshGenerator(_gmsh_in(working_dir))
 
 
 # region Step 1
-@apply_api_patches
-def test_runner_extrusion_fail(mock_gmsh, *args):
-    mock_input = _mock_gmsh_input()
-
-    # Simulating a mesh with no quads, i.e. the BL extrusion produced nothing
-    mock_gmsh.model.mesh.getElementsByType.return_value = (np.array([]), None)
-    mock_gmsh.model.mesh.getNodes.return_value = ([1, 2], None, None)
-
-    out = GMSH_MeshGenerator(mock_input)
-
-    assert out.flag == GMSH_ExitFlag.EXTRUSION_FAIL
-    mock_gmsh.finalize.assert_called_once()
+def test_executable_not_found_routing(tmp_path):
+    with patch(f"{RUNNER}.find_tool", return_value=None):
+        out = GMSH_MeshGenerator(_gmsh_in(str(tmp_path)))
+    assert out.flag == GMSH_ExitFlag.EXECUTABLE_NOT_FOUND
+    assert list(tmp_path.iterdir()) == []
 
 
-@apply_api_patches
-def test_runner_fatal_error(mock_gmsh, *args):
-    mock_input = _mock_gmsh_input()
-
-    # args[0] maps to generate_cmesh based on the tuple order (bottom-up mapping)
-    mock_generate_cmesh = args[0]
-    mock_generate_cmesh.side_effect = RuntimeError("Mesher segfaulted")
-
-    with patch("src.datagen.meshing.gmsh.run.GMSH_Write_Exception") as mock_writer:
-        mock_writer.return_value = "/tmp/exception.txt"
-
-        out = GMSH_MeshGenerator(mock_input)
-
-        assert out.flag == GMSH_ExitFlag.FATAL_ERROR
-        assert out.verbose_list[2] == "/tmp/exception.txt"
-        mock_gmsh.finalize.assert_called_once()
-
-
-@apply_api_patches
-def test_runner_success(mock_gmsh, *args):
-    mock_input = _mock_gmsh_input()
-
-    # Inject a non-empty quad layer
-    mock_gmsh.model.mesh.getElementsByType.return_value = (np.array([2]), None)
-    mock_gmsh.model.mesh.getNodes.return_value = ([1, 2], None, None)
-
-    out = GMSH_MeshGenerator(mock_input)
-
-    assert out.flag == GMSH_ExitFlag.SUCCESS
-    assert mock_gmsh.write.call_count == 2  # Assert it attempted to save .su2 and .vtk
-    mock_gmsh.finalize.assert_called_once()
-# endregion
-
-
-# region Step 2 (regression coverage for the two bugs found during the audit)
-@apply_api_patches
-def test_mesh_path_vtk_is_full_path_not_bare_filename(mock_gmsh, *args):
-    mock_input = _mock_gmsh_input()
-    mock_gmsh.model.mesh.getElementsByType.return_value = (np.array([2]), None)
-    mock_gmsh.model.mesh.getNodes.return_value = ([1, 2], None, None)
-
-    out = GMSH_MeshGenerator(mock_input)
-
-    assert out.flag == GMSH_ExitFlag.SUCCESS
-    assert out.mesh_path_vtk == out.mesh_path.replace("_mesh.su2", "_mesh.vtk")
-    assert out.mesh_path_vtk.startswith(mock_input.working_dir)
-
-
-@apply_api_patches
-def test_empty_extrusion_does_not_raise_nameerror(mock_gmsh, *args):
-    mock_input = _mock_gmsh_input()
-    # No 2D elements at all.
-    mock_gmsh.model.mesh.getElementsByType.return_value = (np.array([]), None)
-    mock_gmsh.model.mesh.getNodes.return_value = ([], None, None)
-
-    out = GMSH_MeshGenerator(mock_input)
-
-    assert out.flag == GMSH_ExitFlag.EXTRUSION_FAIL
-# endregion
-
-
-# region Step 3
-@apply_api_patches
-def test_runner_off_main_thread_touches_no_gmsh(mock_gmsh, *args):
-    # gmsh is process-global, so a rejected thread must not even finalize, or it could end another's live session
-    mock_input = _mock_gmsh_input()
-
-    with patch("src.datagen.meshing.gmsh.run.GMSH_Write_Exception") as mock_writer:
-        mock_writer.return_value = "/tmp/exception.txt"
-        with ThreadPoolExecutor(1) as ex:
-            out = ex.submit(GMSH_MeshGenerator, mock_input).result()
-
+def test_runner_fatal_error(tmp_path):
+    out = _run(str(tmp_path), side_effect=RuntimeError("gmsh reported a failure"))
     assert out.flag == GMSH_ExitFlag.FATAL_ERROR
-    assert out.verbose_list[2] == "/tmp/exception.txt"
-    raised = mock_writer.call_args.args[0]
-    assert isinstance(raised, RuntimeError) and "main thread" in str(raised)
-    mock_gmsh.initialize.assert_not_called()
-    mock_gmsh.isInitialized.assert_not_called()
-    mock_gmsh.finalize.assert_not_called()
+    assert "gmsh reported a failure" in Path(out.verbose_list[2]).read_text()
+
+
+def test_clean_exit_without_a_mesh_is_fatal(tmp_path):
+    out = _run(str(tmp_path), return_value="log")
+    assert out.flag == GMSH_ExitFlag.FATAL_ERROR
+    assert "wrote no mesh" in Path(out.verbose_list[2]).read_text()
+
+
+def test_runner_extrusion_fail(tmp_path):
+    # No elements at all, which used to raise a NameError rather than flag
+    out = _run(str(tmp_path), side_effect=_writes_su2("NDIME= 2\nNELEM= 0\nNPOIN= 0\nNMARK= 0\n"))
+    assert out.flag == GMSH_ExitFlag.EXTRUSION_FAIL
+
+
+def test_runner_success(tmp_path):
+    su2 = "NDIME= 2\nNELEM= 1\n9 0 1 2 3 0\nNPOIN= 4\n0 0 0\n1 0 1\n1 1 2\n0 1 3\nNMARK= 0\n"
+    out = _run(str(tmp_path), side_effect=_writes_su2(su2))
+    assert out.flag == GMSH_ExitFlag.SUCCESS
+    assert out.num_nodes == 4
+    # Full paths, not bare filenames (a regression the gmsh audit found)
+    assert out.mesh_path_vtk == out.mesh_path.replace("_mesh.su2", "_mesh.vtk")
+    assert out.mesh_path_vtk.startswith(str(tmp_path))
+    assert Path(out.verbose_list[0]).read_text() == "log"
+# endregion
+
+
+# region Step 2
+@pytest.mark.parametrize("result, message", [
+    (subprocess.CompletedProcess([], 0, "Info    : Reading\nError   : Unknown curve 7\n", ""), "reported a failure"),
+    (subprocess.CompletedProcess([], 1, "", ""), "reported a failure"),
+    (subprocess.TimeoutExpired("gmsh", 5), "timed out"),
+    (FileNotFoundError("no gmsh here"), "failed to launch"),
+])
+def test_run_script_raises_on_gmsh_failure(tmp_path, result, message):
+    stub = {"side_effect": result} if isinstance(result, BaseException) else {"return_value": result}
+    with patch(f"{RUNNER}.subprocess.run", **stub), pytest.raises(RuntimeError, match=message):
+        GMSH_run_script(exe="gmsh", geo=GeoScript(), geo_path=str(tmp_path / "m.geo"),
+                        working_dir=str(tmp_path), timeout=5)
+
+
+def test_run_script_returns_the_log_on_a_clean_run(tmp_path):
+    geo = GeoScript()
+    geo.addPoint(0.0, 0.0, 0.0)
+    done = subprocess.CompletedProcess([], 0, "Info    : Done\nWarning : a warning is not a failure\n", "")
+    with patch(f"{RUNNER}.subprocess.run", return_value=done):
+        log = GMSH_run_script(exe="gmsh", geo=geo, geo_path=str(tmp_path / "m.geo"),
+                              working_dir=str(tmp_path), timeout=5)
+    assert "a warning is not a failure" in log
+    assert (tmp_path / "m.geo").read_text() == geo.text()
 # endregion

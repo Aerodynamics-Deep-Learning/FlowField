@@ -4,8 +4,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-gmsh = pytest.importorskip("gmsh", reason="gmsh Python SDK not installed")
-
+from src.datagen.utils.tools import find_tool
 from src.datagen.meshing.gmsh.run import GMSH_MeshGenerator
 from src.datagen.meshing.gmsh.schemas import GMSH_ExitFlag
 from src.datagen.meshing.gmsh.utils import GMSH_get_mesh_height
@@ -13,6 +12,8 @@ from src.datagen.meshing.common.constants import MARKER_AIRFOIL
 from src.datagen.meshing.common.entry import Common_GenerateMesh
 from src.datagen.meshing.common.quality import Common_evaluate_mesh_quality, _read_su2, _cell_metrics
 from src.datagen.meshing.common.schemas import MeshIn, MeshBackend, MeshTopology, MeshExitFlag
+
+pytestmark = pytest.mark.skipif(find_tool("gmsh") is None, reason="gmsh executable not found (set it in tools.toml)")
 
 
 def assert_no_inverted_cells(mesh_path):
@@ -113,21 +114,24 @@ def test_gmsh_omesh_first_cell_follows_target_yplus(sterile_gmsh_omesh_input):
     assert np.median(heights) >= 0.5 * h_first, f"First cell median {np.median(heights):.3e} is far below h_first={h_first:.3e}"
 
 
-def test_gmsh_off_main_thread_is_flagged_through_entry(sterile_gmsh_input):
-    """gmsh needs the main thread of its own process (see `GMSH_MeshGenerator`). Run from a worker
-    thread, the refusal has to reach `Common_GenerateMesh`'s caller as a flag with its reason on disk,
-    and leave no gmsh session behind: gmsh used to be initialized before the failure and never finalized."""
-    data = MeshIn(
-        airfoil=sterile_gmsh_input.airfoil, freestream=sterile_gmsh_input.freestream,
-        working_dir=sterile_gmsh_input.working_dir, backend=MeshBackend.GMSH,
-        topology=MeshTopology.CGRD, mesh_config=sterile_gmsh_input.meshing_config,
-    )
-    with ThreadPoolExecutor(1) as ex:
-        out = ex.submit(Common_GenerateMesh, data).result()
+def test_gmsh_runs_concurrently_from_worker_threads(sterile_gmsh_input):
+    """gmsh runs as its own process per mesh, so worker threads can drive it concurrently, which the
+    in-process SDK could not (one global gmsh per process, main thread only). Two runs at once, in
+    separate run dirs, through `Common_GenerateMesh`, must each produce the same mesh."""
+    runs = []
+    for i in range(2):
+        working_dir = Path(sterile_gmsh_input.working_dir) / f"run{i}"
+        working_dir.mkdir()
+        runs.append(MeshIn(
+            airfoil=sterile_gmsh_input.airfoil, freestream=sterile_gmsh_input.freestream,
+            working_dir=str(working_dir), backend=MeshBackend.GMSH,
+            topology=MeshTopology.CGRD, mesh_config=sterile_gmsh_input.meshing_config,
+        ))
+    with ThreadPoolExecutor(2) as ex:
+        outs = list(ex.map(Common_GenerateMesh, runs))
 
-    assert out.flag == MeshExitFlag.FATAL_ERROR
-    assert out.mesh_path is None and out.quality is None and out.geo_dev is None
-    assert len(out.verbose_list) == 3 and out.verbose_list[2] is not None, out.verbose_list
-    assert "main thread" in Path(out.verbose_list[2]).read_text()
-    assert not gmsh.isInitialized(), "gmsh was left initialized by the rejected run"
+    for out in outs:
+        assert out.flag in (MeshExitFlag.SUCCESS, MeshExitFlag.LOW_QUALITY), out.flag
+    assert outs[0].num_nodes == outs[1].num_nodes
+    assert Path(outs[0].mesh_path).read_bytes() == Path(outs[1].mesh_path).read_bytes()
 

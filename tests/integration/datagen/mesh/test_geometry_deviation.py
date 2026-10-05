@@ -26,13 +26,14 @@ from pathlib import Path
 
 import pytest
 
-pytest.importorskip("gmsh", reason="gmsh Python SDK not installed")
-
+from src.datagen.utils.tools import find_tool
 from src.datagen.meshing.c2d.run import C2D_MeshGenerator, C2D_find_exe
 from src.datagen.meshing.gmsh.run import GMSH_MeshGenerator
 from src.datagen.meshing.gmsh.schemas import GMSH_ExitFlag
 from src.datagen.meshing.common.geo_dev import Common_evaluate_mesh_geo_dev, GEO_DEV_LIMIT
 from src.datagen.meshing.common.schemas import MeshExitFlag
+
+_needs_gmsh = pytest.mark.skipif(find_tool("gmsh") is None, reason="gmsh executable not found (set it in tools.toml)")
 
 
 def _assert_within_limit(mesh_path, airfoil, label):
@@ -48,6 +49,7 @@ def _assert_within_limit(mesh_path, airfoil, label):
     return s
 
 
+@_needs_gmsh
 def test_gmsh_cmesh_boundary_reproduces_the_airfoil(sterile_gmsh_input):
     out = GMSH_MeshGenerator(sterile_gmsh_input)
     assert out.flag == GMSH_ExitFlag.SUCCESS, f"gmsh C-mesh failed with flag {out.flag}"
@@ -58,6 +60,7 @@ def test_gmsh_cmesh_boundary_reproduces_the_airfoil(sterile_gmsh_input):
     assert s.chord == pytest.approx(sterile_gmsh_input.airfoil.chord, rel=1e-4)
 
 
+@_needs_gmsh
 def test_gmsh_omesh_boundary_reproduces_the_airfoil(sterile_gmsh_omesh_input):
     out = GMSH_MeshGenerator(sterile_gmsh_omesh_input)
     assert out.flag == GMSH_ExitFlag.SUCCESS, f"gmsh O-mesh failed with flag {out.flag}"
@@ -79,6 +82,7 @@ def test_c2d_boundary_reproduces_the_airfoil(sterile_c2d_input):
     assert s.chord == pytest.approx(1.0, rel=1e-4)
 
 
+@_needs_gmsh
 def test_input_to_mesh_deviation_falls_with_surface_resolution(sterile_gmsh_omesh_input):
     """
     The two deviation directions measure different things, and this is the evidence.

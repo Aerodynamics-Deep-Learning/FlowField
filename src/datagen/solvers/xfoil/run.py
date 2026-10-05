@@ -4,6 +4,7 @@ from .build import XFoil_Build_Cp
 from .convergence import XFoil_Check_ConvergenceCp
 from .io import XFoil_Parse_Cp, XFoil_Write_Stdout
 from .convert import XFoil_Cp_To_Conservative_State
+from ...utils.tools import find_tool
 
 import subprocess
 
@@ -20,6 +21,16 @@ def XFoil_Runner(XFoil_In: XFoil_WarmStartIn) -> XFoil_WarmStartOut:
     Returns:
         XFoil_WarmStartOut: The standard warm start output data agreement
     """
+    # A missing solver is a flag, not an exception, returned before anything is written
+    xfoil_exe = find_tool("xfoil")
+    if xfoil_exe is None:
+        return XFoil_WarmStartOut(
+            airfoil=XFoil_In.airfoil,
+            freestream=XFoil_In.freestream,
+            flag=XFoil_ConvergenceFlag.EXECUTABLE_NOT_FOUND,
+            verbose_list=[None, None, None]
+        )
+
     # Writes the geometry given the airfoil tensor, if it doesn't exist
     if XFoil_In.airfoil.coords_path is None:
         coords_path = XFoil_Geometry_Write(
@@ -42,7 +53,7 @@ def XFoil_Runner(XFoil_In: XFoil_WarmStartIn) -> XFoil_WarmStartOut:
 
     # Runs the subprocess, gets flag and stdout
     flag, stdout = XFoil_Run_Cp(
-        xfoil_exe=XFoil_In.xfoil_exe,
+        xfoil_exe=xfoil_exe,
         input_script_path=input_script_path,
         cp_file_path=cp_file_path,
         timeout_sec=XFoil_In.solver_config.timeout_sec,

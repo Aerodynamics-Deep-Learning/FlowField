@@ -1,0 +1,12 @@
+# Copy to tools.toml (gitignored) and point each entry at your own install. FlowField ships none
+# of these tools; each is installed separately under its own licence.
+#
+# Lookup order per tool: env var FLOWFIELD_TOOL_<KEY> (e.g. FLOWFIELD_TOOL_SU2_CFD), then this
+# file, then PATH. A path set here is authoritative: if it does not exist the tool is reported as
+# not found, with no fallback to PATH. Relative paths resolve against this file's directory.
+
+[tools]
+# gmsh    = 'C:\path\to\gmsh.exe'
+# c2d     = 'C:\path\to\c2d.exe'
+# su2_cfd = 'C:\path\to\SU2_CFD.exe'
+# xfoil   = 'C:\path\to\xfoil.exe'

@@ -40,9 +40,6 @@ import pytest
 import torch
 from pydantic import BaseModel, ValidationError
 
-# The dispatcher imports gmsh/run.py, so the SDK must be present even though it is patched here.
-pytest.importorskip("gmsh", reason="gmsh Python SDK not installed")
-
 from src.datagen.schemas import Airfoil, Freestream
 from src.datagen.meshing.gmsh.schemas import (
     GMSH_CMeshingConfig, GMSH_OMeshingConfig, GMSH_ExitFlag, GMSH_Topology,
@@ -91,13 +88,18 @@ def test_entry_freestream_fail_routing(mock_freestream, mock_bluntness, mock_num
 
 
 # region Step 2
+@pytest.mark.parametrize("gmsh_flag, expected", [
+    (GMSH_ExitFlag.EXECUTABLE_NOT_FOUND, MeshExitFlag.EXECUTABLE_NOT_FOUND),
+    (GMSH_ExitFlag.FATAL_ERROR, MeshExitFlag.FATAL_ERROR),
+    (GMSH_ExitFlag.EXTRUSION_FAIL, MeshExitFlag.CONVERSION_FAIL),
+])
 @patch("src.datagen.meshing.common.entry.Common_validate_tensor_numeric", return_value=(True, ""))
 @patch("src.datagen.meshing.common.entry.Common_validate_te_for_topology", return_value=(True, ""))
 @patch("src.datagen.meshing.common.entry.Common_validate_freestream_physicality", return_value=(True, ""))
 @patch("src.datagen.meshing.common.entry.GMSH_MeshGenerator")
-def test_entry_gmsh_flag_mapping(mock_generator, *args):
+def test_entry_gmsh_flag_mapping(mock_generator, mock_freestream, mock_te, mock_numeric, gmsh_flag, expected):
     mock_out = MagicMock()
-    mock_out.flag = GMSH_ExitFlag.EXTRUSION_FAIL
+    mock_out.flag = gmsh_flag
     mock_out.mesh_path = None
     mock_out.mesh_path_vtk = None
     mock_out.num_nodes = None
@@ -105,7 +107,7 @@ def test_entry_gmsh_flag_mapping(mock_generator, *args):
     mock_generator.return_value = mock_out
 
     out = Common_GenerateMesh(_mock_mesh_in())
-    assert out.flag == MeshExitFlag.CONVERSION_FAIL
+    assert out.flag == expected
     assert out.backend == MeshBackend.GMSH
 
 
@@ -129,10 +131,9 @@ def _mock_backend_out(flag):
 ])
 @patch("src.datagen.meshing.common.entry.C2D_MeshGenerator")
 def test_entry_c2d_flag_mapping(mock_generator, c2d_flag, expected):
-    # gmsh's three-entry map has `test_entry_gmsh_flag_mapping`; c2d's five-entry one had only
-    # SUBPROCESS_FAIL, and only incidentally (via the TE-mismatch test). c2d is the backend that
-    # owns EXECUTABLE_NOT_FOUND/SUBPROCESS_FAIL, so a mistranslation there reads as a mesher fault
-    # rather than a missing exe. SUCCESS is excluded: it continues into `_score_mesh`, which needs
+    # gmsh's map has `test_entry_gmsh_flag_mapping`; c2d's five-entry one had only
+    # SUBPROCESS_FAIL, and only incidentally (via the TE-mismatch test). A mistranslated
+    # EXECUTABLE_NOT_FOUND/SUBPROCESS_FAIL reads as a mesher fault rather than a missing exe. SUCCESS is excluded: it continues into `_score_mesh`, which needs
     # a real mesh, and is covered by test_cross_backend.py.
     mock_generator.return_value = _mock_backend_out(c2d_flag)
 

@@ -1,8 +1,8 @@
 """
 C2D meshing: generate structured airfoil grids and export to SU2/VTK.
 
-Wraps the c2d executable, currently Construct2D (GPL v3, (c) Daniel Prosser), with a headless
-mesh generator and a Plot3D->SU2/VTK converter.
+Drives a user-supplied Construct2D executable (GPL-3, not distributed with FlowField; its path is
+set in tools.toml) with a headless mesh generator and a Plot3D->SU2/VTK converter.
 """
 
 from .schemas import C2D_In, C2D_Out, C2D_ExitFlag, C2D_Topology, C2D_MeshingConfig

@@ -50,3 +50,29 @@ def GMSH_get_layer_nodes(length: float, h_first: float, growth_ratio: float) -> 
     n_cells = math.log(1.0 + (length / h_first) * (growth_ratio - 1.0)) / math.log(growth_ratio)
     return math.ceil(n_cells) + 1
 
+def GMSH_count_su2_elements(su2_path: str) -> tuple[int, int]:
+    """
+    Reads the node and quad counts from a written `.su2`, the two structural numbers the runner flags on
+
+    Args:
+        su2_path (str): Path to the `.su2` mesh
+
+    Returns:
+        tuple[int, int]: The `NPOIN=` node count, and the number of quadrilaterals (SU2 type 9) in the
+            volume `NELEM=` block; 0 for whichever is absent
+    """
+    num_nodes = num_quads = 0
+    with open(su2_path) as f:
+        for line in f:
+            tokens = line.split()
+            if not tokens:
+                continue
+            key = tokens[0].upper()
+            if key == "NPOIN=":
+                num_nodes = int(tokens[1])
+            elif key == "NELEM=": # Only the volume block, markers count theirs under MARKER_ELEMS=
+                for _, element in zip(range(int(tokens[1])), f):
+                    if element.split()[:1] == ["9"]:
+                        num_quads += 1
+    return num_nodes, num_quads
+

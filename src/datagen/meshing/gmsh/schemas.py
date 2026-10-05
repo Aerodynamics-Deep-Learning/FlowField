@@ -9,6 +9,7 @@ class GMSH_ExitFlag(IntEnum):
     Categorical flag for what happened in GMSH during/after mesh generation
     """
 
+    EXECUTABLE_NOT_FOUND = -3 # gmsh not found (tools.toml), nothing was run
     FATAL_ERROR = -2 # An undocumented/classified error
     EXTRUSION_FAIL = -1 # Fail in creating a grid
     SUCCESS = 0 # Successful exit, not necessarily a good grid

@@ -10,7 +10,7 @@ Step 2: Ensure the c2d backend lands on the same, under the topology *it* builds
 
 Scope: both backends mesh for real here, so this is the one place the two are held against each
 other rather than against mocks. The dispatcher's own routing is covered in test_common_entry.py.
-The c2d half is skipped when its executable isn't built in the environment.
+Each half is skipped when its executable isn't found (see tools.toml).
 """
 
 from pathlib import Path
@@ -18,9 +18,7 @@ from pathlib import Path
 import pytest
 import torch
 
-# This module meshes for real through both backends, so the SDK is a hard requirement here.
-pytest.importorskip("gmsh", reason="gmsh Python SDK not installed")
-
+from src.datagen.utils.tools import find_tool
 from src.datagen.schemas import Airfoil, Freestream
 from src.datagen.meshing.gmsh.schemas import GMSH_CMeshingConfig
 from src.datagen.meshing.c2d.run import C2D_find_exe
@@ -68,6 +66,7 @@ def _freestream():
 
 
 # region Step 1
+@pytest.mark.skipif(find_tool("gmsh") is None, reason="gmsh executable not found (set it in tools.toml)")
 def test_gmsh_backend_produces_scorable_su2(tmp_path):
     data = MeshIn(
         airfoil=_airfoil(), freestream=_freestream(), working_dir=str(tmp_path),

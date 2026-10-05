@@ -41,8 +41,7 @@ printed when the window opens.
 import numpy as np
 import pytest
 
-pytest.importorskip("gmsh", reason="gmsh Python SDK not installed")
-
+from src.datagen.utils.tools import find_tool
 from src.datagen.meshing.gmsh.run import GMSH_MeshGenerator
 from src.datagen.meshing.gmsh.schemas import GMSH_ExitFlag
 from src.datagen.meshing.c2d.run import C2D_MeshGenerator, C2D_find_exe
@@ -61,6 +60,7 @@ pytestmark = [
     pytest.mark.skipif(
         C2D_find_exe() is None, reason="c2d executable not built in this environment"
     ),
+    pytest.mark.skipif(find_tool("gmsh") is None, reason="gmsh executable not found (set it in tools.toml)"),
 ]
 
 ORTHOGONALITY_METRIC = "orthogonal_quality"

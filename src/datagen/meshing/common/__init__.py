@@ -15,9 +15,8 @@ from .schemas import (
     MeshGeoDeviationSummary,
 )
 
-# `entry` is imported lazily, mirroring both backends' __init__: it pulls in `gmsh.run`, which
-# raises without the gmsh SDK installed, so an eager import here would put that requirement on
-# anyone who only wanted a schema.
+# `entry` is imported lazily, mirroring both backends' __init__: it pulls in both runners, which
+# anyone who only wanted a schema should not have to load.
 def __getattr__(name):
     if name == "Common_GenerateMesh":
         from .entry import Common_GenerateMesh

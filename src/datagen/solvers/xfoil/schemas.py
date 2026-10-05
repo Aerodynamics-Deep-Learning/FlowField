@@ -9,6 +9,7 @@ class XFoil_ConvergenceFlag(IntEnum):
     """
     Strict convergence flag, to identify CFD solver convergence
     """
+    EXECUTABLE_NOT_FOUND = -2 # xfoil not found (tools.toml), the solver never launched
     FATAL = -1
     DIVERGED = 0
     OSCILLATORY = 1
@@ -39,7 +40,6 @@ class XFoil_WarmStartIn(BaseModel):
     """
     airfoil: Airfoil
     freestream: Freestream
-    xfoil_exe: str = Field(..., description="Path to the XFoil executable")
     working_dir: str = Field(..., description="Directory where the XFoil input script and Cp output will be saved")
     solver_config: XFoil_SolverConfig = Field(..., description="Specifics of the solver")
     conv_config: XFoil_ConvergenceConfig = Field(..., description="Specifics of convergence criteria")
@@ -55,5 +55,5 @@ class XFoil_WarmStartOut(BaseModel):
     flag: XFoil_ConvergenceFlag
     Cp_tensor: Optional[torch.Tensor] = Field(None, description="The dimensionless Cp distribution over the airfoil, with form (N, [x, Cp])")
     conservative_tensor: Optional[torch.Tensor] = Field(None, description="The conservative tensor of form [rho, rho*u, rh*v, rho*E] to be used in the warmstart of SU2")
-    verbose_list: list[str] = Field(..., description="A list to produce the verbose output. [input_script_path (.txt), cp_file_path (.dat), stdout_path (.txt)]")
+    verbose_list: list[Optional[str]] = Field(..., description="A list to produce the verbose output. [input_script_path (.txt), cp_file_path (.dat), stdout_path (.txt)]")
 

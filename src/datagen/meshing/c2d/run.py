@@ -10,6 +10,7 @@ import os
 import subprocess
 
 from src.datagen.schemas import Airfoil
+from src.datagen.utils.tools import find_tool
 from src.datagen.meshing.c2d.convert import convert, su2_to_vtk
 from src.datagen.meshing.c2d.io import write_airfoil_dat, C2D_Write_Exception
 from src.datagen.meshing.c2d.schemas import C2D_In, C2D_Out, C2D_ExitFlag, C2D_MeshingConfig
@@ -204,15 +205,8 @@ def C2D_generate_mesh(airfoil: Airfoil, exe: str, working_dir: str, config: C2D_
     return p3d_path, su2_path, vtk_path, nmf_path, log_text
 
 
-def C2D_find_exe(search_dirs=None):
-    """Locate the c2d executable (bin/ next to the package by default)."""
-    here = os.path.dirname(os.path.abspath(__file__))
-    dirs = search_dirs or [os.path.join(here, "bin"), here]
-    for d in dirs:
-        for name in ("c2d.exe", "c2d"):
-            p = os.path.join(d, name)
-            if os.path.isfile(p):
-                return os.path.abspath(p)
-    return None
+def C2D_find_exe():
+    """Locate the user-supplied c2d executable (`c2d` in tools.toml, see `utils.tools.find_tool`)."""
+    return find_tool("c2d")
 
 

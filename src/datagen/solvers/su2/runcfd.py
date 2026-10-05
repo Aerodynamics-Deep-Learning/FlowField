@@ -8,7 +8,7 @@ import os
 import logging
 logger = logging.getLogger(__name__)
 
-def SU2_RunCFD(config_path_list: list[str], timeout_sec: int, strategy: SU2_SolutionStrategy) -> tuple[SU2_ConvergenceFlag, str, str]:
+def SU2_RunCFD(config_path_list: list[str], timeout_sec: int, strategy: SU2_SolutionStrategy, exe: str) -> tuple[SU2_ConvergenceFlag, str, str]:
     """
     Handler to handle different strategy scenarios of running the SU2 solver.
 
@@ -17,26 +17,26 @@ def SU2_RunCFD(config_path_list: list[str], timeout_sec: int, strategy: SU2_Solu
     """
 
     if strategy == SU2_SolutionStrategy.COLD:
-        convergence_flag_temp, stdout, stderr = SU2_RunCFD_Cold(config_path_list=config_path_list, timeout_sec=timeout_sec)
-    
+        convergence_flag_temp, stdout, stderr = SU2_RunCFD_Cold(config_path_list=config_path_list, timeout_sec=timeout_sec, exe=exe)
+
     elif strategy == SU2_SolutionStrategy.WARM_EULER:
-        convergence_flag_temp, stdout, stderr = SU2_RunCFD_Warm(config_path_list=config_path_list, timeout_sec=timeout_sec)
+        convergence_flag_temp, stdout, stderr = SU2_RunCFD_Warm(config_path_list=config_path_list, timeout_sec=timeout_sec, exe=exe)
 
     elif strategy == SU2_SolutionStrategy.MACH_SEQ:
-        convergence_flag_temp, stdout, stderr = SU2_RunCFD_MachSeq(config_path_list=config_path_list, timeout_sec=timeout_sec)
-    
+        convergence_flag_temp, stdout, stderr = SU2_RunCFD_MachSeq(config_path_list=config_path_list, timeout_sec=timeout_sec, exe=exe)
+
     else:
         logger.warning(f"Identified but not implemented route: {strategy}, defaulting to cold start")
-        convergence_flag_temp, stdout, stderr = SU2_RunCFD_Cold(config_path_list=config_path_list, timeout_sec=timeout_sec)
-        
+        convergence_flag_temp, stdout, stderr = SU2_RunCFD_Cold(config_path_list=config_path_list, timeout_sec=timeout_sec, exe=exe)
+
     return convergence_flag_temp, stdout, stderr
 
-def SU2_RunCFD_Cold(config_path_list: list[str], timeout_sec: int) -> tuple[SU2_ConvergenceFlag, str, str]:
+def SU2_RunCFD_Cold(config_path_list: list[str], timeout_sec: int, exe: str) -> tuple[SU2_ConvergenceFlag, str, str]:
     config_path = config_path_list[0] # It is the only confid path in the list
     run_dir = os.path.dirname(config_path)
     try:
         result = subprocess.run(
-            ["SU2_CFD", config_path],
+            [exe, config_path],
             cwd=run_dir,
             capture_output=True, 
             text=True, 
@@ -55,7 +55,7 @@ def SU2_RunCFD_Cold(config_path_list: list[str], timeout_sec: int) -> tuple[SU2_
     
     # Filenotfound handling
     except FileNotFoundError:
-        logger.error("FATAL: SU2_CFD binary not found in system PATH.")
+        logger.error(f"FATAL: could not launch SU2_CFD at {exe}.")
         # We can immediately flag this as FATAL because the solver never even launched.
         return SU2_ConvergenceFlag.FATAL, "No stderr, filenotfound error", "FileNotFoundError: Binary missing."
         
@@ -64,7 +64,7 @@ def SU2_RunCFD_Cold(config_path_list: list[str], timeout_sec: int) -> tuple[SU2_
         logger.error(f"FATAL: Unhandled OS error executing SU2: {e}")
         return SU2_ConvergenceFlag.FATAL, "No stderr, unhandled os error", str(e)
 
-def SU2_RunCFD_Warm(config_path_list: list[str], timeout_sec: int) -> tuple[SU2_ConvergenceFlag, str, str]:
+def SU2_RunCFD_Warm(config_path_list: list[str], timeout_sec: int, exe: str) -> tuple[SU2_ConvergenceFlag, str, str]:
     euler_config_path, restart_config_path = config_path_list # The first config path is for the euler phase, the second is for the restart phase
     run_dir = os.path.dirname(euler_config_path)
     # Running the Euler phase first, if it fails we can immediately return with the flag and not run the restart phase, if it succeeds we move on
@@ -72,7 +72,7 @@ def SU2_RunCFD_Warm(config_path_list: list[str], timeout_sec: int) -> tuple[SU2_
     # phase to even be valid
     try:
         result = subprocess.run(
-            ["SU2_CFD", euler_config_path],
+            [exe, euler_config_path],
             cwd=run_dir,
             capture_output=True, 
             text=True, 
@@ -91,7 +91,7 @@ def SU2_RunCFD_Warm(config_path_list: list[str], timeout_sec: int) -> tuple[SU2_
         return SU2_ConvergenceFlag.TIMEOUT, out, err
     # Filenotfound handling
     except FileNotFoundError:
-        logger.error("FATAL: SU2_CFD binary not found in system PATH in the Euler phase.")
+        logger.error(f"FATAL: could not launch SU2_CFD at {exe} in the Euler phase.")
         # We can immediately flag this as FATAL because the solver never even launched.
         return SU2_ConvergenceFlag.FATAL, "No stderr, filenotfound error", "FileNotFoundError: Binary missing." 
     # Unhandled handling
@@ -114,7 +114,7 @@ def SU2_RunCFD_Warm(config_path_list: list[str], timeout_sec: int) -> tuple[SU2_
     # Identical to cold start
     try:
         result = subprocess.run(
-            ["SU2_CFD", restart_config_path],
+            [exe, restart_config_path],
             cwd=run_dir,
             capture_output=True,
             text=True, 
@@ -132,7 +132,7 @@ def SU2_RunCFD_Warm(config_path_list: list[str], timeout_sec: int) -> tuple[SU2_
         return SU2_ConvergenceFlag.TIMEOUT, out, err
     # Filenotfound handling
     except FileNotFoundError:
-        logger.error("FATAL: SU2_CFD binary not found in system PATH in the Restart phase.")
+        logger.error(f"FATAL: could not launch SU2_CFD at {exe} in the Restart phase.")
         # We can immediately flag this as FATAL because the solver never even launched.
         return SU2_ConvergenceFlag.FATAL, "No stderr, filenotfound error", "FileNotFoundError: Binary missing." 
     # Unhandled handling
@@ -141,5 +141,5 @@ def SU2_RunCFD_Warm(config_path_list: list[str], timeout_sec: int) -> tuple[SU2_
         return SU2_ConvergenceFlag.FATAL, "No stderr, unhandled os error", str(e)
 
 
-def SU2_RunCFD_MachSeq(config_path_list: list[str], timeout_sec: int) -> tuple[SU2_ConvergenceFlag, str, str]:
+def SU2_RunCFD_MachSeq(config_path_list: list[str], timeout_sec: int, exe: str) -> tuple[SU2_ConvergenceFlag, str, str]:
     raise NotImplementedError("MACHSEQ strategy execution is not yet implemented.")
