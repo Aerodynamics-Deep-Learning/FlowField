@@ -7,6 +7,7 @@ from src.datagen.schemas import Airfoil, Freestream
 from src.datagen.meshing.common.quality import _cell_metrics, _orthogonal_quality
 from src.datagen.meshing.gmsh.schemas import GMSH_CMeshingConfig, GMSH_OMeshingConfig, GMSH_In, GMSH_Topology
 from src.datagen.meshing.c2d.schemas import C2D_MeshingConfig, C2D_In, C2D_Topology
+from tests.closed_airfoils import closed_naca0012
 
 # The reference mesh provided by Emre; both backends' integration tests score their own output
 # against this baseline (see `MeshQualityBaseline` below).
@@ -76,6 +77,7 @@ _NACA0012_SHARP_LOWER = [[x, -y] for x, y in zip(_NACA0012_LOWER_X, _naca0012_sh
 
 def _naca0012_sharp_airfoil(name: str) -> Airfoil:
     coords_tensor = torch.tensor(_NACA0012_SHARP_UPPER + _NACA0012_SHARP_LOWER, dtype=torch.float32)
+    coords_tensor[-1] = coords_tensor[0]  # the formula leaves the TE at +-1.7e-17, not exactly closed
     le_idx = int(torch.argmin(coords_tensor[:, 0]).item())
     return Airfoil(airfoil_name=name, coords_tensor=coords_tensor, chord=1.0, le_idx=le_idx)
 
@@ -164,16 +166,13 @@ def sterile_gmsh_omesh_input(integration_mesh_workspace: Path):
 @pytest.fixture(scope="function")
 def sterile_c2d_input(integration_mesh_workspace: Path) -> C2D_In:
     """Bundles c2d's `C2D_MeshGenerator` input the same way `sterile_gmsh_input` bundles
-    gmsh's `GMSH_In`, so the two integration test modules read the same way. Blunt-TE airfoil with
-    `topology=C2D_Topology.OGRD` (O-grid) -- c2d's own `_te_is_sharp`-based recommendation
-    for a blunt TE (see `c2d/run.py`), so this pairing doesn't trigger the topo/bluntness-mismatch
-    auto-confirm path. Not to be conflated with gmsh's "cmesh"/"omesh" naming -- c2d's
-    OGRD/CGRD and gmsh's cmesh/omesh are two independent backends' topology choices, and an O-grid
-    here is paired with a *blunt* airfoil, the opposite of what gmsh's O-mesh requires. See
+    gmsh's `GMSH_In`, so the two integration test modules read the same way. O-grid on a closed,
+    rounded-TE NACA0012 (`tests/closed_airfoils.py`), the production pairing: c2d meshes in BUFF
+    mode, which takes the surface points as given and refuses an open contour. See
     `sterile_c2d_cgrd_input` for the CGRD/sharp-TE counterpart. `meshing_config.topo` is left
     unset here -- `C2D_In`'s validator fills it in from `topology` automatically."""
     return C2D_In(
-        airfoil=_naca0012_airfoil("naca0012_test_c2d"),
+        airfoil=closed_naca0012("naca0012_test_c2d", te="round"),
         freestream=_naca0012_freestream(),
         working_dir=str(integration_mesh_workspace),
         topology=C2D_Topology.OGRD,
@@ -184,12 +183,11 @@ def sterile_c2d_input(integration_mesh_workspace: Path) -> C2D_In:
 @pytest.fixture(scope="function")
 def sterile_c2d_cgrd_input(integration_mesh_workspace: Path) -> C2D_In:
     """The `topology=C2D_Topology.CGRD` (C-grid) counterpart to `sterile_c2d_input` (OGRD), on a
-    sharp-TE airfoil (c2d's own recommendation for a sharp TE, so this pairing doesn't
-    trigger the topo/bluntness-mismatch auto-confirm path either). Named for c2d's own
-    "CGRD" (not "cmesh"/"omesh") deliberately (see `sterile_c2d_input`'s docstring: this isn't
-    equivalent to gmsh's C-mesh or O-mesh, it's c2d's own C-grid option)."""
+    closed sharp-TE NACA0012, since c2d's C-grid launches its wake from the closure point. Named for
+    c2d's own "CGRD" (not "cmesh"/"omesh") deliberately: this isn't equivalent to gmsh's C-mesh or
+    O-mesh, it's c2d's own C-grid option."""
     return C2D_In(
-        airfoil=_naca0012_sharp_airfoil("naca0012_test_c2d_cgrd"),
+        airfoil=closed_naca0012("naca0012_test_c2d_cgrd", te="sharp"),
         freestream=_naca0012_freestream(),
         working_dir=str(integration_mesh_workspace),
         topology=C2D_Topology.CGRD,

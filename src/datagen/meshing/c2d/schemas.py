@@ -27,7 +27,8 @@ class C2D_Topology(str, Enum):
 
 class C2D_MeshingConfig(BaseModel):
     """
-    Contract for the configs of C2D.
+    Contract for the configs of C2D. Surface points come from the input as given (c2d runs in BUFF
+    mode), so surface resolution and spacing are set by the airfoil, not here.
     """
     model_config = {"extra": "forbid"}
 
@@ -37,12 +38,9 @@ class C2D_MeshingConfig(BaseModel):
     )
     slvr: Literal["HYPR", "ELLP"] = Field("HYPR", description="The solver option")
 
-    # Surface/wake resolution (fixed)
-    nsrf: int = Field(300, gt=10, le=1000, description="Number of points around the airfoil surface")
+    # Normal/wake resolution (fixed)
     jmax: int = Field(200, gt=10, description="Number of points normal to the surface (wall to farfield)")
     nwke: int = Field(100, gt=1, description="Number of points along the wake")
-    lesp: float = Field(3.0e-4, gt=0.0, description="Leading-edge point spacing (fraction of chord)")
-    tesp: float = Field(3.0e-4, gt=0.0, description="Trailing-edge point spacing (fraction of chord)")
 
     # Farfield/domain sizing (fixed)
     radi: float = Field(20.0, gt=0.0, description="Farfield radius, in chords")

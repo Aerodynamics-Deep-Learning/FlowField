@@ -41,7 +41,7 @@ class MeshExitFlag(IntEnum):
     reading, since they are all evaluated last and rank by how unusable the mesh is instead.
     """
     INPUT_TENSOR_FAIL = -11      # malformed/NaN/Inf/non-chord-normalized airfoil geometry
-    INPUT_BLUNTING_FAIL = -10   # trailing-edge gap check
+    INPUT_CLOSURE_FAIL = -10    # TE closed/open state isn't what the (backend, topology) pairing requires
     INPUT_FREESTREAM_FAIL = -9  # alpha/Re/mach/altitude physicality
     INPUT_UNKNOWN_SOLVER = -8   # unknown solver
     EXECUTABLE_NOT_FOUND = -7   # c2d only: the C2D exe isn't built/found

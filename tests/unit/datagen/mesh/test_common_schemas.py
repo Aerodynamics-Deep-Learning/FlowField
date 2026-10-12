@@ -58,18 +58,18 @@ def test_mesh_config_defaults_per_pairing(backend, topology, expected):
 def test_mesh_config_dict_is_coerced_to_the_pairings_class():
     # Every config class is all-defaults, so a bare union would resolve {} by first match. The
     # pairing is what disambiguates it.
-    data = _mesh_in(MeshBackend.GMSH, MeshTopology.OGRD, mesh_config={"nx_afoil": 55})
+    data = _mesh_in(MeshBackend.GMSH, MeshTopology.OGRD, mesh_config={"farfield_center_offset": 0.55})
 
     assert isinstance(data.mesh_config, GMSH_OMeshingConfig)
-    assert data.mesh_config.nx_afoil == 55
+    assert data.mesh_config.farfield_center_offset == 0.55
 
 
 def test_mesh_config_instance_passes_through():
-    config = GMSH_OMeshingConfig(nx_afoil=200)
+    config = GMSH_OMeshingConfig(farfield_center_offset=0.2)
     data = _mesh_in(MeshBackend.GMSH, MeshTopology.OGRD, mesh_config=config)
 
     assert isinstance(data.mesh_config, GMSH_OMeshingConfig)
-    assert data.mesh_config.nx_afoil == 200
+    assert data.mesh_config.farfield_center_offset == 0.2
 # endregion
 
 
@@ -94,11 +94,11 @@ def test_mesh_config_resolved_when_validated_from_payload():
         "working_dir": tempfile.gettempdir(),
         "backend": "gmsh",
         "topology": "OGRID",
-        "mesh_config": {"nx_afoil": 77},
+        "mesh_config": {"farfield_center_offset": 0.77},
     })
 
     assert isinstance(restored.mesh_config, GMSH_OMeshingConfig)
-    assert restored.mesh_config.nx_afoil == 77
+    assert restored.mesh_config.farfield_center_offset == 0.77
 
 
 def test_payload_is_left_untouched_for_reuse():
@@ -131,7 +131,7 @@ def test_unknown_keyword_rejected():
 
 @pytest.mark.parametrize("backend, topology, typo", [
     (MeshBackend.GMSH, MeshTopology.CGRD, "nx_uppper"),
-    (MeshBackend.GMSH, MeshTopology.OGRD, "nx_afoill"),
+    (MeshBackend.GMSH, MeshTopology.OGRD, "farfield_center_offsett"),
     (MeshBackend.C2D, MeshTopology.CGRD, "nsrff"),
     (MeshBackend.C2D, MeshTopology.OGRD, "jmaxx"),
 ])

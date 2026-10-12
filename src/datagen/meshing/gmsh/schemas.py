@@ -54,12 +54,10 @@ class GMSH_CMeshingConfig(BaseModel):
 
 class GMSH_OMeshingConfig(BaseModel):
     """
-    Contract for the configs of GMSH's O-mesh topology (sharp trailing edge)
+    Contract for the configs of GMSH's O-mesh topology (closed contour). The wall nodes are the input
+    points as given, so surface resolution and spacing are set by the airfoil, not here.
     """
     model_config = {"extra": "forbid"}
-
-    # Airfoil surface discretization
-    nx_afoil: int = Field(120, gt=10, description="Number of mesh points along each of the upper and lower airfoil splines (LE to TE)")
 
     # Radial discretization, cell counts derived from these like the C-mesh's
     target_yplus: float = Field(0.75, gt=0.0, description="The target yplus value for the first layer of meshing, same as GMSH_CMeshingConfig's")

@@ -14,13 +14,15 @@ Step 3: Ensure C2D_count_su2_nodes reads the cheap node count the runner flags o
     - test_count_su2_nodes_reads_npoin_header
     - test_count_su2_nodes_returns_zero_when_unavailable
     - test_count_su2_nodes_returns_zero_for_missing_path
+Step 4: Ensure the exe is driven in BUFF mode, answering its topology prompt only when it asks
+    - test_c2d_driven_in_buff_mode
 
 Scope: the c2d runner only. The gmsh counterpart is test_gmsh_runner.py, and the dispatcher that
 maps a C2D_ExitFlag onto a MeshExitFlag is test_common_entry.py.
 """
 
 import tempfile
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 
 import torch
 import pytest
@@ -28,7 +30,7 @@ from pydantic import ValidationError
 
 from src.datagen.schemas import Airfoil, Freestream
 from src.datagen.meshing.c2d.schemas import C2D_In, C2D_MeshingConfig, C2D_ExitFlag, C2D_Topology
-from src.datagen.meshing.c2d.run import C2D_MeshGenerator
+from src.datagen.meshing.c2d.run import C2D_MeshGenerator, C2D_generate_mesh
 from src.datagen.meshing.c2d.utils import C2D_count_su2_nodes
 
 
@@ -37,6 +39,13 @@ def _airfoil():
         [1.0, 0.001], [0.5, 0.05], [0.0, 0.0], [0.5, -0.05], [1.0, -0.001],
     ])
     return Airfoil(airfoil_name="naca_test", coords_tensor=coords, chord=1.0, le_idx=2)
+
+
+def _closed_airfoil():
+    coords = torch.tensor([
+        [1.0, 0.0], [0.5, 0.05], [0.0, 0.0], [0.5, -0.05], [1.0, 0.0],
+    ])
+    return Airfoil(airfoil_name="naca_closed", coords_tensor=coords, chord=1.0, le_idx=2)
 
 
 def _freestream():
@@ -126,4 +135,25 @@ def test_count_su2_nodes_returns_zero_when_unavailable(tmp_path, content):
 def test_count_su2_nodes_returns_zero_for_missing_path(tmp_path):
     assert C2D_count_su2_nodes(None) == 0
     assert C2D_count_su2_nodes(str(tmp_path / "does_not_exist.su2")) == 0
+# endregion
+
+
+# region Step 4
+@pytest.mark.parametrize("airfoil, topo, confirms", [
+    # c2d recommends CGRD for any closed contour and prompts y/n when `topo` disagrees; an unanswered
+    # prompt would eat the next command
+    (_closed_airfoil(), "OGRD", True),
+    (_closed_airfoil(), "CGRD", False),
+    (_airfoil(), "OGRD", False),  # open, so c2d recommends OGRD (and BUFF then refuses the contour)
+])
+def test_c2d_driven_in_buff_mode(tmp_path, airfoil, topo, confirms):
+    with patch(f"{RUNNER}.subprocess.run") as mock_run:
+        mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+        C2D_generate_mesh(airfoil, "/fake/c2d", str(tmp_path), C2D_MeshingConfig(topo=topo))
+
+    stdin = mock_run.call_args.kwargs["input"].splitlines()
+    assert stdin == [f"{airfoil.airfoil_name}.dat"] + (["y"] if confirms else []) + ["grid", "buff", "quit"]
+    options = (tmp_path / "grid_options.in").read_text()
+    assert f"topo = '{topo}'" in options
+    assert not any(k in options for k in ("nsrf", "lesp", "tesp"))  # BUFF takes the surface from the input
 # endregion

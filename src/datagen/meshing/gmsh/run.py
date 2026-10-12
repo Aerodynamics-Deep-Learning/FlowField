@@ -180,7 +180,8 @@ def GMSH_run_script(exe: str, geo: GeoScript, geo_path: str, working_dir: str, t
 def GMSH_generate_omesh(geo: GeoScript, meshing_config: GMSH_OMeshingConfig, airfoil: Airfoil, h_first: float, working_dir: str) -> str:
     """
     Generates an O-mesh given the configs, airfoil geometry, and the first cell height. Requires a
-    sharp (unblunted) trailing edge -- the airfoil's upper and lower surfaces are treated as meeting at one point.
+    closed contour (last point duplicating the first), and meshes its points as given: every input
+    point is a wall node, joined by straight edges, so surface resolution and spacing come from the input.
 
     Args:
         geo (GeoScript): The script the geometry, constraints and meshing are appended to
@@ -194,7 +195,6 @@ def GMSH_generate_omesh(geo: GeoScript, meshing_config: GMSH_OMeshingConfig, air
     """
 
     ## 1- INFER DATA, UNPACK ##
-    nx_afoil = meshing_config.nx_afoil
     bl_growth_ratio = meshing_config.bl_growth_ratio
     ff_growth_ratio = meshing_config.ff_growth_ratio
     # Chord-scaled lengths, pipeline normalizes chord to 1.0 upstream, so this is a no-op
@@ -203,10 +203,11 @@ def GMSH_generate_omesh(geo: GeoScript, meshing_config: GMSH_OMeshingConfig, air
     farfield_center_offset = GMSH_scale_by_chord(meshing_config.farfield_center_offset, airfoil.chord)
     bl_thickness = GMSH_scale_by_chord(meshing_config.bl_thickness, airfoil.chord)
 
-    # Unpack the coords: [te_upper -> ... -> le -> ... -> te_lower], with te_upper == te_lower
-    # for an unblunted (sharp-TE) airfoil. Scaled to physical size, same as the config lengths above
-    # the tensor is chord-normalized by contract, so this is what puts both in one space
-    coords = airfoil.coords_tensor.numpy() * airfoil.chord
+    # Unpack the coords: [te -> upper -> le -> lower -> te], the last point duplicating the first.
+    # Scaled to physical size, same as the config lengths above
+    # the tensor is chord-normalized by contract, so this is what puts both in one space. float64,
+    # since float32 circle points miss the radius by enough for OCC to reject the arcs
+    coords = airfoil.coords_tensor.detach().cpu().double().numpy() * airfoil.chord
     n_pts = coords.shape[0]
     le_idx = airfoil.le_idx
     le_x, le_y = coords[le_idx, 0], coords[le_idx, 1]
@@ -216,28 +217,33 @@ def GMSH_generate_omesh(geo: GeoScript, meshing_config: GMSH_OMeshingConfig, air
     def P(x, y):
         return geo.addPoint(float(x), float(y), 0.0)
 
-    # LE and TE shared points
+    # Wall: one straight segment per input panel, so the input points are the wall nodes
     LE = P(le_x, le_y)
     TE = P(te_x, te_y)
-    upper_interior = [P(coords[i, 0], coords[i, 1]) for i in range(le_idx - 1, 0, -1)]
-    lower_interior = [P(coords[i, 0], coords[i, 1]) for i in range(le_idx + 1, n_pts - 1)]
-    pu = [LE] + upper_interior + [TE]  # LE->TE upper
-    pl = [LE] + lower_interior + [TE]  # LE->TE lower
-    c_af_up = geo.addSpline(pu)   # LE->TE upper
-    c_af_lo = geo.addSpline(pl)   # LE->TE lower
+    pu = [LE] + [P(coords[i, 0], coords[i, 1]) for i in range(le_idx - 1, 0, -1)] + [TE]      # LE->TE upper
+    pl = [LE] + [P(coords[i, 0], coords[i, 1]) for i in range(le_idx + 1, n_pts - 1)] + [TE]  # LE->TE lower
+    c_af_up = [geo.addLine(a, b) for a, b in zip(pu[:-1], pu[1:])]
+    c_af_lo = [geo.addLine(a, b) for a, b in zip(pl[:-1], pl[1:])]
 
-    # Outer circle points, centered on (le_x + farfield_center_offset, le_y)
+    # Outer circle, centered on (le_x + farfield_center_offset, le_y), one node per wall node, each at
+    # its wall node's arc-length fraction, so the transfinite pairing follows the input's spacing
     cx = le_x + farfield_center_offset
     cy = le_y
+    C = P(cx, cy)
     f_xy, b_xy = np.array([cx - farfield_radius, cy]), np.array([cx + farfield_radius, cy])
     F = P(*f_xy)
     B = P(*b_xy)
-    ang_up = np.linspace(0, np.pi, nx_afoil)        # B(0) -> top -> F(pi)
-    ang_lo = np.linspace(np.pi, 2*np.pi, nx_afoil)  # F -> bottom -> B
+
+    def arc_fraction(pts):
+        s = np.concatenate([[0.0], np.cumsum(np.linalg.norm(np.diff(pts, axis=0), axis=1))])
+        return s / s[-1]
+
+    ang_up = np.pi * arc_fraction(coords[:le_idx + 1])             # B(0, TE) -> top -> F(pi, LE)
+    ang_lo = np.pi * (1.0 + arc_fraction(coords[le_idx:]))         # F(pi, LE) -> bottom -> B(2pi, TE)
     cu = [B] + [P(cx + farfield_radius*np.cos(a), cy + farfield_radius*np.sin(a)) for a in ang_up[1:-1]] + [F]
     cl = [F] + [P(cx + farfield_radius*np.cos(a), cy + farfield_radius*np.sin(a)) for a in ang_lo[1:-1]] + [B]
-    c_ci_up = geo.addSpline(cu)   # B->F upper half
-    c_ci_lo = geo.addSpline(cl)   # F->B lower half
+    c_ci_up = [geo.addCircleArc(a, C, b) for a, b in zip(cu[:-1], cu[1:])]   # B->F upper half
+    c_ci_lo = [geo.addCircleArc(a, C, b) for a, b in zip(cl[:-1], cl[1:])]   # F->B lower half
 
     # Radial seams, each split at bl_thickness so the BL and farfield get their own progressions
     le_xy, te_xy = np.array([le_x, le_y]), np.array([te_x, te_y])
@@ -249,9 +255,10 @@ def GMSH_generate_omesh(geo: GeoScript, meshing_config: GMSH_OMeshingConfig, air
     s_te_ff = geo.addLine(BTE, B)   # BL edge->B
 
     ## 3- SURFACES (O-grid: upper + lower, sharing the two seams) ##
-    lu = geo.addCurveLoop([c_af_up, s_te_bl, s_te_ff, c_ci_up, -s_le_ff, -s_le_bl])   # LE->TE->B->F->LE
+    lu = geo.addCurveLoop(c_af_up + [s_te_bl, s_te_ff] + c_ci_up + [-s_le_ff, -s_le_bl])   # LE->TE->B->F->LE
     su = geo.addPlaneSurface([lu])
-    ll = geo.addCurveLoop([s_le_bl, s_le_ff, c_ci_lo, -s_te_ff, -s_te_bl, -c_af_lo])  # LE->F->B->TE->LE
+    ll = geo.addCurveLoop([s_le_bl, s_le_ff] + c_ci_lo + [-s_te_ff, -s_te_bl]
+                          + [-c for c in reversed(c_af_lo)])                              # LE->F->B->TE->LE
     sl = geo.addPlaneSurface([ll])
 
     ## 4- TRANSFINITE MESHING ##
@@ -262,8 +269,9 @@ def GMSH_generate_omesh(geo: GeoScript, meshing_config: GMSH_OMeshingConfig, air
     ff_length = max(np.linalg.norm(f_xy - le_xy), np.linalg.norm(b_xy - te_xy)) - bl_thickness
     ny_farfield = GMSH_get_layer_nodes(ff_length, h_first_ff, ff_growth_ratio)
 
-    for c in (c_af_up, c_af_lo, c_ci_up, c_ci_lo):
-        geo.setTransfiniteCurve(c, nx_afoil)
+    # Two nodes per wall segment and circle arc: the wall nodes are the input points, the circle's their match
+    for c in c_af_up + c_af_lo + c_ci_up + c_ci_lo:
+        geo.setTransfiniteCurve(c, 2)
     for c in (s_le_bl, s_te_bl):
         geo.setTransfiniteCurve(c, ny_bl, "Progression", bl_growth_ratio)
     for c in (s_le_ff, s_te_ff):
@@ -274,8 +282,8 @@ def GMSH_generate_omesh(geo: GeoScript, meshing_config: GMSH_OMeshingConfig, air
     geo.setRecombine(2, sl)
 
     ## 5- MARKER DEFINITIONS ##
-    geo.addPhysicalGroup(1, [c_af_up, c_af_lo], tag=1, name=MARKER_AIRFOIL)
-    geo.addPhysicalGroup(1, [c_ci_up, c_ci_lo], tag=2, name=MARKER_FARFIELD)
+    geo.addPhysicalGroup(1, c_af_up + c_af_lo, tag=1, name=MARKER_AIRFOIL)
+    geo.addPhysicalGroup(1, c_ci_up + c_ci_lo, tag=2, name=MARKER_FARFIELD)
     geo.addPhysicalGroup(2, [su, sl], tag=3, name="FLUID_DOMAIN")
 
     # 6- SAVE CONFIG AND GENERATE #

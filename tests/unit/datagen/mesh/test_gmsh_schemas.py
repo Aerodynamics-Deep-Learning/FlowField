@@ -49,10 +49,10 @@ def test_meshing_config_dict_is_coerced_to_the_topologys_class():
     # Both config classes are all-defaults, so a bare union would resolve a dict by first match.
     data = GMSH_In(
         airfoil=_airfoil(), freestream=_freestream(), working_dir="/tmp",
-        topology=GMSH_Topology.OGRD, meshing_config={"nx_afoil": 55},
+        topology=GMSH_Topology.OGRD, meshing_config={"farfield_center_offset": 0.55},
     )
     assert isinstance(data.meshing_config, GMSH_OMeshingConfig)
-    assert data.meshing_config.nx_afoil == 55
+    assert data.meshing_config.farfield_center_offset == 0.55
 
 
 def test_payload_is_left_untouched_for_reuse():

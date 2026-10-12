@@ -4,8 +4,8 @@ through each, landing on a `MeshOut` the shared `.su2` quality path can score, i
 
 Step 1: Ensure the gmsh backend lands on a scorable `.su2` carrying the SU2 boundary markers
     - test_gmsh_backend_produces_scorable_su2
-Step 2: Ensure the c2d backend lands on the same, under the topology *it* builds for a blunt TE,
-        and that this pairing (the production one) scores clean on *both* verdict passes
+Step 2: Ensure the c2d backend lands on the same from a closed contour (its O-grid, the production
+        pairing), and that it scores clean on *both* verdict passes
     - test_c2d_backend_produces_scorable_su2
 
 Scope: both backends mesh for real here, so this is the one place the two are held against each
@@ -26,6 +26,7 @@ from src.datagen.meshing.c2d.schemas import C2D_MeshingConfig
 from src.datagen.meshing.common.schemas import MeshIn, MeshBackend, MeshTopology, MeshExitFlag
 from src.datagen.meshing.common.entry import Common_GenerateMesh
 from src.datagen.solvers.su2.schemas import SU2_SolverConfig
+from tests.closed_airfoils import closed_naca0012
 
 
 # Taken from the SOLVER's schema, not hardcoded: these are the names the SU2 config step will look
@@ -71,8 +72,8 @@ def test_gmsh_backend_produces_scorable_su2(tmp_path):
     data = MeshIn(
         airfoil=_airfoil(), freestream=_freestream(), working_dir=str(tmp_path),
         backend=MeshBackend.GMSH,
-        # The fixture airfoil is blunt-TE, so each backend gets the topology *it* builds for a
-        # blunt TE -- gmsh's C-mesh here, c2d's O-grid below. The two don't line up.
+        # gmsh's C-mesh builds its TE line between the end points, so it takes the open contour;
+        # c2d below needs a closed one
         topology=MeshTopology.CGRD,
         mesh_config=GMSH_CMeshingConfig(
             upper_anchor_idx=6, lower_anchor_idx=18,
@@ -95,7 +96,8 @@ def test_gmsh_backend_produces_scorable_su2(tmp_path):
 @pytest.mark.skipif(C2D_find_exe() is None, reason="c2d executable not built in this environment")
 def test_c2d_backend_produces_scorable_su2(tmp_path):
     data = MeshIn(
-        airfoil=_airfoil(), freestream=_freestream(), working_dir=str(tmp_path),
+        airfoil=closed_naca0012("naca0012_xcheck_c2d"), freestream=_freestream(),
+        working_dir=str(tmp_path),
         backend=MeshBackend.C2D,
         topology=MeshTopology.OGRD,
         mesh_config=C2D_MeshingConfig(),

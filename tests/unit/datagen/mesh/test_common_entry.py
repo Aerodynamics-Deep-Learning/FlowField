@@ -3,14 +3,14 @@ Tests for the shared `common.entry.Common_GenerateMesh` dispatcher, i.e.:
 
 Step 1: Ensure the shared input-validation short-circuits route to the unified MeshExitFlag
     - test_entry_tensor_fail_routing
-    - test_entry_te_topology_fail_routing
+    - test_entry_te_closure_fail_routing
     - test_entry_freestream_fail_routing
 Step 2: Ensure each backend's own exit flag maps onto the equivalent MeshExitFlag
     - test_entry_gmsh_flag_mapping
     - test_entry_c2d_flag_mapping
-Step 3: Ensure a TE-shape/topology mismatch costs what that backend says it costs
-    - test_entry_gmsh_te_mismatch_is_rejected
-    - test_entry_c2d_te_mismatch_warns_and_proceeds
+Step 3: Ensure the TE closure gate refuses, and the TE shape checks only warn
+    - test_entry_te_closure_mismatch_is_refused
+    - test_entry_te_shape_mismatch_warns_and_proceeds
 Step 4: Ensure an unrecognised backend is flagged rather than dispatched anywhere
     - test_entry_unknown_backend_dispatches_to_neither
     - test_entry_backend_missing_from_dispatch_table_is_flagged
@@ -42,7 +42,7 @@ from pydantic import BaseModel, ValidationError
 
 from src.datagen.schemas import Airfoil, Freestream
 from src.datagen.meshing.gmsh.schemas import (
-    GMSH_CMeshingConfig, GMSH_OMeshingConfig, GMSH_ExitFlag, GMSH_Topology,
+    GMSH_CMeshingConfig, GMSH_ExitFlag, GMSH_Topology,
 )
 from src.datagen.meshing.c2d.schemas import C2D_ExitFlag, C2D_MeshingConfig, C2D_Topology
 from src.datagen.meshing.common.schemas import MeshIn, MeshBackend, MeshTopology, MeshExitFlag
@@ -70,17 +70,17 @@ def test_entry_tensor_fail_routing(mock_numeric):
 
 @patch("src.datagen.meshing.common.entry.Common_validate_tensor_numeric", return_value=(True, ""))
 @patch("src.datagen.meshing.common.entry.Common_validate_freestream_physicality", return_value=(True, ""))
-@patch("src.datagen.meshing.common.entry.Common_validate_te_for_topology")
-def test_entry_te_topology_fail_routing(mock_te, *args):
-    mock_te.return_value = (False, "Mock TE/topology mismatch")
+@patch("src.datagen.meshing.common.entry.Common_validate_te_closure")
+def test_entry_te_closure_fail_routing(mock_te, *args):
+    mock_te.return_value = (False, "Mock TE closure mismatch")
     out = Common_GenerateMesh(_mock_mesh_in(backend=MeshBackend.GMSH))
-    assert out.flag == MeshExitFlag.INPUT_BLUNTING_FAIL
+    assert out.flag == MeshExitFlag.INPUT_CLOSURE_FAIL
 
 
 @patch("src.datagen.meshing.common.entry.Common_validate_tensor_numeric", return_value=(True, ""))
-@patch("src.datagen.meshing.common.entry.Common_validate_te_for_topology", return_value=(True, ""))
+@patch("src.datagen.meshing.common.entry.Common_validate_te_closure", return_value=(True, ""))
 @patch("src.datagen.meshing.common.entry.Common_validate_freestream_physicality")
-def test_entry_freestream_fail_routing(mock_freestream, mock_bluntness, mock_numeric):
+def test_entry_freestream_fail_routing(mock_freestream, mock_closure, mock_numeric):
     mock_freestream.return_value = (False, "Mock freestream error")
     out = Common_GenerateMesh(_mock_mesh_in())
     assert out.flag == MeshExitFlag.INPUT_FREESTREAM_FAIL
@@ -94,7 +94,7 @@ def test_entry_freestream_fail_routing(mock_freestream, mock_bluntness, mock_num
     (GMSH_ExitFlag.EXTRUSION_FAIL, MeshExitFlag.CONVERSION_FAIL),
 ])
 @patch("src.datagen.meshing.common.entry.Common_validate_tensor_numeric", return_value=(True, ""))
-@patch("src.datagen.meshing.common.entry.Common_validate_te_for_topology", return_value=(True, ""))
+@patch("src.datagen.meshing.common.entry.Common_validate_te_closure", return_value=(True, ""))
 @patch("src.datagen.meshing.common.entry.Common_validate_freestream_physicality", return_value=(True, ""))
 @patch("src.datagen.meshing.common.entry.GMSH_MeshGenerator")
 def test_entry_gmsh_flag_mapping(mock_generator, mock_freestream, mock_te, mock_numeric, gmsh_flag, expected):
@@ -137,8 +137,8 @@ def test_entry_c2d_flag_mapping(mock_generator, c2d_flag, expected):
     # a real mesh, and is covered by test_cross_backend.py.
     mock_generator.return_value = _mock_backend_out(c2d_flag)
 
-    out = Common_GenerateMesh(_blunt_mesh_in(MeshBackend.C2D, MeshTopology.OGRD,
-                                             mesh_config=C2D_MeshingConfig()))
+    out = Common_GenerateMesh(_mesh_in(MeshBackend.C2D, MeshTopology.OGRD,
+                                       mesh_config=C2D_MeshingConfig()))
 
     assert out.flag == expected
     assert out.backend == MeshBackend.C2D
@@ -147,14 +147,20 @@ def test_entry_c2d_flag_mapping(mock_generator, c2d_flag, expected):
 
 
 # region Step 3
-_BLUNT_TE_COORDS = [[1.0, 0.0063], [0.5, 0.06], [0.0, 0.0], [0.5, -0.06], [1.0, -0.0063]]
+_OPEN_TE_COORDS = [[1.0, 0.0063], [0.5, 0.06], [0.0, 0.0], [0.5, -0.06], [1.0, -0.0063]]
+_CLOSED_TE_COORDS = [[1.0, 0.0], [0.5, 0.06], [0.0, 0.0], [0.5, -0.06], [1.0, 0.0]]  # sharp, ~14 deg
+_NEAR_CLOSED_TE_COORDS = [[1.0, 1e-7], [0.5, 0.06], [0.0, 0.0], [0.5, -0.06], [1.0, 0.0]]
 
 
-def _blunt_mesh_in(backend, topology, **configs):
-    """A real (validated) MeshIn on a blunt-TE airfoil, so the TE/topology gate sees real coords."""
-    coords = torch.tensor(_BLUNT_TE_COORDS, dtype=torch.float32)
+def _mesh_in(backend, topology, coords=None, **configs):
+    """A real (validated) MeshIn, so the TE gates see real coords. By default the closure the pairing
+    requires: open for gmsh's C-mesh, closed for everything else."""
+    if coords is None:
+        is_cmesh = (backend, topology) == (MeshBackend.GMSH, MeshTopology.CGRD)
+        coords = _OPEN_TE_COORDS if is_cmesh else _CLOSED_TE_COORDS
     return MeshIn(
-        airfoil=Airfoil(airfoil_name="naca0012_blunt", coords_tensor=coords, chord=1.0, le_idx=2),
+        airfoil=Airfoil(airfoil_name="naca0012_coarse", coords_tensor=torch.tensor(coords, dtype=torch.float32),
+                        chord=1.0, le_idx=2),
         freestream=Freestream(alpha=0.0, Re=5e6, mach=0.3, altitude_m=1.0),
         working_dir=tempfile.gettempdir(),
         backend=backend,
@@ -163,38 +169,37 @@ def _blunt_mesh_in(backend, topology, **configs):
     )
 
 
+@pytest.mark.parametrize("backend, topology, coords, checklist", [
+    (MeshBackend.C2D, MeshTopology.OGRD, _OPEN_TE_COORDS, ["requires a closed te", "open"]),
+    (MeshBackend.C2D, MeshTopology.CGRD, _NEAR_CLOSED_TE_COORDS, ["requires a closed te", "rounding noise"]),
+    # The O-mesh drops the last point as a duplicate of the first, so an open TE would silently lose it
+    (MeshBackend.GMSH, MeshTopology.OGRD, _OPEN_TE_COORDS, ["requires a closed te", "open"]),
+    (MeshBackend.GMSH, MeshTopology.CGRD, _CLOSED_TE_COORDS, ["requires an open te", "closed"]),
+    (MeshBackend.GMSH, MeshTopology.CGRD, _NEAR_CLOSED_TE_COORDS, ["requires an open te", "too short"]),
+])
+@patch("src.datagen.meshing.common.entry.C2D_MeshGenerator")
 @patch("src.datagen.meshing.common.entry.GMSH_MeshGenerator")
-def test_entry_gmsh_te_mismatch_is_rejected(mock_generator):
-    # gmsh's O-mesh treats the TE as one point; handed a blunt airfoil it would silently snap the
-    # lower TE onto the upper one, so the pairing has to be refused before the builder ever runs.
-    data = _blunt_mesh_in(MeshBackend.GMSH, MeshTopology.OGRD,
-                          mesh_config=GMSH_OMeshingConfig())
-    out = Common_GenerateMesh(data)
+def test_entry_te_closure_mismatch_is_refused(mock_gmsh, mock_c2d, backend, topology, coords, checklist, caplog):
+    with caplog.at_level(logging.WARNING):
+        out = Common_GenerateMesh(_mesh_in(backend, topology, coords=coords))
 
-    assert out.flag == MeshExitFlag.INPUT_BLUNTING_FAIL
-    assert out.topology == MeshTopology.OGRD
-    assert not mock_generator.called
+    assert out.flag == MeshExitFlag.INPUT_CLOSURE_FAIL
+    assert out.topology == topology
+    assert not mock_gmsh.called and not mock_c2d.called
+    assert any(all(c in r.message.lower() for c in checklist) for r in caplog.records)
 
 
 @patch("src.datagen.meshing.common.entry.C2D_MeshGenerator")
-def test_entry_c2d_te_mismatch_warns_and_proceeds(mock_generator, caplog):
-    # c2d only recommends OGRD for a blunt TE; CGRD still meshes it after the y/n
-    # override, so a mismatch must warn rather than short-circuit.
-    mock_out = MagicMock()
-    mock_out.flag = C2D_ExitFlag.SUBPROCESS_FAIL
-    mock_out.mesh_path = None
-    mock_out.mesh_path_vtk = None
-    mock_out.num_nodes = None
-    mock_out.verbose_list = []
-    mock_generator.return_value = mock_out
+def test_entry_te_shape_mismatch_warns_and_proceeds(mock_generator, caplog):
+    # TE shape is advisory: c2d's O-grid handed a sharp closed TE warns, then meshes anyway
+    mock_generator.return_value = _mock_backend_out(C2D_ExitFlag.SUBPROCESS_FAIL)
 
-    data = _blunt_mesh_in(MeshBackend.C2D, MeshTopology.CGRD, mesh_config=C2D_MeshingConfig())
     with caplog.at_level(logging.WARNING):
-        out = Common_GenerateMesh(data)
+        out = Common_GenerateMesh(_mesh_in(MeshBackend.C2D, MeshTopology.OGRD))
 
     assert mock_generator.called
     assert out.flag == MeshExitFlag.SUBPROCESS_FAIL
-    assert any("sharp trailing edge" in r.message.lower() for r in caplog.records)
+    assert any("sharp te" in r.message.lower() for r in caplog.records)
 # endregion
 
 
@@ -202,9 +207,9 @@ def test_entry_c2d_te_mismatch_warns_and_proceeds(mock_generator, caplog):
 @patch("src.datagen.meshing.common.entry.C2D_MeshGenerator")
 @patch("src.datagen.meshing.common.entry.GMSH_MeshGenerator")
 def test_entry_unknown_backend_dispatches_to_neither(mock_gmsh, mock_c2d):
-    # Dispatch is `if GMSH ... else c2d`, so this guard is the only thing keeping an unrecognised
-    # backend out of c2d. MeshIn accepts the pairing on purpose (flagging it is the entry's job).
-    data = _blunt_mesh_in(MeshBackend.UNKNOWN, MeshTopology.CGRD)
+    # Dispatch is a lookup in `_RUNNERS`, and this guard is what turns a miss into the right flag.
+    # MeshIn accepts the pairing on purpose (flagging it is the entry's job).
+    data = _mesh_in(MeshBackend.UNKNOWN, MeshTopology.CGRD)
     assert data.mesh_config is None  # no config class exists for an unsupported pairing
 
     out = Common_GenerateMesh(data)
@@ -219,11 +224,10 @@ def test_entry_unknown_backend_dispatches_to_neither(mock_gmsh, mock_c2d):
 @patch("src.datagen.meshing.common.entry.C2D_MeshGenerator")
 @patch("src.datagen.meshing.common.entry.GMSH_MeshGenerator")
 def test_entry_backend_missing_from_dispatch_table_is_flagged(mock_gmsh, mock_c2d):
-    # The guard tests membership of _TE_MISMATCH_IS_FATAL rather than equality with UNKNOWN, so a
-    # backend added to the enum but never wired into the maps fails safe. Without it the TE gate
-    # would return False and `_TE_MISMATCH_IS_FATAL[backend]` would raise KeyError straight out of
-    # the dispatcher, breaking its every-failure-is-a-flag contract.
-    data = _blunt_mesh_in(MeshBackend.GMSH, MeshTopology.CGRD, mesh_config=GMSH_CMeshingConfig())
+    # The guard tests membership of `_RUNNERS` rather than equality with UNKNOWN, so a backend added
+    # to the enum but never wired in fails safe. Without it the closure gate would find no
+    # requirement for the pairing and misreport it as INPUT_CLOSURE_FAIL.
+    data = _mesh_in(MeshBackend.GMSH, MeshTopology.CGRD, mesh_config=GMSH_CMeshingConfig())
     unwired = data.model_copy(update={"backend": "fenics"})  # bypasses validation, as a new enum member would
 
     out = Common_GenerateMesh(unwired)
@@ -252,7 +256,7 @@ def test_entry_gmsh_input_validation_error_becomes_flag(mock_in, mock_generator)
     # they ever drift, since the caller contract is a flag rather than a raise.
     mock_in.side_effect = _a_validation_error()
 
-    out = Common_GenerateMesh(_blunt_mesh_in(MeshBackend.GMSH, MeshTopology.CGRD))
+    out = Common_GenerateMesh(_mesh_in(MeshBackend.GMSH, MeshTopology.CGRD))
 
     assert out.flag == MeshExitFlag.FATAL_ERROR
     assert out.backend == MeshBackend.GMSH
@@ -264,7 +268,7 @@ def test_entry_gmsh_input_validation_error_becomes_flag(mock_in, mock_generator)
 def test_entry_c2d_input_validation_error_becomes_flag(mock_in, mock_generator):
     mock_in.side_effect = _a_validation_error()
 
-    out = Common_GenerateMesh(_blunt_mesh_in(MeshBackend.C2D, MeshTopology.OGRD))
+    out = Common_GenerateMesh(_mesh_in(MeshBackend.C2D, MeshTopology.OGRD))
 
     assert out.flag == MeshExitFlag.FATAL_ERROR
     assert out.backend == MeshBackend.C2D
@@ -277,7 +281,7 @@ def test_entry_backend_exception_becomes_flag(mock_generator):
     # writers (GMSH_Write_Exception / C2D_Write_Exception), which can raise on their own.
     mock_generator.side_effect = OSError("exception writer blew up on the working dir")
 
-    out = Common_GenerateMesh(_blunt_mesh_in(MeshBackend.GMSH, MeshTopology.CGRD))
+    out = Common_GenerateMesh(_mesh_in(MeshBackend.GMSH, MeshTopology.CGRD))
 
     assert out.flag == MeshExitFlag.FATAL_ERROR
     assert out.backend == MeshBackend.GMSH
@@ -291,7 +295,7 @@ def test_entry_backend_exception_becomes_flag(mock_generator):
 @patch("src.datagen.meshing.common.entry.GMSH_MeshGenerator")
 def test_entry_malformed_tensor_becomes_flag(mock_generator, bad_coords):
     # The real validator, unpatched: it runs ahead of the dispatch `try`, so a raise from it escapes
-    data = _blunt_mesh_in(MeshBackend.GMSH, MeshTopology.CGRD)
+    data = _mesh_in(MeshBackend.GMSH, MeshTopology.CGRD)
     data.airfoil.coords_tensor = bad_coords
 
     out = Common_GenerateMesh(data)
@@ -315,7 +319,7 @@ def test_entry_unparseable_mesh_keeps_its_paths(mock_generator, tmp_path):
     mock_out.verbose_list = ["gmsh.log"]
     mock_generator.return_value = mock_out
 
-    out = Common_GenerateMesh(_blunt_mesh_in(MeshBackend.GMSH, MeshTopology.CGRD))
+    out = Common_GenerateMesh(_mesh_in(MeshBackend.GMSH, MeshTopology.CGRD))
 
     assert out.flag == MeshExitFlag.CONVERSION_FAIL
     assert out.mesh_path == str(broken)
@@ -339,7 +343,7 @@ def test_entry_quality_exception_becomes_flag(mock_generator, mock_quality):
     mock_generator.return_value = mock_out
     mock_quality.side_effect = ValueError("malformed NPOIN block")
 
-    out = Common_GenerateMesh(_blunt_mesh_in(MeshBackend.GMSH, MeshTopology.CGRD))
+    out = Common_GenerateMesh(_mesh_in(MeshBackend.GMSH, MeshTopology.CGRD))
 
     assert out.flag == MeshExitFlag.FATAL_ERROR
     assert mock_quality.called
@@ -356,7 +360,7 @@ def test_entry_geo_dev_exception_becomes_flag(mock_generator, mock_quality, mock
     mock_quality.return_value = (MeshExitFlag.SUCCESS, None, 1234)
     mock_geo_dev.side_effect = ValueError("unreadable MARKER_AIRFOIL block")
 
-    out = Common_GenerateMesh(_blunt_mesh_in(MeshBackend.GMSH, MeshTopology.CGRD))
+    out = Common_GenerateMesh(_mesh_in(MeshBackend.GMSH, MeshTopology.CGRD))
 
     assert out.flag == MeshExitFlag.FATAL_ERROR
     assert mock_geo_dev.called  # the quality pass did hand over
@@ -371,7 +375,7 @@ def test_entry_forwards_the_resolved_config_to_gmsh(mock_generator):
     # meshing at the wrong resolution. This is the knobs-actually-arrive test.
     mock_generator.return_value = _mock_backend_out(GMSH_ExitFlag.EXTRUSION_FAIL)
 
-    Common_GenerateMesh(_blunt_mesh_in(
+    Common_GenerateMesh(_mesh_in(
         MeshBackend.GMSH, MeshTopology.CGRD,
         mesh_config=GMSH_CMeshingConfig(nx_upper=321, nx_wake=77)))
 
@@ -387,12 +391,12 @@ def test_entry_forwards_the_resolved_config_to_c2d(mock_generator):
     # dispatcher does not pass: `C2D_In`'s validator fills it from `topology` on the way through.
     mock_generator.return_value = _mock_backend_out(C2D_ExitFlag.SUBPROCESS_FAIL)
 
-    Common_GenerateMesh(_blunt_mesh_in(
+    Common_GenerateMesh(_mesh_in(
         MeshBackend.C2D, MeshTopology.OGRD,
-        mesh_config=C2D_MeshingConfig(nsrf=500, jmax=321)))
+        mesh_config=C2D_MeshingConfig(nwke=77, jmax=321)))
 
     c2d_in = mock_generator.call_args.args[0]
-    assert c2d_in.meshing_config.nsrf == 500
+    assert c2d_in.meshing_config.nwke == 77
     assert c2d_in.meshing_config.jmax == 321
     assert c2d_in.topology == C2D_Topology.OGRD
     assert c2d_in.meshing_config.topo == "OGRD"
@@ -406,7 +410,7 @@ def test_entry_one_c2d_config_sweeps_both_topologies(mock_generator):
     config = C2D_MeshingConfig()
 
     for topology in (MeshTopology.OGRD, MeshTopology.CGRD):
-        out = Common_GenerateMesh(_blunt_mesh_in(MeshBackend.C2D, topology, mesh_config=config))
+        out = Common_GenerateMesh(_mesh_in(MeshBackend.C2D, topology, mesh_config=config))
 
         assert out.flag == MeshExitFlag.SUBPROCESS_FAIL
         assert mock_generator.call_args.args[0].meshing_config.topo == C2D_Topology[topology.name].value

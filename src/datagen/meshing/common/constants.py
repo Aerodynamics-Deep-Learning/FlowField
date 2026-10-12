@@ -35,6 +35,21 @@ MARKER_FARFIELD = "MARKER_FARFIELD"
 GEO_DEV_LIMIT = 2.5e-3
 
 
+# ------------------------------------------------------------ Trailing-edge input checks
+
+# Smallest first-to-last-point distance that counts as an open TE. A nonzero gap below it is rounding
+# noise rather than geometry, and too short a TE line for gmsh's C-mesh to build on.
+TE_GAP_MIN = 1e-5
+
+# Interior angle at a closed contour's closure point, in degrees, below which the TE is sharp. Real TE
+# wedges sit under ~40; a round tip, or a flat base closed mid-base or at a corner, reads ~90 or more.
+SHARP_TE_ANGLE = 60.0
+
+# Direction change between consecutive panels, in degrees, above which a vertex is a corner. A flat
+# base's corners turn ~80-90; a smooth section stays well under this per panel even when coarse.
+CORNER_TURN_LIMIT = 45.0
+
+
 # ------------------------------------------------------------------- Mesh-quality gates
 #
 # All five are measured by `common.quality` (four per cell by `_cell_metrics`/`_orthogonal_quality`,
@@ -89,7 +104,7 @@ ASPECT_RATIO_LIMIT = 1.0e7
 # It is what stops a cell-count minimizer: coarsening c2d's O-grid passes every other gate
 # (jmax=30 scores skew 0.35) while nearly every radial neighbour pair grows 2.7x. Set against the
 # good meshes above (1.14-1.21) and the usual 1.2-1.25 wall-normal growth rule: it admits c2d down to
-# jmax=130 at nsrf=300, or nsrf=250 at jmax=200 (measured on NACA0012, one knob at a time).
+# jmax=130 at 300 surface points, or 250 surface points at jmax=200 (measured on NACA0012, one knob at a time).
 # Area ratio reads a triangle next to an equal-edged quad as 2 by shape alone, so a hybrid tri/quad
 # mesh would need this normalized first; every mesh both backends write is all-quad.
 SIZE_RATIO_LIMIT = 1.25

@@ -1,7 +1,7 @@
 """The single entry point for airfoil mesh generation via: `generate_mesh(MeshIn) -> MeshOut`.
 
 1- Runs the shared input-physicality checks once (`common.utils.Common_validate_*`), including the
-   one bluntness->topology reconciliation both backends share
+   one TE-closure gate both backends share, and logs the advisory TE-shape warnings
 2- Dispatches to whichever backend `MeshIn.backend` selects
 3- Normalizes both backends' results into one `MeshOut`/`MeshExitFlag`
 """
@@ -13,7 +13,10 @@ from pydantic import ValidationError
 from .schemas import MeshIn, MeshOut, MeshBackend, MeshTopology, MeshExitFlag
 from .quality import Common_evaluate_mesh_quality
 from .geo_dev import Common_evaluate_mesh_geo_dev
-from src.datagen.meshing.common.utils import Common_validate_freestream_physicality, Common_validate_te_for_topology, Common_validate_tensor_numeric
+from src.datagen.meshing.common.utils import (
+    Common_validate_freestream_physicality, Common_validate_te_closure, Common_te_shape_warnings,
+    Common_validate_tensor_numeric,
+)
 from src.datagen.meshing.gmsh.schemas import GMSH_In, GMSH_ExitFlag, GMSH_Topology
 from src.datagen.meshing.gmsh.run import GMSH_MeshGenerator
 from src.datagen.meshing.c2d.schemas import C2D_In, C2D_ExitFlag, C2D_Topology
@@ -45,12 +48,6 @@ _C2D_FLAG_MAP = {
     C2D_ExitFlag.FATAL_ERROR: MeshExitFlag.FATAL_ERROR,
     C2D_ExitFlag.CONVERSION_FAIL: MeshExitFlag.CONVERSION_FAIL,
     C2D_ExitFlag.SUCCESS: MeshExitFlag.SUCCESS,
-}
-
-# What a TE-shape/topology mismatch costs, per backend; whether fatal or not
-_TE_MISMATCH_IS_FATAL = {
-    MeshBackend.GMSH: True, # CGRD on a sharp TE crashes occ; OGRD on a blunt one silently meshes a closed TE
-    MeshBackend.C2D: False, # Is not fatal, gives a mesh albeit a bad one
 }
 
 def _flagged_out(data: MeshIn, flag: MeshExitFlag, backend: MeshBackend = None) -> MeshOut:
@@ -153,6 +150,12 @@ def _run_c2d(data: MeshIn) -> MeshOut:
         geo_dev=geo_dev, num_nodes=num_nodes, verbose_list=out.verbose_list
     )
 
+# Membership here is what keeps an unrecognised backend from being dispatched anywhere
+_RUNNERS = {
+    MeshBackend.GMSH: _run_gmsh,
+    MeshBackend.C2D: _run_c2d,
+}
+
 def Common_GenerateMesh(data: MeshIn) -> MeshOut:
     """
     Backend+topology-agnostic mesh generation entry point.
@@ -175,25 +178,26 @@ def Common_GenerateMesh(data: MeshIn) -> MeshOut:
         logger.warning(msg)
         return _flagged_out(data, MeshExitFlag.INPUT_FREESTREAM_FAIL)
 
-    if data.backend not in _TE_MISMATCH_IS_FATAL:
+    if data.backend not in _RUNNERS:
         return _flagged_out(data, MeshExitFlag.INPUT_UNKNOWN_SOLVER, MeshBackend.UNKNOWN)
 
-    # The place where the TE shape is reconciled against the requested topology
-    is_valid, msg = Common_validate_te_for_topology(
+    # Hard gate: the contour's closure against what the pairing requires
+    is_valid, msg = Common_validate_te_closure(
         coords_tensor=data.airfoil.coords_tensor, backend=data.backend, topology=data.topology)
     if not is_valid:
         logger.warning(msg)
-        if _TE_MISMATCH_IS_FATAL[data.backend]:
-            return _flagged_out(data, MeshExitFlag.INPUT_BLUNTING_FAIL)
+        return _flagged_out(data, MeshExitFlag.INPUT_CLOSURE_FAIL)
+
+    # Advisory only: a TE shape or corners the pairing meshes poorly
+    for msg in Common_te_shape_warnings(
+            coords_tensor=data.airfoil.coords_tensor, backend=data.backend, topology=data.topology):
+        logger.warning(msg)
 
     # Backstop for the any other failure that may happen. Both backends already catch broadly and
     # flag, and both scoring passes own their failures, but the backends' `except` blocks call the
     # exception writers, which can raise themselves. All in all, dispatch to the solver tree.
     try:
-        if data.backend == MeshBackend.GMSH:
-            out = _run_gmsh(data)
-        else:
-            out = _run_c2d(data)
+        out = _RUNNERS[data.backend](data)
     except Exception:
         logger.exception("Unhandled exception from the %s backend", data.backend.value)
         return _flagged_out(data, MeshExitFlag.FATAL_ERROR)

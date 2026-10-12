@@ -6,10 +6,13 @@ time (switch with number keys 1-5), so a person can eyeball the differences dire
 edge/quality-metric toggles as `gmsh.utils.GMSH_plot_mesh`.
 
 Note: gmsh's cmesh/omesh and c2d's OGRD/CGRD are each backend's own independent topology
-choice, not a matched pair across backends (in particular gmsh's O-mesh requires a sharp TE,
-while c2d's O-grid (OGRD) is c2d's own recommendation for a blunt TE). Don't read
-"gmsh omesh" and "c2d OGRD" as the same case; see `conftest.py`'s `sterile_c2d_input`/
-`sterile_c2d_cgrd_input` docstrings.
+choice, not a matched pair across backends, and they are not fed the same TE. gmsh's C-mesh gets an
+open TE (it builds its TE line between the end points); the rest get closed contours: both
+O-grids the same rounded NACA0012 (`tests/closed_airfoils.py`), c2d's C-grid a sharp one. c2d
+meshes those points as given, so the rounded TE in "c2d OGRD" is the input's, not c2d's. Here the
+gmsh O-mesh is fed that rounded airfoil rather than its sharp `sterile_gmsh_omesh_input` default,
+so the two O-grids mesh the same geometry. Don't read "gmsh omesh" and "c2d OGRD" as the same
+case; see `conftest.py`'s fixture docstrings.
 
 Just run it directly:
 
@@ -50,6 +53,7 @@ from src.datagen.meshing.common.quality import _cell_metrics, _orthogonal_qualit
 from src.datagen.meshing.common.constants import (
     SKEWNESS_LIMIT, ORTHO_MIN, JACOBIAN_LIMIT, ASPECT_RATIO_LIMIT,
 )
+from tests.closed_airfoils import closed_naca0012
 # The four acceptance thresholds `common.quality` renders its verdict against, used here as one of
 # the three colour scales: pinned to the worst-case end of the colormap, they turn a cell's colour
 # into a reading of how close it is to being rejected.
@@ -171,7 +175,10 @@ def test_visual_comparison_gmsh_vs_c2d_vs_baseline(
     gmsh_cmesh_out = GMSH_MeshGenerator(sterile_gmsh_input)
     assert gmsh_cmesh_out.flag == GMSH_ExitFlag.SUCCESS, f"gmsh cmesh failed with flag {gmsh_cmesh_out.flag}"
 
-    gmsh_omesh_out = GMSH_MeshGenerator(sterile_gmsh_omesh_input)
+    # The same rounded TE c2d's O-grid gets, so the two O-grids mesh one geometry
+    gmsh_omesh_in = sterile_gmsh_omesh_input.model_copy(
+        update={"airfoil": closed_naca0012("naca0012_omesh_round", te="round")})
+    gmsh_omesh_out = GMSH_MeshGenerator(gmsh_omesh_in)
     assert gmsh_omesh_out.flag == GMSH_ExitFlag.SUCCESS, f"gmsh omesh failed with flag {gmsh_omesh_out.flag}"
 
     c2d_ogrd_out = C2D_MeshGenerator(sterile_c2d_input)
@@ -187,8 +194,8 @@ def test_visual_comparison_gmsh_vs_c2d_vs_baseline(
     meshes = [
         ("1: baseline (example_naca0012.vtk)", baseline_mesh_path),
         ("2: gmsh cmesh", gmsh_cmesh_out.mesh_path_vtk),
-        ("3: gmsh omesh", gmsh_omesh_out.mesh_path_vtk),
-        ("4: c2d OGRD", c2d_ogrd_out.mesh_path_vtk),
+        ("3: gmsh omesh (rounded TE)", gmsh_omesh_out.mesh_path_vtk),
+        ("4: c2d OGRD (rounded TE)", c2d_ogrd_out.mesh_path_vtk),
         ("5: c2d CGRD", c2d_cgrd_out.mesh_path_vtk),
     ]
     fluid_domains = [_fluid_domain_with_quality_metrics(vtk_path) for _, vtk_path in meshes]
