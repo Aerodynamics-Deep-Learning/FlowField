@@ -1,0 +1,25 @@
+fx77w258: rejected (fit_tolerance)
+source   tabulated/fx77w258.dat
+ingest   20261014T2029Z_2cfa, shape version cst8-r1, code 6ec28a5
+
+fit misses a point by 2.15e-03c at x=0.0044 (limit 0.001)
+
+identity
+  geometry_id  07bf5f9d2d5eb4545ee70cdea202cd77810e4e42ecd1c7d3077bdc855310cbaa
+  raw_hash     07bf5f9d2d5eb4545ee70cdea202cd77810e4e42ecd1c7d3077bdc855310cbaa, 95 points
+  family       none (tabulated)
+
+normalization (of the file)
+  LE           point 48, interpolated between two input points, at (-0.000201, -0.005762)
+  rotation     -0.3452 deg, scale 0.999781, x stretch upper 0.999963 lower 1.000037
+
+TE
+  closure      pried, source gap 1.220e-02 c
+
+CST (order 8, n1 0.5, n2 1)
+  upper        +0.325703 -0.337206 +1.407860 -0.596664 +1.478158 -0.638172 +0.928505 -0.051827 +0.324983
+  lower        -0.325703 -0.819584 +0.397423 -0.965249 +0.623575 -1.151979 +0.527291 -0.373887 +0.130067
+  LE term      +1.571350
+  fit          max 2.15e-03 c at x=0.0044 (limit 0.001), rms 7.23e-04 c, over 96 points
+  source       the file's points before closing are within 6.48e-03 c
+  TE wedge     10.59 deg

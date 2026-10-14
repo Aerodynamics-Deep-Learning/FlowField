@@ -1,0 +1,28 @@
+s5010: added
+source   tabulated/s5010.dat
+ingest   20261014T2029Z_2cfa, shape version cst8-r1, code 6ec28a5
+
+identity
+  geometry_id  ac44c83901383169f3fb19ae94955c5d81fb1750116e3b8f0926c8282c639ee9
+  raw_hash     ac44c83901383169f3fb19ae94955c5d81fb1750116e3b8f0926c8282c639ee9, 61 points
+  family       none (tabulated)
+
+normalization (of the file)
+  LE           point 31, interpolated between two input points, at (-0.000139, -0.000149)
+  rotation     -0.0086 deg, scale 0.999861, x stretch upper 1.000000 lower 1.000000
+
+TE
+  closure      none, source gap 0.000e+00 c
+
+CST (order 8, n1 0.5, n2 1)
+  upper        +0.126190 +0.083883 +0.260314 +0.119869 +0.233934 +0.093216 +0.142253 +0.045416 +0.000586
+  lower        -0.126190 -0.247515 +0.113876 -0.310198 +0.196986 -0.275011 +0.066888 -0.110435 -0.070802
+  LE term      +0.433365
+  fit          max 2.53e-04 c at x=0.0042 (limit 0.001), rms 7.41e-05 c, over 62 points
+  source       the file's points before closing are within 2.53e-04 c
+  TE wedge     4.08 deg
+
+files
+  raw          raw/datagen/geometry/raw/s5010.dat
+  normalised   raw/datagen/geometry/normalised/cst8-r1/s5010.dat
+  norm_hash    e7f124113fc3ad69e824e87c34a497f9aaa85284f0b7385421789562977257b8

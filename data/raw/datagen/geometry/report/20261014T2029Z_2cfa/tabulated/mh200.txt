@@ -1,0 +1,28 @@
+mh200: added
+source   tabulated/mh200.dat
+ingest   20261014T2029Z_2cfa, shape version cst8-r1, code 6ec28a5
+
+identity
+  geometry_id  26bdcbf96c5554068318c37742e67eeceeab590504dbcb4422caab3b24ab7415
+  raw_hash     26bdcbf96c5554068318c37742e67eeceeab590504dbcb4422caab3b24ab7415, 68 points
+  family       none (tabulated)
+
+normalization (of the file)
+  LE           point 34, interpolated between two input points, at (-0.000004, -0.000038)
+  rotation     -0.0022 deg, scale 0.999996, x stretch upper 1.000000 lower 1.000000
+
+TE
+  closure      none, source gap 0.000e+00 c
+
+CST (order 8, n1 0.5, n2 1)
+  upper        +0.118800 +0.080262 +0.268281 +0.214149 +0.159881 +0.387655 +0.158704 +0.245349 +0.229494
+  lower        -0.118800 -0.376576 +0.241741 -0.633797 +0.487369 -0.653667 +0.204398 -0.183745 +0.117563
+  LE term      +0.452032
+  fit          max 5.67e-04 c at x=0.0263 (limit 0.001), rms 1.67e-04 c, over 69 points
+  source       the file's points before closing are within 5.67e-04 c
+  TE wedge     6.22 deg
+
+files
+  raw          raw/datagen/geometry/raw/mh200.dat
+  normalised   raw/datagen/geometry/normalised/cst8-r1/mh200.dat
+  norm_hash    0331cd7534281564e8fe29c128598951a0b373d5779a50c1812a93e9acb00bba

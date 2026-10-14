@@ -1,0 +1,28 @@
+mid406w2: added
+source   tabulated/mid406w2.dat
+ingest   20261014T2029Z_2cfa, shape version cst8-r1, code 6ec28a5
+
+identity
+  geometry_id  67d468bc6c3526e2b14de8b98c2d49ef9a7fc35a09e78007ce6ee7218481b428
+  raw_hash     67d468bc6c3526e2b14de8b98c2d49ef9a7fc35a09e78007ce6ee7218481b428, 140 points
+  family       none (tabulated)
+
+normalization (of the file)
+  LE           point 72, interpolated between two input points, at (-0.000037, -0.000142)
+  rotation     +0.0553 deg, scale 0.999962, x stretch upper 1.000010 lower 0.999990
+
+TE
+  closure      pried, source gap 2.000e-02 c
+
+CST (order 8, n1 0.5, n2 1)
+  upper        +0.212471 +0.032827 +0.658911 -0.035006 +0.708007 +0.247149 +0.308447 +0.204484 +0.160313
+  lower        -0.212471 -0.290492 +0.116246 -0.220744 +0.201174 -0.117187 +0.200490 +0.079390 +0.160313
+  LE term      +0.666733
+  fit          max 6.20e-04 c at x=0.0045 (limit 0.001), rms 1.62e-04 c, over 141 points
+  source       the file's points before closing are within 1.00e-02 c
+  TE wedge     0.00 deg
+
+files
+  raw          raw/datagen/geometry/raw/mid406w2.dat
+  normalised   raw/datagen/geometry/normalised/cst8-r1/mid406w2.dat
+  norm_hash    4d19c80db224ade69f47e3bdf1a4ba56ab6c19bdb85d2076f43706513c6251ad

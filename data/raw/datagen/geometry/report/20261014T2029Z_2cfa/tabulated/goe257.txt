@@ -1,0 +1,28 @@
+goe257: added
+source   tabulated/goe257.dat
+ingest   20261014T2029Z_2cfa, shape version cst8-r1, code 6ec28a5
+
+identity
+  geometry_id  0e990993c730cdd645a8168af0a0ddf0f2dc66c467e65a7d0b12f4a4d8125b6d
+  raw_hash     0e990993c730cdd645a8168af0a0ddf0f2dc66c467e65a7d0b12f4a4d8125b6d, 33 points
+  family       none (tabulated)
+
+normalization (of the file)
+  LE           point 16, interpolated between two input points, at (-0.000119, 0.001155)
+  rotation     +0.0662 deg, scale 0.999881, x stretch upper 1.000007 lower 0.999993
+
+TE
+  closure      pried, source gap 1.280e-02 c
+
+CST (order 8, n1 0.5, n2 1)
+  upper        +0.116832 +0.264995 +0.154899 +0.249059 +0.233036 +0.180169 +0.150286 +0.238544 +0.150768
+  lower        -0.116832 +0.107894 -0.267576 +0.430659 -0.539791 +0.516408 -0.365901 +0.215600 -0.084617
+  LE term      +0.075392
+  fit          max 7.31e-04 c at x=0.0127 (limit 0.001), rms 2.84e-04 c, over 34 points
+  source       the file's points before closing are within 6.38e-03 c
+  TE wedge     13.41 deg
+
+files
+  raw          raw/datagen/geometry/raw/goe257.dat
+  normalised   raw/datagen/geometry/normalised/cst8-r1/goe257.dat
+  norm_hash    1a775e236d17fd5d5e01f7ce40c081392d0939b9e53476a086541fbb89b7d7b0

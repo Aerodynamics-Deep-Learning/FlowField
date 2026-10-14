@@ -1,0 +1,28 @@
+dae11: added
+source   tabulated/dae11.dat
+ingest   20261014T2029Z_2cfa, shape version cst8-r1, code 6ec28a5
+
+identity
+  geometry_id  8b774761e86fbac9ffe3f9edb333668e29ea14ee94707952fe2d9adea4f1e678
+  raw_hash     8b774761e86fbac9ffe3f9edb333668e29ea14ee94707952fe2d9adea4f1e678, 81 points
+  family       none (tabulated)
+
+normalization (of the file)
+  LE           point 41, interpolated between two input points, at (-0.000000, 0.000010)
+  rotation     +0.0006 deg, scale 1.000000, x stretch upper 1.000000 lower 1.000000
+
+TE
+  closure      none, source gap 0.000e+00 c
+
+CST (order 8, n1 0.5, n2 1)
+  upper        +0.166965 +0.125984 +0.468598 +0.182824 +0.467030 +0.390716 +0.236244 +0.246461 +0.172292
+  lower        -0.166965 -0.171806 +0.060174 -0.049331 +0.053348 +0.035330 +0.047311 +0.073470 +0.080253
+  LE term      +0.558821
+  fit          max 1.65e-04 c at x=0.5876 (limit 0.001), rms 6.34e-05 c, over 82 points
+  source       the file's points before closing are within 1.65e-04 c
+  TE wedge     5.19 deg
+
+files
+  raw          raw/datagen/geometry/raw/dae11.dat
+  normalised   raw/datagen/geometry/normalised/cst8-r1/dae11.dat
+  norm_hash    abeb4ccd8cd176130dc3e692ecb5ce196af2d756a52c36cda7df6bbfa791e13b

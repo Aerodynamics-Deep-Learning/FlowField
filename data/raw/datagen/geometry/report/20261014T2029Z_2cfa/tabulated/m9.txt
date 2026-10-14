@@ -1,0 +1,25 @@
+m9: rejected (fit_tolerance)
+source   tabulated/m9.dat
+ingest   20261014T2029Z_2cfa, shape version cst8-r1, code 6ec28a5
+
+fit misses a point by 2.48e-03c at x=0.2011 (limit 0.001)
+
+identity
+  geometry_id  bdc465b2a128d37b21df0e0d4e3a30359589ecf39cf33e63e60eb286bad77afd
+  raw_hash     bdc465b2a128d37b21df0e0d4e3a30359589ecf39cf33e63e60eb286bad77afd, 33 points
+  family       none (tabulated)
+
+normalization (of the file)
+  LE           point 16, interpolated between two input points, at (-0.001388, 0.005259)
+  rotation     +0.3009 deg, scale 0.998601, x stretch upper 1.000000 lower 1.000000
+
+TE
+  closure      none, source gap 0.000e+00 c
+
+CST (order 8, n1 0.5, n2 1)
+  upper        +0.178754 +0.426109 -0.096418 +1.017304 -0.829799 +1.411162 -0.840658 +0.788659 -0.225119
+  lower        -0.178754 +0.117999 -0.699602 +1.755375 -1.968498 +1.979726 -1.257548 +0.746667 -0.373516
+  LE term      +0.250777
+  fit          max 2.48e-03 c at x=0.2011 (limit 0.001), rms 6.82e-04 c, over 34 points
+  source       the file's points before closing are within 2.48e-03 c
+  TE wedge     7.79 deg

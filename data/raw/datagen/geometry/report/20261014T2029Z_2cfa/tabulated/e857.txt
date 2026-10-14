@@ -1,0 +1,28 @@
+e857: added
+source   tabulated/e857.dat
+ingest   20261014T2029Z_2cfa, shape version cst8-r1, code 6ec28a5
+
+identity
+  geometry_id  1d0c860f4ee524951276e37107caab2b9938081b7d477d5e910c06ea1d7a45f4
+  raw_hash     1d0c860f4ee524951276e37107caab2b9938081b7d477d5e910c06ea1d7a45f4, 66 points
+  family       none (tabulated)
+
+normalization (of the file)
+  LE           point 34, interpolated between two input points, at (-0.000320, 0.000449)
+  rotation     +0.0257 deg, scale 0.999680, x stretch upper 1.000000 lower 1.000000
+
+TE
+  closure      none, source gap 0.000e+00 c
+
+CST (order 8, n1 0.5, n2 1)
+  upper        +0.210594 +0.130773 +0.567290 +0.284712 +0.383504 +0.355213 +0.361714 +0.280678 +0.546223
+  lower        -0.210594 -0.522260 +0.298262 -0.846716 +0.665044 -0.688865 +0.356837 -0.167721 +0.133805
+  LE term      +0.744583
+  fit          max 6.00e-04 c at x=0.9856 (limit 0.001), rms 1.92e-04 c, over 67 points
+  source       the file's points before closing are within 6.00e-04 c
+  TE wedge     21.02 deg
+
+files
+  raw          raw/datagen/geometry/raw/e857.dat
+  normalised   raw/datagen/geometry/normalised/cst8-r1/e857.dat
+  norm_hash    ca704a9a06f807f0339153462986b69776be45892c62b48d2fb8ebe9602a0fc3

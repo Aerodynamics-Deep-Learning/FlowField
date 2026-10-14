@@ -1,0 +1,28 @@
+rae100: added
+source   tabulated/rae100.dat
+ingest   20261014T2029Z_2cfa, shape version cst8-r1, code 6ec28a5
+
+identity
+  geometry_id  b23010f124b546532e6545f91341f262c374ac8ab39689b471d6136604cd5aa2
+  raw_hash     b23010f124b546532e6545f91341f262c374ac8ab39689b471d6136604cd5aa2, 171 points
+  family       none (tabulated)
+
+normalization (of the file)
+  LE           point 85, an input point, at (0.000000, 0.000000)
+  rotation     -0.0000 deg, scale 1.000000, x stretch upper 1.000000 lower 1.000000
+
+TE
+  closure      none, source gap 0.000e+00 c
+
+CST (order 8, n1 0.5, n2 1)
+  upper        +0.148180 +0.141062 +0.133010 +0.126759 +0.113816 +0.113233 +0.091723 +0.093194 +0.085027
+  lower        -0.148180 -0.141062 -0.133010 -0.126759 -0.113816 -0.113233 -0.091723 -0.093194 -0.085027
+  LE term      +0.000000
+  fit          max 5.86e-06 c at x=0.9200 (limit 0.001), rms 1.79e-06 c, over 171 points
+  source       the file's points before closing are within 5.86e-06 c
+  TE wedge     9.72 deg
+
+files
+  raw          raw/datagen/geometry/raw/rae100.dat
+  normalised   raw/datagen/geometry/normalised/cst8-r1/rae100.dat
+  norm_hash    9745423c60cb77f507238f243802347cdb5c8695e7665f046f3312dbd92483c9

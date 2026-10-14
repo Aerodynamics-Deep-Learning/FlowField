@@ -1,0 +1,28 @@
+mi_vawt1: added
+source   tabulated/mi_vawt1.dat
+ingest   20261014T2029Z_2cfa, shape version cst8-r1, code 6ec28a5
+
+identity
+  geometry_id  5a7a1a96d50057991edb8af3083172ec962552fadfbde9c81d40df17a4986994
+  raw_hash     5a7a1a96d50057991edb8af3083172ec962552fadfbde9c81d40df17a4986994, 260 points
+  family       none (tabulated)
+
+normalization (of the file)
+  LE           point 129, interpolated between two input points, at (-0.000003, 0.000874)
+  rotation     +0.0667 deg, scale 1.000006, x stretch upper 1.000001 lower 0.999999
+
+TE
+  closure      pried, source gap 1.976e-02 c
+
+CST (order 8, n1 0.5, n2 1)
+  upper        +0.331832 +0.299069 +0.339099 +0.114623 +0.457793 +0.139904 +0.254044 +0.163802 +0.069675
+  lower        -0.331832 -0.039381 -0.720503 +0.486649 -1.095677 +0.424336 -0.566266 -0.000310 -0.060799
+  LE term      -0.126582
+  fit          max 7.15e-04 c at x=0.0021 (limit 0.001), rms 2.30e-04 c, over 261 points
+  source       the file's points before closing are within 9.86e-03 c
+  TE wedge     7.46 deg
+
+files
+  raw          raw/datagen/geometry/raw/mi_vawt1.dat
+  normalised   raw/datagen/geometry/normalised/cst8-r1/mi_vawt1.dat
+  norm_hash    76fe2017aaac8dd8689b2803bdae7bc3613ffa5bd3a0ae8dacf6914761b8ebfa

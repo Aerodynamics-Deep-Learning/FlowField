@@ -1,0 +1,28 @@
+mh112: added
+source   tabulated/mh112.dat
+ingest   20261014T2029Z_2cfa, shape version cst8-r1, code 6ec28a5
+
+identity
+  geometry_id  20c537913c1bb0d440ac790cd9e54c9b6b2b716713360678348679463138f029
+  raw_hash     20c537913c1bb0d440ac790cd9e54c9b6b2b716713360678348679463138f029, 68 points
+  family       none (tabulated)
+
+normalization (of the file)
+  LE           point 33, interpolated between two input points, at (-0.000013, 0.000003)
+  rotation     +0.0002 deg, scale 0.999987, x stretch upper 1.000000 lower 1.000000
+
+TE
+  closure      none, source gap 0.000e+00 c
+
+CST (order 8, n1 0.5, n2 1)
+  upper        +0.252787 +0.076396 +0.679657 +0.020025 +0.792133 +0.124761 +0.594360 +0.320185 +0.454075
+  lower        -0.252787 -0.250183 -0.013229 +0.022813 -0.095007 +0.132736 +0.038665 +0.100609 +0.240942
+  LE term      +0.758363
+  fit          max 6.90e-04 c at x=0.0242 (limit 0.001), rms 2.16e-04 c, over 69 points
+  source       the file's points before closing are within 6.90e-04 c
+  TE wedge     10.87 deg
+
+files
+  raw          raw/datagen/geometry/raw/mh112.dat
+  normalised   raw/datagen/geometry/normalised/cst8-r1/mh112.dat
+  norm_hash    a2edc90c290b8f987fb588f356afd18cceb2e65d020e65fb30b418684b9ded9b

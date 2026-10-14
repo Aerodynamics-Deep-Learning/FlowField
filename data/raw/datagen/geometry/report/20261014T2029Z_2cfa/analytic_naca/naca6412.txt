@@ -1,0 +1,29 @@
+naca6412: added
+source   analytic_naca/naca6412.dat
+ingest   20261014T2029Z_2cfa, shape version cst8-r1, code 6ec28a5
+
+identity
+  geometry_id  8dbfccff7c16b86fd3b5a00501436dba2440cb8af2e0ac3832b5d33e79f2c9a4
+  raw_hash     6ad50999d9bc8545acc79bc7b5af40cd29fdf8b4f49d72b5978a4c653563136c, 1001 points
+  family       naca4 m=6 p=4 t=12, built from the name in closed-TE form
+
+normalization (of the formula contour)
+  LE           point 492, interpolated between two input points, at (-0.000639, 0.004470)
+  rotation     +0.2559 deg, scale 0.999351, x stretch upper 1.000000 lower 1.000000
+
+TE
+  closure      formula, source gap 2.472e-03 c
+  family check the file is within 5.99e-04 c of the formula shape (limit 0.01)
+
+CST (order 8, n1 0.5, n2 1)
+  upper        +0.178999 +0.236411 +0.293275 +0.359653 +0.237527 +0.360887 +0.301782 +0.339303 +0.346505
+  lower        -0.178999 -0.075942 -0.059317 +0.109467 -0.117873 +0.116151 -0.008762 +0.060405 +0.048078
+  LE term      +0.192737
+  fit          max 1.23e-04 c at x=0.3650 (limit 0.001), rms 3.94e-05 c, over 1002 points
+  source       the file's points before closing are within 1.24e-03 c
+  TE wedge     16.36 deg
+
+files
+  raw          raw/datagen/geometry/raw/naca6412.dat
+  normalised   raw/datagen/geometry/normalised/cst8-r1/naca6412.dat
+  norm_hash    a63a90b830304c62bf81f3aa89582938b7afe6a18c23ec5017c2c9ec588111b3

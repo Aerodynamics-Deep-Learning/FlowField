@@ -1,0 +1,196 @@
+Geometry ingest 20261014T2029Z_2cfa
+started 2026-10-14T20:29:32Z, code 6ec28a5, shape version cst8-r1
+source  for_cst
+190 files: 158 added, 10 duplicate, 22 rejected (fit_tolerance 19, surfaces_cross 3)
+
+status    reason           fit max  src dev closure  source
+added                      3.3e-05  6.3e-04 formula  analytic_naca/naca0006.dat
+added                      4.6e-05  1.2e-03 formula  analytic_naca/naca0012.dat
+added                      6.8e-05  2.1e-03 formula  analytic_naca/naca0021.dat
+added                      8.3e-05  3.0e-03 formula  analytic_naca/naca0030.dat
+added                      9.5e-05  3.8e-03 formula  analytic_naca/naca0040.dat
+added                      9.3e-05  1.2e-03 formula  analytic_naca/naca23012.dat
+added                      5.5e-05  2.1e-03 formula  analytic_naca/naca23021.dat
+added                      5.3e-05  1.3e-03 formula  analytic_naca/naca2412.dat
+added                      8.8e-05  1.2e-03 formula  analytic_naca/naca4412.dat
+added                      1.2e-04  1.2e-03 formula  analytic_naca/naca6412.dat
+added                      8.3e-05  9.8e-04 pried    tabulated/ag09.dat
+added                      2.5e-04  5.5e-04 pried    tabulated/ag24.dat
+added                      7.1e-04  1.4e-03 pried    tabulated/ag34.dat
+added                      6.6e-04  6.4e-04 pried    tabulated/ag47c03.dat
+rejected  fit_tolerance    1.1e-03  3.5e-03 pried    tabulated/ah7476.dat
+added                      2.1e-04  2.1e-04 none     tabulated/ah79100a.dat  (suspect point x=0.9957)
+added                      1.7e-04  9.9e-04 pried    tabulated/ah80136.dat
+rejected  fit_tolerance    1.5e-03  3.4e-03 pried    tabulated/ah81k144wfklappe.dat
+added                      5.6e-04  5.6e-04 none     tabulated/ah93157.dat
+added                      1.7e-04  1.7e-04 none     tabulated/ah93w174.dat
+added                      4.8e-04  4.8e-04 none     tabulated/ah93w215.dat
+added                      4.2e-04  4.2e-03 pried    tabulated/ah93w257.dat
+added                      4.0e-04  7.0e-03 pried    tabulated/ah93w300.dat
+added                      6.9e-04  7.9e-03 pried    tabulated/ah94w301.dat
+added                      5.1e-04  9.2e-03 pried    tabulated/azavextt.dat
+rejected  fit_tolerance    4.0e-03  4.0e-03 none     tabulated/bambino6.dat  (suspect point x=0.0126)
+added                      6.8e-04  7.0e-04 pried    tabulated/clarky.dat
+added                      6.5e-04  7.3e-04 pried    tabulated/clarkyh.dat
+added                      1.6e-04  1.6e-04 none     tabulated/dae11.dat
+rejected  fit_tolerance    3.9e-03  3.9e-03 none     tabulated/dbln526.dat
+added                      2.9e-04  2.9e-04 none     tabulated/e1214.dat
+added                      4.8e-04  4.8e-04 none     tabulated/e184.dat
+added                      3.7e-04  3.7e-04 none     tabulated/e211.dat
+added                      6.2e-04  6.2e-04 none     tabulated/e376.dat
+added                      2.2e-04  2.2e-04 none     tabulated/e387.dat
+added                      7.7e-04  7.7e-04 none     tabulated/e423.dat
+added                      2.3e-04  2.3e-04 none     tabulated/e472.dat
+added                      5.4e-04  5.4e-04 none     tabulated/e478.dat
+added                      4.4e-04  4.4e-04 none     tabulated/e520.dat
+added                      7.0e-04  7.0e-04 none     tabulated/e541.dat
+added                      7.4e-04  7.4e-04 none     tabulated/e554.dat
+added                      3.7e-04  3.7e-04 none     tabulated/e58.dat
+added                      2.9e-04  2.9e-04 none     tabulated/e64.dat
+added                      6.0e-04  6.0e-04 none     tabulated/e857.dat
+added                      1.6e-04  6.8e-03 pried    tabulated/e863.dat
+added                      5.5e-04  7.6e-03 pried    tabulated/e864.dat
+rejected  fit_tolerance    1.8e-03  1.8e-03 none     tabulated/fx3.dat
+rejected  fit_tolerance    1.1e-03  1.1e-03 none     tabulated/fx63137.dat
+added                      2.0e-04  7.3e-03 pried    tabulated/fx69274.dat
+added                      7.1e-04  7.1e-04 none     tabulated/fx69pr281.dat
+added                      8.9e-04  8.9e-04 none     tabulated/fx711520.dat
+added                      8.6e-04  8.6e-04 none     tabulated/fx74080.dat
+rejected  fit_tolerance    1.2e-03  1.2e-03 none     tabulated/fx75193.dat
+added                      6.1e-04  6.1e-04 none     tabulated/fx76mp120.dat
+rejected  fit_tolerance    2.2e-03  6.5e-03 pried    tabulated/fx77w258.dat
+rejected  fit_tolerance    2.1e-03  2.1e-02 pried    tabulated/fx77w270.dat
+rejected  fit_tolerance    2.1e-03  8.6e-03 pried    tabulated/fx77w270s.dat
+rejected  fit_tolerance    2.1e-03  2.1e-02 pried    tabulated/fx77w343.dat
+added                      9.2e-04  9.2e-04 none     tabulated/fx78k150.dat
+added                      3.4e-04  3.4e-04 none     tabulated/fx83w227.dat
+added                      7.2e-04  7.2e-04 pried    tabulated/fxlv152.dat
+added                      6.9e-04  6.9e-04 none     tabulated/fxm2.dat
+added                      5.4e-04  5.4e-04 none     tabulated/glennmartin3.dat
+added                      3.7e-04  3.7e-04 none     tabulated/goe08k.dat
+added                      7.7e-05  7.7e-05 none     tabulated/goe09k.dat
+added                      6.8e-04  4.2e-03 pried    tabulated/goe198.dat
+added                      8.7e-04  3.7e-03 pried    tabulated/goe217.dat
+added                      7.3e-04  6.4e-03 pried    tabulated/goe257.dat
+added                      7.4e-04  1.6e-03 pried    tabulated/goe386.dat
+added                      4.8e-04  4.8e-04 none     tabulated/goe398.dat
+rejected  fit_tolerance    1.3e-03  1.3e-03 none     tabulated/goe462.dat
+added                      2.8e-04  2.8e-04 none     tabulated/goe483.dat
+added                      6.5e-04  6.5e-04 none     tabulated/goe511.dat
+added                      6.6e-04  6.6e-04 none     tabulated/goe531.dat
+added                      3.7e-04  3.7e-03 pried    tabulated/goe55.dat
+rejected  fit_tolerance    1.3e-03  1.3e-03 none     tabulated/goe570.dat
+rejected  fit_tolerance    1.1e-03  1.1e-03 none     tabulated/goe571.dat
+added                      7.6e-05  2.5e-03 pried    tabulated/goe776.dat
+added                      5.2e-04  5.2e-04 none     tabulated/goe780.dat
+added                      8.2e-04  8.2e-04 none     tabulated/hl74_550rev.dat
+added                      1.6e-04  1.6e-04 none     tabulated/hn33s.dat
+added                      3.0e-04  3.0e-04 none     tabulated/hq109.dat
+added                      1.1e-04  1.8e-03 pried    tabulated/hq300gd2.dat
+rejected  fit_tolerance    1.2e-03  1.9e-02 pried    tabulated/hs1430.dat  (suspect point x=0.1799)
+added                      2.3e-04  1.3e-02 pried    tabulated/hs1620.dat
+rejected  fit_tolerance    1.8e-03  1.8e-03 pried    tabulated/k2.dat
+added                      8.1e-04  4.1e-03 pried    tabulated/k3.dat
+added                      1.7e-04  3.2e-03 pried    tabulated/ls013.dat
+added                      3.1e-04  2.7e-03 pried    tabulated/ls413.dat
+added                      2.9e-04  2.6e-03 pried    tabulated/ls413mod.dat
+added                      4.5e-04  3.5e-03 pried    tabulated/ls417.dat
+added                      5.4e-04  3.7e-03 pried    tabulated/ls417mod.dat
+added                      3.6e-04  4.5e-03 pried    tabulated/ls421.dat
+added                      2.7e-04  4.5e-03 pried    tabulated/ls421mod.dat
+added                      5.8e-04  2.2e-03 pried    tabulated/m13.dat
+added                      4.4e-04  2.0e-03 pried    tabulated/m17.dat
+added                      4.9e-04  2.2e-03 pried    tabulated/m18.dat
+added                      2.2e-04  2.0e-03 pried    tabulated/m2.dat
+added                      5.3e-04  2.3e-03 pried    tabulated/m20.dat
+added                      8.0e-04  2.2e-03 pried    tabulated/m25.dat
+added                      7.7e-04  2.4e-03 pried    tabulated/m26.dat
+added                      6.2e-04  2.6e-03 pried    tabulated/m27.dat
+added                      2.0e-04  3.1e-03 pried    tabulated/m5.dat
+added                      3.4e-04  3.4e-04 none     tabulated/m685.dat
+added                      3.8e-04  1.1e-03 pried    tabulated/m7372.dat
+added                      2.6e-04  1.0e-03 pried    tabulated/m77.dat
+rejected  fit_tolerance    2.5e-03  2.5e-03 none     tabulated/m9.dat
+added                      6.5e-04  6.5e-04 none     tabulated/mh104.dat
+added                      6.9e-04  6.9e-04 none     tabulated/mh112.dat
+added                      2.7e-04  2.7e-04 none     tabulated/mh113.dat
+added                      4.6e-04  4.6e-04 none     tabulated/mh121.dat
+added                      4.5e-04  4.5e-04 none     tabulated/mh150.dat
+added                      1.2e-04  1.2e-04 none     tabulated/mh16.dat
+added                      2.1e-04  2.1e-04 none     tabulated/mh17.dat
+added                      5.7e-04  5.7e-04 none     tabulated/mh200.dat
+added                      5.4e-04  5.4e-04 none     tabulated/mh24.dat
+added                      5.4e-04  5.4e-04 none     tabulated/mh32.dat
+added                      3.8e-04  3.8e-04 none     tabulated/mh49.dat
+added                      5.4e-04  5.4e-04 none     tabulated/mh78.dat
+added                      4.2e-04  4.2e-04 none     tabulated/mh82.dat
+added                      5.9e-04  5.9e-04 none     tabulated/mh84.dat
+added                      3.3e-04  3.3e-04 none     tabulated/mh94.dat
+added                      7.2e-04  9.9e-03 pried    tabulated/mi_vawt1.dat
+added                      4.2e-04  1.6e-03 pried    tabulated/mid012r.dat
+rejected  surfaces_cross   5.2e-04  6.1e-03 pried    tabulated/mid173c.dat
+added                      6.2e-04  1.0e-02 pried    tabulated/mid406w2.dat
+added                      6.4e-04  5.0e-03 pried    tabulated/n24.dat
+added                      6.3e-04  6.3e-04 none     tabulated/n66021.dat
+duplicate geometry_id                                tabulated/naca0006.dat
+added                      1.1e-04  1.0e-03 formula  tabulated/naca001066.dat
+duplicate geometry_id                                tabulated/naca0012.dat
+duplicate geometry_id                                tabulated/naca0021.dat
+duplicate geometry_id                                tabulated/naca0030.dat
+duplicate geometry_id                                tabulated/naca0040.dat
+added                      3.8e-05  1.7e-03 formula  tabulated/naca16018.dat
+duplicate geometry_id                                tabulated/naca23012.dat
+duplicate geometry_id                                tabulated/naca23021.dat
+duplicate geometry_id                                tabulated/naca2412.dat
+duplicate geometry_id                                tabulated/naca4412.dat
+duplicate geometry_id                                tabulated/naca6412.dat
+added                      2.2e-04  2.2e-04 none     tabulated/naca64a010.dat
+added                      5.9e-04  5.9e-04 none     tabulated/naca66_018.dat
+added                      6.2e-04  6.2e-04 none     tabulated/nlf415.dat
+added                      5.7e-04  1.0e-03 pried    tabulated/nn1817.dat
+added                      5.9e-06  5.9e-06 none     tabulated/rae100.dat
+added                      1.0e-04  1.0e-04 none     tabulated/rae2822.dat
+added                      2.3e-04  2.3e-04 none     tabulated/s1012.dat
+added                      4.7e-04  4.7e-04 none     tabulated/s1014.dat
+added                      4.4e-04  4.4e-04 none     tabulated/s1020.dat
+added                      6.4e-04  1.1e-03 pried    tabulated/s102b.dat
+added                      3.2e-04  3.2e-04 none     tabulated/s1046.dat
+added                      5.2e-04  5.2e-04 none     tabulated/s1210.dat
+added                      4.6e-04  4.6e-04 pried    tabulated/s1221.dat
+added                      9.1e-04  9.1e-04 none     tabulated/s1223.dat
+added                      3.3e-04  1.2e-02 pried    tabulated/s4094.dat
+added                      3.2e-04  1.9e-02 pried    tabulated/s4095.dat
+added                      2.7e-04  3.1e-02 pried    tabulated/s4096.dat
+added                      2.5e-04  2.5e-04 none     tabulated/s5010.dat
+added                      3.3e-04  3.6e-04 pried    tabulated/s8023.dat
+added                      4.2e-04  4.2e-04 none     tabulated/s8036.dat
+rejected  surfaces_cross   2.1e-03  3.3e-03 pried    tabulated/s9104.dat
+rejected  surfaces_cross   5.4e-03  1.6e-02 pried    tabulated/s9104bte.dat
+added                      6.8e-05  1.4e-03 pried    tabulated/sc20404.dat
+added                      1.3e-04  1.9e-03 pried    tabulated/sc20406.dat
+added                      2.6e-04  2.5e-03 pried    tabulated/sc20410.dat
+added                      2.3e-04  3.0e-03 pried    tabulated/sc20414.dat
+added                      1.4e-04  1.2e-03 pried    tabulated/sc20503.dat
+added                      2.5e-04  3.4e-03 pried    tabulated/sc20518.dat
+added                      2.8e-04  2.4e-03 pried    tabulated/sc20610.dat
+added                      1.8e-04  1.9e-03 pried    tabulated/sc20706.dat
+added                      2.7e-04  3.0e-03 pried    tabulated/sc20712.dat
+added                      3.0e-04  3.5e-03 pried    tabulated/sc20714.dat
+added                      1.7e-04  2.0e-03 pried    tabulated/sc21006.dat
+added                      3.2e-04  3.0e-03 pried    tabulated/sc21010.dat
+added                      4.5e-04  4.5e-04 none     tabulated/sd7003.dat
+added                      2.0e-04  2.0e-04 none     tabulated/sd7062.dat
+added                      2.1e-04  2.1e-04 none     tabulated/sd8020.dat
+added                      6.5e-04  5.1e-03 pried    tabulated/sg6050.dat
+added                      5.2e-04  5.0e-03 pried    tabulated/sg6051.dat
+added                      5.9e-04  6.9e-04 pried    tabulated/sibnia_s_16.dat
+added                      3.4e-04  3.4e-04 none     tabulated/th25816.dat
+added                      8.4e-04  8.4e-04 none     tabulated/ua2_180sm.dat
+added                      4.0e-04  7.1e-04 pried    tabulated/usa22.dat
+added                      6.3e-04  6.3e-04 none     tabulated/usa25.dat
+rejected  fit_tolerance    1.5e-03  1.5e-03 none     tabulated/usa31.dat
+rejected  fit_tolerance    1.0e-03  1.0e-03 none     tabulated/usa33.dat
+added                      8.7e-04  8.7e-04 none     tabulated/usa34.dat
+added                      3.7e-04  1.3e-03 pried    tabulated/usa35b.dat
+added                      6.1e-04  1.3e-03 pried    tabulated/usa49.dat
+added                      8.7e-04  1.0e-03 pried    tabulated/whitcomb.dat

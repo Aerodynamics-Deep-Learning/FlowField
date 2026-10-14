@@ -1,0 +1,28 @@
+ag47c03: added
+source   tabulated/ag47c03.dat
+ingest   20261014T2029Z_2cfa, shape version cst8-r1, code 6ec28a5
+
+identity
+  geometry_id  4c30edaafd5c5b2b54c0920c2e81f1f5f5428f8b21da500bb447e9dd3bec5c95
+  raw_hash     4c30edaafd5c5b2b54c0920c2e81f1f5f5428f8b21da500bb447e9dd3bec5c95, 169 points
+  family       none (tabulated)
+
+normalization (of the file)
+  LE           point 85, interpolated between two input points, at (-0.000024, 0.000165)
+  rotation     -0.8745 deg, scale 0.999887, x stretch upper 1.000022 lower 0.999978
+
+TE
+  closure      pried, source gap 6.928e-04 c
+
+CST (order 8, n1 0.5, n2 1)
+  upper        +0.096386 -0.018378 +0.229898 -0.053855 +0.206856 +0.070484 -0.036466 +0.136019 +0.032670
+  lower        -0.096386 -0.145416 +0.076266 -0.153428 +0.114642 -0.125251 +0.055775 -0.039115 +0.008815
+  LE term      +0.299865
+  fit          max 6.60e-04 c at x=0.7009 (limit 0.001), rms 1.37e-04 c, over 170 points
+  source       the file's points before closing are within 6.38e-04 c
+  TE wedge     1.37 deg
+
+files
+  raw          raw/datagen/geometry/raw/ag47c03.dat
+  normalised   raw/datagen/geometry/normalised/cst8-r1/ag47c03.dat
+  norm_hash    0c08dcb5f4766fe81c05858fb82397f00939e723ddfd47dc47a0745514925daf

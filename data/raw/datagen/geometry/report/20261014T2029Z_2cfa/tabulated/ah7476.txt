@@ -1,0 +1,25 @@
+ah7476: rejected (fit_tolerance)
+source   tabulated/ah7476.dat
+ingest   20261014T2029Z_2cfa, shape version cst8-r1, code 6ec28a5
+
+fit misses a point by 1.06e-03c at x=0.0129 (limit 0.001)
+
+identity
+  geometry_id  5cae1bbf25d6bfc32fd6f3ce2f7b5e7f87ce47a7e60b2c10c27fb52b752dee54
+  raw_hash     5cae1bbf25d6bfc32fd6f3ce2f7b5e7f87ce47a7e60b2c10c27fb52b752dee54, 31 points
+  family       none (tabulated)
+
+normalization (of the file)
+  LE           point 15, interpolated between two input points, at (-0.000316, 0.001921)
+  rotation     +0.1100 deg, scale 0.999683, x stretch upper 1.000007 lower 0.999993
+
+TE
+  closure      pried, source gap 6.998e-03 c
+
+CST (order 8, n1 0.5, n2 1)
+  upper        +0.119751 +0.212420 +0.100865 +0.470321 -0.114822 +0.550307 +0.121820 +0.319596 +0.382835
+  lower        -0.119751 +0.117024 -0.189621 +0.555963 -0.513118 +0.752363 -0.331362 +0.501294 +0.080841
+  LE term      +0.192406
+  fit          max 1.06e-03 c at x=0.0129 (limit 0.001), rms 2.87e-04 c, over 32 points
+  source       the file's points before closing are within 3.50e-03 c
+  TE wedge     16.33 deg

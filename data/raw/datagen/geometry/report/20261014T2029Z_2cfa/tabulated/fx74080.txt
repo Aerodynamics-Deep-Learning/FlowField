@@ -1,0 +1,28 @@
+fx74080: added
+source   tabulated/fx74080.dat
+ingest   20261014T2029Z_2cfa, shape version cst8-r1, code 6ec28a5
+
+identity
+  geometry_id  28143e6048b871101c6d7ec68e3b183c53af5a971c74df740f085a13833c6486
+  raw_hash     28143e6048b871101c6d7ec68e3b183c53af5a971c74df740f085a13833c6486, 97 points
+  family       none (tabulated)
+
+normalization (of the file)
+  LE           point 48, interpolated between two input points, at (-0.000003, 0.000107)
+  rotation     +0.0061 deg, scale 0.999997, x stretch upper 1.000000 lower 1.000000
+
+TE
+  closure      none, source gap 0.000e+00 c
+
+CST (order 8, n1 0.5, n2 1)
+  upper        +0.068706 +0.140952 +0.192739 +0.181630 +0.334243 +0.082854 +0.529751 +0.017110 +0.353936
+  lower        -0.068706 -0.030385 -0.030218 +0.097918 -0.163449 +0.233657 -0.185703 +0.121253 +0.099065
+  LE term      +0.172644
+  fit          max 8.60e-04 c at x=0.9957 (limit 0.001), rms 1.82e-04 c, over 98 points
+  source       the file's points before closing are within 8.60e-04 c
+  TE wedge     13.83 deg
+
+files
+  raw          raw/datagen/geometry/raw/fx74080.dat
+  normalised   raw/datagen/geometry/normalised/cst8-r1/fx74080.dat
+  norm_hash    5c5bfe2773e82cf555f37aefd8ff73939d208cd0fe119d8ebf35fe5a93aa794b

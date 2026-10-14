@@ -1,0 +1,28 @@
+fxm2: added
+source   tabulated/fxm2.dat
+ingest   20261014T2029Z_2cfa, shape version cst8-r1, code 6ec28a5
+
+identity
+  geometry_id  dfa52c677501037b76da9c53a85fc47073938d9472b23abb4acbe18f5456e898
+  raw_hash     dfa52c677501037b76da9c53a85fc47073938d9472b23abb4acbe18f5456e898, 97 points
+  family       none (tabulated)
+
+normalization (of the file)
+  LE           point 48, interpolated between two input points, at (-0.000152, 0.002331)
+  rotation     +0.1335 deg, scale 0.999845, x stretch upper 1.000000 lower 1.000000
+
+TE
+  closure      none, source gap 0.000e+00 c
+
+CST (order 8, n1 0.5, n2 1)
+  upper        +0.188618 +0.048850 +0.362567 +0.035836 +0.382239 +0.025611 +0.294419 +0.153384 +0.259973
+  lower        -0.188618 -0.085262 -0.056443 +0.169972 -0.105831 +0.112245 +0.062348 +0.030414 +0.169724
+  LE term      +0.731795
+  fit          max 6.94e-04 c at x=0.2221 (limit 0.001), rms 2.22e-04 c, over 98 points
+  source       the file's points before closing are within 6.94e-04 c
+  TE wedge     4.94 deg
+
+files
+  raw          raw/datagen/geometry/raw/fxm2.dat
+  normalised   raw/datagen/geometry/normalised/cst8-r1/fxm2.dat
+  norm_hash    e7552f7eb9b81adb001765c92892e08b12c0067f9015b37f54728e86856bfaeb

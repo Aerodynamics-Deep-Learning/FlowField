@@ -1,0 +1,28 @@
+sibnia_s_16: added
+source   tabulated/sibnia_s_16.dat
+ingest   20261014T2029Z_2cfa, shape version cst8-r1, code 6ec28a5
+
+identity
+  geometry_id  0669e6b5e3459ba176f038b9000a45b5620de1dcfaeeb7916798dd653778fda4
+  raw_hash     0669e6b5e3459ba176f038b9000a45b5620de1dcfaeeb7916798dd653778fda4, 86 points
+  family       none (tabulated)
+
+normalization (of the file)
+  LE           point 43, an input point, at (0.000000, 0.000000)
+  rotation     -0.0000 deg, scale 1.000000, x stretch upper 1.000000 lower 1.000000
+
+TE
+  closure      pried, source gap 8.000e-04 c
+
+CST (order 8, n1 0.5, n2 1)
+  upper        +0.320274 +0.239523 +0.290622 -0.208429 +0.650108 -0.386671 +0.452141 -0.062763 +0.149355
+  lower        -0.320274 -0.236785 -0.298075 +0.226871 -0.683227 +0.428553 -0.487754 +0.080663 -0.154886
+  LE term      -0.001461
+  fit          max 5.88e-04 c at x=0.2000 (limit 0.001), rms 2.17e-04 c, over 86 points
+  source       the file's points before closing are within 6.89e-04 c
+  TE wedge     17.30 deg
+
+files
+  raw          raw/datagen/geometry/raw/sibnia_s_16.dat
+  normalised   raw/datagen/geometry/normalised/cst8-r1/sibnia_s_16.dat
+  norm_hash    ff3699459d83450ffa60733ef7a883f169b72c9a4ce3d25493637be68461f7d6

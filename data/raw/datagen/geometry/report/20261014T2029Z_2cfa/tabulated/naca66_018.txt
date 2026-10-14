@@ -1,0 +1,28 @@
+naca66_018: added
+source   tabulated/naca66_018.dat
+ingest   20261014T2029Z_2cfa, shape version cst8-r1, code 6ec28a5
+
+identity
+  geometry_id  b3722bfb29c1f99b608cf62f5181032e0654cf7be3815ec6aba80308c18b76dc
+  raw_hash     b3722bfb29c1f99b608cf62f5181032e0654cf7be3815ec6aba80308c18b76dc, 59 points
+  family       none (tabulated)
+
+normalization (of the file)
+  LE           point 29, an input point, at (0.000000, 0.000000)
+  rotation     -0.0000 deg, scale 1.000000, x stretch upper 1.000000 lower 1.000000
+
+TE
+  closure      none, source gap 0.000e+00 c
+
+CST (order 8, n1 0.5, n2 1)
+  upper        +0.182071 +0.132002 +0.320670 +0.106856 +0.292112 +0.344230 +0.250290 +0.248169 +0.078888
+  lower        -0.182071 -0.134440 -0.314253 -0.121204 -0.268985 -0.370932 -0.228803 -0.258802 -0.077974
+  LE term      +0.001257
+  fit          max 5.85e-04 c at x=0.0250 (limit 0.001), rms 2.30e-04 c, over 59 points
+  source       the file's points before closing are within 5.85e-04 c
+  TE wedge     8.97 deg
+
+files
+  raw          raw/datagen/geometry/raw/naca66_018.dat
+  normalised   raw/datagen/geometry/normalised/cst8-r1/naca66_018.dat
+  norm_hash    f25cebb726ca978acac8a71d5facca6a7ff99d96ec6cb06eb40b63e1569ae605

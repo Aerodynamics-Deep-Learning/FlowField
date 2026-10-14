@@ -1,0 +1,28 @@
+ls417mod: added
+source   tabulated/ls417mod.dat
+ingest   20261014T2029Z_2cfa, shape version cst8-r1, code 6ec28a5
+
+identity
+  geometry_id  3cde484ba29e94ff62cfb9688194b2e86f97487b28d7fea89dd7492e195874dd
+  raw_hash     3cde484ba29e94ff62cfb9688194b2e86f97487b28d7fea89dd7492e195874dd, 92 points
+  family       none (tabulated)
+
+normalization (of the file)
+  LE           point 45, interpolated between two input points, at (-0.000033, 0.001986)
+  rotation     +0.1069 deg, scale 0.999965, x stretch upper 1.000007 lower 0.999993
+
+TE
+  closure      pried, source gap 7.320e-03 c
+
+CST (order 8, n1 0.5, n2 1)
+  upper        +0.253761 +0.084890 +0.566249 -0.104612 +0.527314 +0.113691 +0.368974 +0.172091 +0.298844
+  lower        -0.253761 -0.243756 -0.189962 -0.100383 -0.191666 -0.258322 -0.035173 -0.089700 +0.194129
+  LE term      +0.474487
+  fit          max 5.38e-04 c at x=0.0200 (limit 0.001), rms 1.82e-04 c, over 93 points
+  source       the file's points before closing are within 3.66e-03 c
+  TE wedge     5.65 deg
+
+files
+  raw          raw/datagen/geometry/raw/ls417mod.dat
+  normalised   raw/datagen/geometry/normalised/cst8-r1/ls417mod.dat
+  norm_hash    b7e980448905eba9b0eafd1a42d12e8b23d83d8bf5383650e0683da2ef0690c4

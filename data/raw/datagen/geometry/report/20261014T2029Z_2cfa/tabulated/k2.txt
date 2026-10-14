@@ -1,0 +1,25 @@
+k2: rejected (fit_tolerance)
+source   tabulated/k2.dat
+ingest   20261014T2029Z_2cfa, shape version cst8-r1, code 6ec28a5
+
+fit misses a point by 1.76e-03c at x=0.0979 (limit 0.001)
+
+identity
+  geometry_id  2c34071132fc7b47c427f1b7650c581a7bf489daecd8ba8bc21fb53b49909a3c
+  raw_hash     2c34071132fc7b47c427f1b7650c581a7bf489daecd8ba8bc21fb53b49909a3c, 178 points
+  family       none (tabulated)
+
+normalization (of the file)
+  LE           point 117, interpolated between two input points, at (-0.000002, 0.000122)
+  rotation     -0.7501 deg, scale 0.999912, x stretch upper 0.999993 lower 1.000007
+
+TE
+  closure      pried, source gap 9.998e-04 c
+
+CST (order 8, n1 0.5, n2 1)
+  upper        +0.198682 +0.239253 +0.060122 +0.132726 +0.159800 +0.076454 +0.215999 +0.159946 +0.293262
+  lower        -0.198682 +0.350035 -1.030492 +1.237092 -1.708953 +1.139010 -0.978790 +0.230953 +0.174885
+  LE term      -0.452885
+  fit          max 1.76e-03 c at x=0.0979 (limit 0.001), rms 4.62e-04 c, over 179 points
+  source       the file's points before closing are within 1.81e-03 c
+  TE wedge     6.42 deg

@@ -1,0 +1,28 @@
+sg6051: added
+source   tabulated/sg6051.dat
+ingest   20261014T2029Z_2cfa, shape version cst8-r1, code 6ec28a5
+
+identity
+  geometry_id  8fd3094ae1a6b6fe3abeef4177ab4f37630adac500596eb540387019d32f5690
+  raw_hash     8fd3094ae1a6b6fe3abeef4177ab4f37630adac500596eb540387019d32f5690, 81 points
+  family       none (tabulated)
+
+normalization (of the file)
+  LE           point 42, interpolated between two input points, at (-0.000278, -0.000240)
+  rotation     -0.0138 deg, scale 0.999722, x stretch upper 0.999999 lower 1.000001
+
+TE
+  closure      pried, source gap 1.000e-02 c
+
+CST (order 8, n1 0.5, n2 1)
+  upper        +0.131644 +0.142230 +0.244795 +0.220491 +0.246471 +0.274924 +0.248797 +0.236584 +0.195236
+  lower        -0.131644 -0.185067 +0.071023 -0.347240 +0.282087 -0.335969 +0.116160 -0.116796 -0.018889
+  LE term      +0.252067
+  fit          max 5.20e-04 c at x=0.0035 (limit 0.001), rms 1.15e-04 c, over 82 points
+  source       the file's points before closing are within 5.02e-03 c
+  TE wedge     12.13 deg
+
+files
+  raw          raw/datagen/geometry/raw/sg6051.dat
+  normalised   raw/datagen/geometry/normalised/cst8-r1/sg6051.dat
+  norm_hash    324d2b76e1dee86e4253484270c4838320529380a83b1cea3b32d6b4390ec4ad

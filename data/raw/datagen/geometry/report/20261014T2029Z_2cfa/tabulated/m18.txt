@@ -1,0 +1,28 @@
+m18: added
+source   tabulated/m18.dat
+ingest   20261014T2029Z_2cfa, shape version cst8-r1, code 6ec28a5
+
+identity
+  geometry_id  b52f451e10084ec2bd5dd07a911f74dccd1ef0b740a751a9b97a6ebd8675fb11
+  raw_hash     b52f451e10084ec2bd5dd07a911f74dccd1ef0b740a751a9b97a6ebd8675fb11, 33 points
+  family       none (tabulated)
+
+normalization (of the file)
+  LE           point 16, interpolated between two input points, at (-0.000024, 0.000743)
+  rotation     -0.0835 deg, scale 0.999975, x stretch upper 0.999997 lower 1.000003
+
+TE
+  closure      pried, source gap 4.400e-03 c
+
+CST (order 8, n1 0.5, n2 1)
+  upper        +0.169171 +0.335285 +0.149984 +0.446012 +0.069509 +0.367484 +0.133515 +0.203561 +0.129404
+  lower        -0.169171 +0.083416 -0.264475 +0.281394 -0.391898 +0.192915 -0.270151 -0.050257 -0.192611
+  LE term      -0.042195
+  fit          max 4.86e-04 c at x=0.0125 (limit 0.001), rms 1.65e-04 c, over 34 points
+  source       the file's points before closing are within 2.18e-03 c
+  TE wedge     18.28 deg
+
+files
+  raw          raw/datagen/geometry/raw/m18.dat
+  normalised   raw/datagen/geometry/normalised/cst8-r1/m18.dat
+  norm_hash    fa133a2f4760f359f641d42aac97f018e715f2605959017245b370c3f3a239b8

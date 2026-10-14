@@ -1,0 +1,28 @@
+m27: added
+source   tabulated/m27.dat
+ingest   20261014T2029Z_2cfa, shape version cst8-r1, code 6ec28a5
+
+identity
+  geometry_id  a3c998badf14e0610b8d41fc27d873fb84501dc005099a3e35398dbb8e6f9250
+  raw_hash     a3c998badf14e0610b8d41fc27d873fb84501dc005099a3e35398dbb8e6f9250, 33 points
+  family       none (tabulated)
+
+normalization (of the file)
+  LE           point 16, interpolated between two input points, at (-0.000368, 0.002882)
+  rotation     +0.1651 deg, scale 0.999628, x stretch upper 1.000007 lower 0.999993
+
+TE
+  closure      pried, source gap 5.198e-03 c
+
+CST (order 8, n1 0.5, n2 1)
+  upper        +0.163186 +0.512710 +0.122783 +0.765304 -0.040836 +0.610304 +0.100962 +0.255737 +0.108354
+  lower        -0.163186 +0.216379 -0.179019 +0.437791 -0.327339 +0.291849 -0.206072 -0.048031 -0.189533
+  LE term      +0.022218
+  fit          max 6.21e-04 c at x=0.0129 (limit 0.001), rms 1.95e-04 c, over 34 points
+  source       the file's points before closing are within 2.58e-03 c
+  TE wedge     16.92 deg
+
+files
+  raw          raw/datagen/geometry/raw/m27.dat
+  normalised   raw/datagen/geometry/normalised/cst8-r1/m27.dat
+  norm_hash    13fd4ef938d8d5705ed506a0766254482328d1e1043ffc5f470b29b78edad458

@@ -1,0 +1,25 @@
+s9104bte: rejected (surfaces_cross)
+source   tabulated/s9104bte.dat
+ingest   20261014T2029Z_2cfa, shape version cst8-r1, code 6ec28a5
+
+surfaces cross at x=0.9330 (thickness -2.15e-02c), usually a TE too open to close linearly
+
+identity
+  geometry_id  dccbdeeb4fd2cacc06de0354127afc3778ffac82beff8c6d06f1e2005e871bc2
+  raw_hash     dccbdeeb4fd2cacc06de0354127afc3778ffac82beff8c6d06f1e2005e871bc2, 73 points
+  family       none (tabulated)
+
+normalization (of the file)
+  LE           point 41, interpolated between two input points, at (0.000004, -0.001381)
+  rotation     -0.8798 deg, scale 0.999886, x stretch upper 0.999754 lower 1.000246
+
+TE
+  closure      pried, source gap 3.204e-02 c
+
+CST (order 8, n1 0.5, n2 1)
+  upper        +0.318621 +0.001820 +1.171412 -0.881230 +2.604646 -2.185840 +2.806734 -0.991581 +1.347281
+  lower        -0.318621 +0.137260 -0.300961 +1.164050 -0.776938 +1.322401 +0.067429 +0.585838 +1.347281
+  LE term      +0.892365
+  fit          max 5.44e-03 c at x=0.9336 (limit 0.001), rms 1.11e-03 c, over 74 points
+  source       the file's points before closing are within 1.60e-02 c
+  TE wedge     0.00 deg

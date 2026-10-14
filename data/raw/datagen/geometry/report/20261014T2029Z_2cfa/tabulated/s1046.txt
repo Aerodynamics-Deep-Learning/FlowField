@@ -1,0 +1,28 @@
+s1046: added
+source   tabulated/s1046.dat
+ingest   20261014T2029Z_2cfa, shape version cst8-r1, code 6ec28a5
+
+identity
+  geometry_id  0e976c6aed5678f6f64c9f6a401a405d79995141b7fd7ec81ba3ca62e888c52e
+  raw_hash     0e976c6aed5678f6f64c9f6a401a405d79995141b7fd7ec81ba3ca62e888c52e, 61 points
+  family       none (tabulated)
+
+normalization (of the file)
+  LE           point 30, an input point, at (0.000000, 0.000000)
+  rotation     -0.0000 deg, scale 1.000000, x stretch upper 1.000000 lower 1.000000
+
+TE
+  closure      none, source gap 0.000e+00 c
+
+CST (order 8, n1 0.5, n2 1)
+  upper        +0.175633 +0.322827 +0.078836 +0.445995 -0.067343 +0.436984 -0.009651 +0.212242 +0.079968
+  lower        -0.175633 -0.322827 -0.078836 -0.445995 +0.067343 -0.436984 +0.009651 -0.212242 -0.079968
+  LE term      -0.000000
+  fit          max 3.19e-04 c at x=0.0031 (limit 0.001), rms 1.32e-04 c, over 61 points
+  source       the file's points before closing are within 3.19e-04 c
+  TE wedge     9.14 deg
+
+files
+  raw          raw/datagen/geometry/raw/s1046.dat
+  normalised   raw/datagen/geometry/normalised/cst8-r1/s1046.dat
+  norm_hash    9c3679f9e0c717d2d3ec8a4b57cded201498d71f9a9f9cc42606d0f5fba39599

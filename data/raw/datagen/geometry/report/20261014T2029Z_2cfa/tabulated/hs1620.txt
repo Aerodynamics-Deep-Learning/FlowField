@@ -1,0 +1,28 @@
+hs1620: added
+source   tabulated/hs1620.dat
+ingest   20261014T2029Z_2cfa, shape version cst8-r1, code 6ec28a5
+
+identity
+  geometry_id  5dd0db4b65d5237426d22f11e079fb2234a69e2eaf703517d060de9ddb73b0ba
+  raw_hash     5dd0db4b65d5237426d22f11e079fb2234a69e2eaf703517d060de9ddb73b0ba, 123 points
+  family       none (tabulated)
+
+normalization (of the file)
+  LE           point 61, interpolated between two input points, at (0.000000, 0.000052)
+  rotation     +0.0474 deg, scale 1.000000, x stretch upper 1.000011 lower 0.999989
+
+TE
+  closure      pried, source gap 2.699e-02 c
+
+CST (order 8, n1 0.5, n2 1)
+  upper        +0.300328 +0.216158 +0.529152 +0.028186 +0.739108 +0.082638 +0.527179 +0.381940 +0.577305
+  lower        -0.300328 -0.324028 -0.048953 -0.169812 -0.136304 -0.127716 -0.115906 -0.123874 -0.161839
+  LE term      +0.406430
+  fit          max 2.28e-04 c at x=0.3400 (limit 0.001), rms 8.76e-05 c, over 124 points
+  source       the file's points before closing are within 1.33e-02 c
+  TE wedge     39.19 deg
+
+files
+  raw          raw/datagen/geometry/raw/hs1620.dat
+  normalised   raw/datagen/geometry/normalised/cst8-r1/hs1620.dat
+  norm_hash    be3cbbf10c9132a8910e09a2999012978a638ccfdd2067a6662ffc5559a7c781
