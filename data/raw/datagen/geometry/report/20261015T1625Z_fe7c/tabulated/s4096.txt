@@ -1,0 +1,28 @@
+s4096: added
+source   tabulated/s4096.dat
+ingest   20261015T1625Z_fe7c, shape version cst8-r1, code 254a0bd
+
+identity
+  geometry_id  71b2f169404f9db709e204b64840aad4cf63a733d8039c421bf27088cf2a9653
+  raw_hash     71b2f169404f9db709e204b64840aad4cf63a733d8039c421bf27088cf2a9653, 61 points
+  family       none (tabulated)
+
+normalization (of the file)
+  LE           point 31, interpolated between two input points, at (-0.000019, -0.000512)
+  rotation     -0.0372 deg, scale 1.001082, x stretch upper 0.998880 lower 1.001122
+
+TE
+  closure      pried, source gap 6.224e-02 c
+
+CST (order 8, n1 0.5, n2 1)
+  upper        +0.140162 +0.135914 +0.206867 +0.209447 +0.149263 +0.220667 +0.108571 +0.184231 +0.121762
+  lower        -0.140162 -0.221970 +0.045943 -0.255789 +0.159859 -0.271423 +0.104676 -0.133664 +0.012012
+  LE term      +0.323274
+  fit          max 2.73e-04 c at x=0.0026 (limit 0.001), rms 9.01e-05 c, over 62 points
+  source       the file's points before closing are within 3.11e-02 c
+  TE wedge     6.25 deg
+
+files
+  raw          raw/datagen/geometry/raw/s4096.dat
+  normalised   raw/datagen/geometry/normalised/cst8-r1/s4096.dat
+  norm_hash    2d125d49b890bd59c17b289a2fab11501de1f771df548e2928d5db0319c4ec27

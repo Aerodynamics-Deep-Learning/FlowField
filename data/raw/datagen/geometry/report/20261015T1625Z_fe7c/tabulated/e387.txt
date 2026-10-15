@@ -1,0 +1,28 @@
+e387: added
+source   tabulated/e387.dat
+ingest   20261015T1625Z_fe7c, shape version cst8-r1, code 254a0bd
+
+identity
+  geometry_id  35ae8d992162e0c9890983ea0949eb1081598e05ef18313c5d11fb382816f820
+  raw_hash     35ae8d992162e0c9890983ea0949eb1081598e05ef18313c5d11fb382816f820, 61 points
+  family       none (tabulated)
+
+normalization (of the file)
+  LE           point 32, interpolated between two input points, at (-0.000253, 0.000259)
+  rotation     +0.0149 deg, scale 0.999747, x stretch upper 1.000000 lower 1.000000
+
+TE
+  closure      none, source gap 0.000e+00 c
+
+CST (order 8, n1 0.5, n2 1)
+  upper        +0.110126 +0.139122 +0.212238 +0.247224 +0.206346 +0.221674 +0.154986 +0.195052 +0.144370
+  lower        -0.110126 -0.146801 +0.072273 -0.139778 +0.123797 -0.104836 +0.081537 -0.012778 +0.060522
+  LE term      +0.298187
+  fit          max 2.23e-04 c at x=0.0070 (limit 0.001), rms 5.63e-05 c, over 62 points
+  source       the file's points before closing are within 2.23e-04 c
+  TE wedge     4.75 deg
+
+files
+  raw          raw/datagen/geometry/raw/e387.dat
+  normalised   raw/datagen/geometry/normalised/cst8-r1/e387.dat
+  norm_hash    b5c7d3d18e3cb2bf5b3e9304a7d7bc929bf3e9c8d8d6a185f7ab6e803243803f

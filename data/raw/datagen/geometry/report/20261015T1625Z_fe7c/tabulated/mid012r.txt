@@ -1,0 +1,28 @@
+mid012r: added
+source   tabulated/mid012r.dat
+ingest   20261015T1625Z_fe7c, shape version cst8-r1, code 254a0bd
+
+identity
+  geometry_id  ea88c4e119a192a09964ff8d71ce13227c58013bc71fdffb628710101bf9a1a3
+  raw_hash     ea88c4e119a192a09964ff8d71ce13227c58013bc71fdffb628710101bf9a1a3, 200 points
+  family       none (tabulated)
+
+normalization (of the file)
+  LE           point 100, interpolated between two input points, at (-0.000002, 0.000181)
+  rotation     +3.8820 deg, scale 0.997704, x stretch upper 1.000084 lower 0.999916
+
+TE
+  closure      pried, source gap 2.487e-03 c
+
+CST (order 8, n1 0.5, n2 1)
+  upper        +0.037505 +0.066686 +0.129437 +0.122975 +0.104954 +0.137474 +0.094246 +0.149130 +0.097491
+  lower        -0.037505 -0.040876 +0.178183 -0.175068 +0.410678 -0.112924 +0.184445 +0.119508 +0.097491
+  LE term      +0.251295
+  fit          max 4.24e-04 c at x=0.4894 (limit 0.001), rms 1.05e-04 c, over 201 points
+  source       the file's points before closing are within 1.56e-03 c
+  TE wedge     0.00 deg
+
+files
+  raw          raw/datagen/geometry/raw/mid012r.dat
+  normalised   raw/datagen/geometry/normalised/cst8-r1/mid012r.dat
+  norm_hash    3601257bad09261220b90f19df134ac9eef37907e2f1fc4f1287e931e85f2729

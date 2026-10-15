@@ -1,0 +1,30 @@
+goe570: rejected (fit_tolerance)
+source   tabulated/goe570.dat
+ingest   20261015T1625Z_fe7c, shape version cst8-r1, code 254a0bd
+
+fit misses a point by 1.34e-03c at x=0.0265 (limit 0.001)
+
+identity
+  geometry_id  48f3c1fa3041c5f0801565704793b3688ed2f4a26b4711e6fa157eff727aa466
+  raw_hash     48f3c1fa3041c5f0801565704793b3688ed2f4a26b4711e6fa157eff727aa466, 33 points
+  family       none (tabulated)
+
+normalization (of the file)
+  LE           point 16, interpolated between two input points, at (-0.001075, 0.009206)
+  rotation     +0.5269 deg, scale 0.998884, x stretch upper 1.000000 lower 1.000000
+
+TE
+  closure      none, source gap 0.000e+00 c
+
+CST (order 8, n1 0.5, n2 1)
+  upper        +0.301757 +1.006727 -0.035435 +1.735693 -0.440741 +1.511605 +0.280484 +0.704559 +0.792236
+  lower        -0.301757 -0.373026 +0.085252 -0.709894 +0.450220 -0.743885 +0.235577 -0.367391 -0.211798
+  LE term      +0.239232
+  fit          max 1.34e-03 c at x=0.0265 (limit 0.001), rms 5.11e-04 c, over 34 points
+  source       the file's points before closing are within 1.34e-03 c
+  TE wedge     50.35 deg
+
+files
+  raw          raw/datagen/geometry/rejected/48f3c1fa/goe570.dat
+  normalised   raw/datagen/geometry/normalised/cst8-r1/rejected/48f3c1fa/goe570.dat
+  norm_hash    5b9c4a6fb510222623e554b9ba94b0b9100e2b3fdc98c504ff98293c292e9bdb

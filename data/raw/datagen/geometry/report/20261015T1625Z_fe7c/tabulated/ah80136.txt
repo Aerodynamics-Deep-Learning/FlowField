@@ -1,0 +1,28 @@
+ah80136: added
+source   tabulated/ah80136.dat
+ingest   20261015T1625Z_fe7c, shape version cst8-r1, code 254a0bd
+
+identity
+  geometry_id  ecb0a90fdd9785bbfa0bf09853bba47aed6a7714269393d43727e1a398dbb399
+  raw_hash     ecb0a90fdd9785bbfa0bf09853bba47aed6a7714269393d43727e1a398dbb399, 97 points
+  family       none (tabulated)
+
+normalization (of the file)
+  LE           point 48, interpolated between two input points, at (-0.000001, 0.000118)
+  rotation     -0.0268 deg, scale 0.999999, x stretch upper 1.000000 lower 1.000000
+
+TE
+  closure      pried, source gap 1.750e-03 c
+
+CST (order 8, n1 0.5, n2 1)
+  upper        +0.129957 +0.164734 +0.367315 +0.066372 +0.605405 -0.041161 +0.249710 +0.036245 -0.034915
+  lower        -0.129957 -0.181740 -0.022544 -0.122895 -0.111118 -0.025515 -0.140186 -0.078346 -0.106769
+  LE term      +0.321391
+  fit          max 1.73e-04 c at x=0.0043 (limit 0.001), rms 7.66e-05 c, over 98 points
+  source       the file's points before closing are within 9.95e-04 c
+  TE wedge     4.09 deg
+
+files
+  raw          raw/datagen/geometry/raw/ah80136.dat
+  normalised   raw/datagen/geometry/normalised/cst8-r1/ah80136.dat
+  norm_hash    b895e423a89d01513a6e0fd44173907026de34545f6597c6444e09385dce09e4

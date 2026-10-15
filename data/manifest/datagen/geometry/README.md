@@ -1,7 +1,8 @@
 # Geometry manifest
 
-`geometry.sqlite` records every airfoil in the dataset and how its stored shape was made. Only
-`src/datagen/geometry/manifest/store.py` writes it, through the ingest; don't edit it by hand.
+`geometry.sqlite` records every airfoil in the dataset and how its stored shape was made, and every
+file the ingest rejected with the same detail. Only `src/datagen/geometry/manifest/store.py` writes
+it, through the ingest; don't edit it by hand.
 
 ## Adding airfoils
 
@@ -15,6 +16,11 @@ order (TE, over the upper surface to the LE, back along the lower surface).
 
 - An airfoil already stored (same `geometry_id`) is skipped as a duplicate.
 - A different airfoil under a name already stored is rejected; rename its file.
+- A rejected file is kept as fully as an accepted one: a copy, its rendering if it got as far as a
+  fit, and a `rejected_shapes` row. Only a file that can't be read (`format`) or that crashed the
+  pipeline (`error`) has nothing but its report.
+- Every run first judges the stored rejections again from their copies, so a loosened gate lets them
+  in; a file already stored as a rejection is then skipped as a duplicate.
 - Every file seen gets a report, and every run a summary (see Files). A report flags a *suspect
   point* when the worst-fitted point is at least 4x further off than its neighbours and the file's
   points zig-zag there, which is what a mistyped coordinate looks like.
@@ -33,8 +39,9 @@ versions); every run does that first.
 - `status`: `added`, `reshaped` (a stored airfoil refitted from its raw copy under a new shape
   version), `duplicate` or `rejected`.
 - `reason`: for a rejection, `format`, `family_mismatch`, `too_few_points`, `surfaces_cross`,
-  `fit_tolerance`, `name_taken` or `error`; for a duplicate, what matched: `geometry_id` or `norm_hash`.
-- `geometry_id`: the airfoil the file added or duplicated.
+  `fit_tolerance`, `name_taken` or `error`; for a duplicate, what matched: `geometry_id`,
+  `norm_hash`, or `rejected` (the same points as a stored rejection).
+- `geometry_id`: the stored airfoil the file added or duplicated.
 - `report_path`: the file's report, with the details behind the reason.
 
 **`geometries`**: one row per airfoil, never changed once written.
@@ -71,6 +78,21 @@ versions); every run does that first.
   is never negative; 0 is a cusp (both surfaces arrive at one slope).
 - `norm_path`, `norm_hash`: a 1001-point rendering of the CST, and the SHA-256 of its coordinates.
 
+**`rejected_shapes`**: one row per rejected file per `shape_version`, kept apart so nothing that
+reads `geometry_shapes` can pick up a rejected shape. Its columns are those of `geometries` and
+`geometry_shapes` above, plus:
+- `raw_hash` and `shape_version` are the key: names repeat among rejections (a corrected file keeps
+  its name), and two files of one NACA name share a `geometry_id`.
+- `reason`, `detail`: the rejection's code (as in `ingest_items`) and its words, e.g. where the
+  surfaces cross.
+- The measurements stop where the pipeline did: `family_mismatch` and `too_few_points` have no
+  `cst`, `fit_max`, `source_dev`, `te_wedge_deg` or rendering. A `name_taken` file has them all.
+- `raw_path`: its copy (for a stored airfoil a new version rejects, its own raw copy).
+- `ingest_id`, `report_path`: the run that last judged it, and that run's report.
+
+**`geometry_outcomes`** (a view): accepted shapes and rejections in one table, with `status`
+(`accepted` or `rejected`) and `reason`, over the columns the two share.
+
 Every airfoil is normalized the same way first: LE at (0, 0) where the surface tangent is
 perpendicular to the line to the TE midpoint, TE at x = 1, unit chord.
 
@@ -80,9 +102,11 @@ Paths in the tables are relative to `data/`:
 
 | Path | Holds |
 |---|---|
-| `manifest/datagen/geometry/geometry_archive.sqlite` | shapes of earlier shape versions (only once there are any) |
+| `manifest/datagen/geometry/geometry_archive.sqlite` | shapes and rejections of earlier shape versions (only once there are any) |
 | `raw/datagen/geometry/raw/<name>.dat` | the accepted source files, byte for byte |
+| `raw/datagen/geometry/rejected/<hash8>/<name>.dat` | the rejected source files, byte for byte, in a folder named by the first 8 characters of `raw_hash` |
 | `raw/datagen/geometry/normalised/<shape_version>/<name>.dat` | the CST renderings |
+| `raw/datagen/geometry/normalised/<shape_version>/rejected/<hash8>/<name>.dat` | the renderings of rejected fits |
 | `raw/datagen/geometry/report/<ingest_id>/` | `summary.txt`, and a `.txt` report per file seen, at its path in the ingested folder |
 | `raw/datagen/geometry/report/calibration/` | how the CST order, nose and fit tolerance were chosen |
 
@@ -99,10 +123,12 @@ version does not.
 `geometry_shapes` holds the current version only. After a version bump, run the ingest (with or
 without a folder):
 1. Every stored airfoil is refitted from its raw copy and gets a row under the new version
-   (`reshaped`). One the new version rejects keeps its `geometries` row but has no shape.
+   (`reshaped`). One the new version rejects keeps its `geometries` row but no shape; it gets a
+   `rejected_shapes` row instead and is judged again every run. Every stored rejection is judged
+   again under the new version too.
 2. The rows of older versions move to `geometry_archive.sqlite` next to this file, one row per
-   shape, the old row as JSON (`archived_shapes`). Their renderings are deleted; the CST in the
-   archive defines the shape.
+   shape or rejection, the old row as JSON (`archived_shapes`, `archived_rejections`). Their
+   renderings are deleted; the CST in the archive defines the shape.
 
 `geometries` is never touched: IDs and names stay as they were.
 
@@ -112,6 +138,14 @@ without a folder):
 -- why each file of the latest ingest was rejected
 SELECT source_relpath, reason, report_path FROM ingest_items
 WHERE status = 'rejected' AND ingest_id = (SELECT max(ingest_id) FROM ingests);
+
+-- every rejection under one version, with what was measured and why
+SELECT name, reason, fit_max, source_dev, te_wedge_deg, detail FROM rejected_shapes
+WHERE shape_version = 'cst8-r1' ORDER BY reason, fit_max;
+
+-- accepted and rejected together, e.g. how the fit error spreads around the gate
+SELECT status, name, fit_max FROM geometry_outcomes
+WHERE shape_version = 'cst8-r1' AND fit_max BETWEEN 5e-4 AND 2e-3 ORDER BY fit_max;
 
 -- every airfoil with its shape under one version
 SELECT g.name, g.family, s.closure, s.root_te_gap, s.source_dev, s.fit_max
