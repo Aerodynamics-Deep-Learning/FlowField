@@ -3,6 +3,9 @@ Manual check of the geometry manifest: one matplotlib window showing an airfoil'
 (undigested) over its stored CST shape (digested), on one x/c, y/c plot, so a person can eyeball what
 the ingest did to it. Same convention as the meshing viewer: opt in with `pytest -m interactive`.
 
+A name is looked up among the accepted airfoils first, then the rejected ones, so `_SELECTION` can
+list either; a rejection stopped before its fit has no digested shape.
+
 Keys:
     1-9, 0   airfoil 1-10 of `_SELECTION`
     n        source points as read / moved into the digested frame (normalized, not closed)
@@ -13,7 +16,7 @@ Reads the repo's own manifest under `data/`; `test_viewer_selection_is_in_the_ma
 selection in step with it in every batch run.
 """
 
-from typing import NamedTuple
+from typing import NamedTuple, Optional
 
 import numpy as np
 import pytest
@@ -23,6 +26,7 @@ from src.datagen.geometry.build.normalize import Geom_normalize
 from src.datagen.geometry.build.parametrization import Geom_cst_contour
 from src.datagen.geometry.common.paths import Geom_paths
 from src.datagen.geometry.common.constants import SHAPE_VERSION
+from src.datagen.geometry.common.schemas import RejectionRecord
 from src.datagen.geometry.manifest.store import GeometryStore
 
 _SELECTION = [
@@ -48,8 +52,18 @@ class _Airfoil(NamedTuple):
     name: str
     raw: np.ndarray
     raw_normalized: np.ndarray
-    digested: np.ndarray
+    digested: Optional[np.ndarray]
     caption: str
+
+
+def _lookup(store: GeometryStore, name: str):
+    """(the airfoil's identity, its shape or rejection) under the current version, or None."""
+    geo = store.get_geometry(name)
+    if geo is None:
+        rej = store.get_rejection_named(name, SHAPE_VERSION)
+        return (rej, rej) if rej is not None else None
+    shape = store.get_shape(geo.geometry_id, SHAPE_VERSION)  # None if this version rejected a stored airfoil
+    return geo, shape if shape is not None else store.get_rejection(geo.raw_hash, SHAPE_VERSION)
 
 
 def _load(names) -> list[_Airfoil]:
@@ -59,19 +73,22 @@ def _load(names) -> list[_Airfoil]:
         pytest.skip(f"no geometry manifest at {paths.db}")
     airfoils = []
     with GeometryStore.open(paths.db, read_only=True) as store:
-        missing = [n for n in names if store.get_geometry(n) is None]
+        found = {n: _lookup(store, n) for n in names}
+        missing = [n for n, f in found.items() if f is None or f[1] is None]
         assert not missing, f"not in the manifest: {missing}; edit _SELECTION"
         for name in names:
-            geo = store.get_geometry(name)
-            shape = store.get_shape(geo.geometry_id, SHAPE_VERSION)
+            geo, shape = found[name]
             raw = Geom_read_dat(paths.from_rel(geo.raw_path)).coords
             raw_normalized, tf = Geom_normalize(raw)
             family = f"{geo.family.value} family" if geo.family else "tabulated"
-            caption = (f"{geo.name}: {family}, closure {shape.closure.value}, source gap {shape.root_te_gap:.2%}c, "
-                       f"fit max {shape.fit_max:.1e}c\nundigested: {len(raw)} points from {geo.raw_path}, "
-                       f"normalizing rotates {tf.rotation_deg:+.2f} deg; digested: CST order {shape.cst.order} "
-                       f"({shape.shape_version})")
-            airfoils.append(_Airfoil(geo.name, raw, raw_normalized, Geom_cst_contour(shape.cst, 2001), caption))
+            verdict = f"rejected ({shape.reason.value}), " if isinstance(shape, RejectionRecord) else ""
+            fit = f"fit max {shape.fit_max:.1e}c" if shape.fit_max is not None else "no fit"
+            digested = f"CST order {shape.cst.order}" if shape.cst is not None else "none, rejected before the fit"
+            caption = (f"{geo.name}: {verdict}{family}, closure {shape.closure.value}, "
+                       f"source gap {shape.root_te_gap:.2%}c, {fit}\nundigested: {len(raw)} points from {geo.raw_path}, "
+                       f"normalizing rotates {tf.rotation_deg:+.2f} deg; digested: {digested} ({shape.shape_version})")
+            contour = Geom_cst_contour(shape.cst, 2001) if shape.cst is not None else None
+            airfoils.append(_Airfoil(geo.name, raw, raw_normalized, contour, caption))
     return airfoils
 
 
@@ -79,7 +96,7 @@ def test_viewer_selection_is_in_the_manifest():
     airfoils = _load(_SELECTION)
 
     assert len(airfoils) == 10
-    assert all(a.digested[0].tolist() == [1.0, 0.0] for a in airfoils)
+    assert all(a.digested[0].tolist() == [1.0, 0.0] for a in airfoils if a.digested is not None)
 
 
 @pytest.mark.interactive
@@ -100,7 +117,8 @@ def test_geometry_viewer():
         half_y = (xlim[1] - xlim[0]) * (pos.height * h) / (pos.width * w) / 2  # equal aspect, exactly
         raw = a.raw_normalized if state["normalized"] else a.raw
         ax.clear()
-        ax.plot(a.digested[:, 0], a.digested[:, 1], "-", color="C0", lw=1.4, label="digested: stored CST")
+        if a.digested is not None:
+            ax.plot(a.digested[:, 0], a.digested[:, 1], "-", color="C0", lw=1.4, label="digested: stored CST")
         ax.plot(raw[:, 0], raw[:, 1], "o-", color="C3", lw=0.6, ms=3.5, mfc="none",
                 label="undigested: " + ("normalized, not closed" if state["normalized"] else "as read"))
         ax.set_aspect("equal", adjustable="datalim")

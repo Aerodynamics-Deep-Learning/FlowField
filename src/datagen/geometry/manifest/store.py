@@ -5,7 +5,11 @@ Schema changes land as numbered migrations in `_MIGRATIONS`, tracked by `PRAGMA 
 existing database is backed up next to itself before it is migrated. The file is committed, so it
 runs in rollback-journal mode: between writes it is the only file in its folder.
 
-The manifest holds shapes of the current shape version only. Older ones move to
+Rejected files are kept in as much detail as accepted ones, in `rejected_shapes`, apart from the
+accepted tables so nothing that reads shapes can pick one up by mistake; the `geometry_outcomes`
+view puts both together under a `status` column.
+
+The manifest holds shapes (and rejections) of the current shape version only. Older ones move to
 `geometry_archive.sqlite` next to it, one JSON row each, so the archive never needs migrating; the
 move is one transaction across both files.
 
@@ -19,7 +23,9 @@ from pathlib import Path
 from typing import Optional
 
 from src.datagen.geometry.common.paths import ARCHIVE_NAME, Geom_paths
-from src.datagen.geometry.common.schemas import AddResult, CSTParams, GeometryRecord, ItemStatus, ShapeRecord
+from src.datagen.geometry.common.schemas import (
+    AddResult, CSTParams, GeometryRecord, ItemStatus, RejectionRecord, ShapeRecord,
+)
 
 # Never edit a released migration; append a new one
 _MIGRATIONS = [
@@ -71,16 +77,58 @@ _MIGRATIONS = [
         PRIMARY KEY (ingest_id, source_relpath)
     ) STRICT;
     """,
+    """
+    CREATE TABLE rejected_shapes (
+        raw_hash       TEXT NOT NULL,
+        shape_version  TEXT NOT NULL,
+        geometry_id    TEXT NOT NULL,
+        name           TEXT NOT NULL,
+        family         TEXT,
+        family_params  TEXT,
+        raw_path       TEXT NOT NULL,
+        raw_points     INTEGER NOT NULL,
+        reason         TEXT NOT NULL,
+        detail         TEXT NOT NULL,
+        cst            TEXT,
+        rotation_deg   REAL,
+        closure        TEXT,
+        root_te_gap    REAL,
+        source_dev     REAL,
+        fit_max        REAL,
+        te_wedge_deg   REAL,
+        norm_path      TEXT,
+        norm_hash      TEXT,
+        ingest_id      TEXT NOT NULL REFERENCES ingests (ingest_id),
+        report_path    TEXT NOT NULL,
+        PRIMARY KEY (raw_hash, shape_version)
+    ) STRICT;
+
+    CREATE VIEW geometry_outcomes AS
+        SELECT 'accepted' AS status, NULL AS reason, s.shape_version, g.geometry_id, g.raw_hash, g.name,
+               g.family, g.family_params, g.raw_path, g.raw_points, s.cst, s.rotation_deg, s.closure,
+               s.root_te_gap, s.source_dev, s.fit_max, s.te_wedge_deg, s.norm_path, s.norm_hash
+        FROM geometries g JOIN geometry_shapes s USING (geometry_id)
+        UNION ALL
+        SELECT 'rejected', reason, shape_version, geometry_id, raw_hash, name,
+               family, family_params, raw_path, raw_points, cst, rotation_deg, closure,
+               root_te_gap, source_dev, fit_max, te_wedge_deg, norm_path, norm_hash
+        FROM rejected_shapes;
+    """,
 ]
 
+# Live table -> its archive table (created on first use) and the column naming a row besides shape_version
+_ARCHIVED = {
+    "geometry_shapes": ("archived_shapes", "geometry_id"),
+    "rejected_shapes": ("archived_rejections", "raw_hash"),
+}
 _ARCHIVE_TABLE = """
-    CREATE TABLE IF NOT EXISTS archive.archived_shapes (
-        geometry_id    TEXT NOT NULL,
+    CREATE TABLE IF NOT EXISTS archive.{table} (
+        {key}          TEXT NOT NULL,
         shape_version  TEXT NOT NULL,
         archived_at    TEXT NOT NULL,
         ingest_id      TEXT NOT NULL,
         shape          TEXT NOT NULL,
-        PRIMARY KEY (geometry_id, shape_version)
+        PRIMARY KEY ({key}, shape_version)
     ) STRICT
 """
 
@@ -223,10 +271,51 @@ class GeometryStore:
                  result.closure.value, result.root_te_gap, result.source_dev, result.fit.max_dev,
                  result.te_wedge_deg, norm_path, result.norm_hash))
 
+    def add_rejection(self, result: AddResult, reason: str, detail: str, ingest_id: str, raw_path: str,
+                      norm_path: Optional[str], shape_version: str, report_path: str) -> None:
+        """
+        Stores a rejected file with everything measured on it, replacing its row under this version if
+        an earlier run judged it already.
+
+        Args:
+            result (AddResult): A `Geom_add_airfoil` result that got as far as identifying the file
+                (accepted only when the ingest refused it, e.g. for its name)
+            reason (str): The `RejectReason` value
+            detail (str): The reason in words
+            ingest_id (str): The ingest judging it
+            raw_path (str): Its source copy, relative to `data/`
+            norm_path (str | None): Its rendering, relative to `data/`, if it has a fit
+            shape_version (str): The pipeline version that judged it
+            report_path (str): Its report, relative to `data/`
+        """
+        ident = result.identity
+        if ident is None:
+            raise ValueError(f"{result.path} was never identified; only identified files are stored as rejections")
+        tf, fit = result.transform, result.fit
+        with self.transaction():
+            self._conn.execute(
+                "INSERT OR REPLACE INTO rejected_shapes VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (ident.raw_hash, shape_version, ident.geometry_id, ident.name,
+                 ident.family.value if ident.family else None,
+                 json.dumps(ident.family_params) if ident.family_params is not None else None,
+                 raw_path, ident.raw_points, getattr(reason, "value", reason), detail,
+                 result.cst.model_dump_json() if result.cst is not None else None,
+                 tf.rotation_deg if tf is not None else None,
+                 result.closure.value if result.closure is not None else None,
+                 result.root_te_gap, result.source_dev, fit.max_dev if fit is not None else None,
+                 result.te_wedge_deg, norm_path, result.norm_hash if norm_path is not None else None,
+                 ingest_id, report_path))
+
+    def remove_rejection(self, raw_hash: str, shape_version: str) -> None:
+        """Drops a file's rejection under one version: it has been stored as accepted since."""
+        with self.transaction():
+            self._conn.execute("DELETE FROM rejected_shapes WHERE raw_hash = ? AND shape_version = ?",
+                               (raw_hash, shape_version))
+
     def archive_old_shapes(self, keep_version: str, ingest_id: str, archived_at: str) -> list[str]:
         """
-        Moves every shape not under `keep_version` into the archive database, in one transaction across
-        both files. Creates the archive only when there is something to move.
+        Moves every shape and rejection not under `keep_version` into the archive database, in one
+        transaction across both files. Creates the archive only when there is something to move.
 
         Args:
             keep_version (str): The current shape version, left in place
@@ -236,22 +325,24 @@ class GeometryStore:
         Returns:
             list[str]: The shape versions moved, sorted
         """
-        moved = [r[0] for r in self._conn.execute(
-            "SELECT DISTINCT shape_version FROM geometry_shapes WHERE shape_version != ? ORDER BY 1", (keep_version,))]
+        moved = sorted({r[0] for table in _ARCHIVED for r in self._conn.execute(
+            f"SELECT DISTINCT shape_version FROM {table} WHERE shape_version != ?", (keep_version,))})
         if not moved:
             return []
         self._conn.execute("ATTACH DATABASE ? AS archive", (str(self.path.with_name(ARCHIVE_NAME)),))
         try:
-            self._conn.execute(_ARCHIVE_TABLE)
+            for archive_table, key in _ARCHIVED.values():
+                self._conn.execute(_ARCHIVE_TABLE.format(table=archive_table, key=key))
             with self.transaction():
-                cur = self._conn.execute("SELECT * FROM geometry_shapes WHERE shape_version != ?", (keep_version,))
-                columns = [c[0] for c in cur.description]
-                for row in cur.fetchall():
-                    shape = dict(zip(columns, row))
-                    self._conn.execute("INSERT OR REPLACE INTO archive.archived_shapes VALUES (?, ?, ?, ?, ?)",
-                                       (shape["geometry_id"], shape["shape_version"], archived_at, ingest_id,
-                                        json.dumps(shape)))
-                self._conn.execute("DELETE FROM geometry_shapes WHERE shape_version != ?", (keep_version,))
+                for table, (archive_table, key) in _ARCHIVED.items():
+                    cur = self._conn.execute(f"SELECT * FROM {table} WHERE shape_version != ?", (keep_version,))
+                    columns = [c[0] for c in cur.description]
+                    for row in cur.fetchall():
+                        shape = dict(zip(columns, row))
+                        self._conn.execute(f"INSERT OR REPLACE INTO archive.{archive_table} VALUES (?, ?, ?, ?, ?)",
+                                           (shape[key], shape["shape_version"], archived_at, ingest_id,
+                                            json.dumps(shape)))
+                    self._conn.execute(f"DELETE FROM {table} WHERE shape_version != ?", (keep_version,))
         finally:
             self._conn.execute("DETACH DATABASE archive")
         return moved
@@ -316,6 +407,52 @@ class GeometryStore:
         return ShapeRecord(geometry_id=geometry_id, shape_version=version, cst=CSTParams.model_validate_json(cst),
                            rotation_deg=rotation, closure=closure, root_te_gap=gap, source_dev=source_dev,
                            fit_max=fit_max, te_wedge_deg=wedge, norm_path=norm_path, norm_hash=norm_hash)
+
+    def get_rejection(self, raw_hash: str, shape_version: str) -> Optional[RejectionRecord]:
+        """A file's rejection under one shape version."""
+        cur = self._conn.execute("SELECT * FROM rejected_shapes WHERE raw_hash = ? AND shape_version = ?",
+                                 (raw_hash, shape_version))
+        return next(_rejections(cur), None)
+
+    def find_rejection(self, raw_hash: str) -> Optional[RejectionRecord]:
+        """A file's rejection under any shape version: the last one written."""
+        cur = self._conn.execute("SELECT * FROM rejected_shapes WHERE raw_hash = ? ORDER BY rowid DESC LIMIT 1",
+                                 (raw_hash,))
+        return next(_rejections(cur), None)
+
+    def get_rejection_named(self, name: str, shape_version: str) -> Optional[RejectionRecord]:
+        """A rejection by name under one shape version, ignoring case; names repeat among rejections, so the last written."""
+        cur = self._conn.execute("SELECT * FROM rejected_shapes WHERE name = ? COLLATE NOCASE AND shape_version = ? "
+                                 "ORDER BY rowid DESC LIMIT 1", (name, shape_version))
+        return next(_rejections(cur), None)
+
+    def rejections(self, shape_version: str) -> list[RejectionRecord]:
+        """Every rejection under one shape version, by name."""
+        cur = self._conn.execute("SELECT * FROM rejected_shapes WHERE shape_version = ? ORDER BY name, raw_hash",
+                                 (shape_version,))
+        return list(_rejections(cur))
+
+    def rejections_to_recheck(self) -> list[RejectionRecord]:
+        """
+        One row per rejected file whose airfoil is not stored, by name: what an ingest judges again
+        from its copy. A stored airfoil's own rejection comes back through `geometries_without_shape`.
+        """
+        cur = self._conn.execute(
+            "SELECT * FROM rejected_shapes WHERE geometry_id NOT IN (SELECT geometry_id FROM geometries) "
+            "ORDER BY name, raw_hash, rowid DESC")  # a replaced row gets a new rowid: the last written first
+        latest = {}
+        for rec in _rejections(cur):
+            latest.setdefault(rec.raw_hash, rec)
+        return list(latest.values())
+
+
+def _rejections(cur: sqlite3.Cursor):
+    columns = [c[0] for c in cur.description]
+    for row in cur:
+        rec = dict(zip(columns, row))
+        rec["family_params"] = json.loads(rec["family_params"]) if rec["family_params"] is not None else None
+        rec["cst"] = CSTParams.model_validate_json(rec["cst"]) if rec["cst"] is not None else None
+        yield RejectionRecord(**rec)
 
 
 def _geometry(row: tuple) -> GeometryRecord:

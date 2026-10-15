@@ -9,7 +9,7 @@ Step 2: Ensure each kind of airfoil comes out normalized, closed and rendered
     - test_add_open_tabulated_is_pried
     - test_add_closed_tabulated
     - test_add_writes_nothing
-Step 3: Ensure each gate rejects with its reason
+Step 3: Ensure each gate rejects with its reason, keeping what was measured (a fit's rendering too)
     - test_reject_format
     - test_reject_family_mismatch
     - test_reject_too_few_points
@@ -134,6 +134,7 @@ def test_reject_too_few_points(tmp_path):
 
     assert res.reject is RejectReason.TOO_FEW_POINTS
     assert f"order {CST_ORDER}" in res.reason
+    assert res.cst is None and res.norm_coords is None and res.norm_hash is None
 
 
 def test_reject_surfaces_cross(tmp_path):
@@ -143,6 +144,8 @@ def test_reject_surfaces_cross(tmp_path):
 
     assert res.reject is RejectReason.SURFACES_CROSS
     assert res.root_te_gap == pytest.approx(0.03, abs=1e-3)
+    assert res.norm_coords.shape == (NORM_N_POINTS, 2)  # a rejected fit is rendered, for looking at
+    assert res.norm_hash == Geom_coords_hash(res.norm_coords)
 
 
 def test_reject_fit_tolerance(tmp_path):
@@ -153,4 +156,5 @@ def test_reject_fit_tolerance(tmp_path):
 
     assert res.reject is RejectReason.FIT_TOLERANCE
     assert res.fit.max_dev > CST_FIT_TOL
+    assert res.norm_coords.shape == (NORM_N_POINTS, 2)
 # endregion

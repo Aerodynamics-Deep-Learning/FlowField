@@ -4,7 +4,7 @@ and storage are the ingest's.
 
 Steps: read, identify, take the points (the formula for a family, else the file's), normalize, close,
 check a family against its file, fit, measure the fit against the source as it was before closing,
-gate, render the normalised contour.
+gate, render the normalised contour. A fit the gates reject is rendered too, so it can be looked at.
 """
 
 from dataclasses import dataclass
@@ -71,12 +71,16 @@ def Geom_add_airfoil(path, order: int = CST_ORDER, nose: Nose = CST_NOSE, fit_to
 
     Returns:
         AddResult: Accepted (`reject` None) with the shape and its rendering, or rejected with the
-            reason and whatever was measured before it
+            reason and whatever was measured before it (a fit and its rendering, if it got that far)
     """
     res, pts = _prepare(path)
     if not res.accepted:
         return res
-    return _fit_and_gate(res, pts, order, nose, fit_tol)
+    res = _fit_and_gate(res, pts, order, nose, fit_tol)
+    if res.cst is not None:
+        res.norm_coords = Geom_as_written(Geom_cst_contour(res.cst, NORM_N_POINTS))
+        res.norm_hash = Geom_coords_hash(res.norm_coords)
+    return res
 
 
 def _prepare(path) -> tuple[AddResult, Optional[_Points]]:
@@ -106,7 +110,7 @@ def _prepare(path) -> tuple[AddResult, Optional[_Points]]:
 
 def _fit_and_gate(res: AddResult, pts: _Points, order: int, nose: Nose, fit_tol: float,
                   measure_source: bool = True) -> AddResult:
-    """Everything from the fit on, filling `res` in: fit, measure, gate, render. The calibration skips `source_dev`."""
+    """Everything from the fit on, filling `res` in: fit, measure, gate. The calibration skips `source_dev`."""
     le = res.transform.le_index
     fewest = min(le + 1, len(pts.fit) - le)
     if fewest < order + 4:  # end points carry no information; keep one point spare per surface
@@ -124,9 +128,6 @@ def _fit_and_gate(res: AddResult, pts: _Points, order: int, nose: Nose, fit_tol:
     ok, _, reason = Geom_check_fit(res.fit, fit_tol)
     if not ok:
         return _reject(res, RejectReason.FIT_TOLERANCE, reason)
-
-    res.norm_coords = Geom_as_written(Geom_cst_contour(res.cst, NORM_N_POINTS))
-    res.norm_hash = Geom_coords_hash(res.norm_coords)
     return res
 
 

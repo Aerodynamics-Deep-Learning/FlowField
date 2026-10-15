@@ -11,7 +11,8 @@ Summary:
     - CSTParams, FitMetrics: the fitted shape and how well it matches its points
     - AddResult: everything `add.Geom_add_airfoil` found out about one file
     - IngestItem, IngestSummary: what `ingest.Geom_ingest_folder` did with each file, and the run
-    - GeometryRecord, ShapeRecord: rows of the manifest, as `store.GeometryStore` reads them back
+    - GeometryRecord, ShapeRecord, RejectionRecord: rows of the manifest, as `store.GeometryStore`
+      reads them back
 """
 
 from enum import Enum
@@ -205,3 +206,31 @@ class ShapeRecord(BaseModel):
     te_wedge_deg: float
     norm_path: str
     norm_hash: str
+
+
+class RejectionRecord(BaseModel):
+    """
+    A `rejected_shapes` row: a file the ingest refused under one shape version, with the columns of
+    `geometries` and `geometry_shapes`; the measurements stay None past the step that rejected it.
+    """
+    raw_hash: str
+    shape_version: str
+    geometry_id: str
+    name: str
+    family: Optional[Family] = None
+    family_params: Optional[dict[str, int]] = None
+    raw_path: str
+    raw_points: int
+    reason: RejectReason
+    detail: str
+    cst: Optional[CSTParams] = None
+    rotation_deg: Optional[float] = None
+    closure: Optional[Closure] = None
+    root_te_gap: Optional[float] = None
+    source_dev: Optional[float] = None
+    fit_max: Optional[float] = None
+    te_wedge_deg: Optional[float] = None
+    norm_path: Optional[str] = None
+    norm_hash: Optional[str] = None
+    ingest_id: str  # the run that last judged it
+    report_path: str

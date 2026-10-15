@@ -4,8 +4,13 @@ Where the geometry pipeline's files live, all under the repo's committed `data/`
     data/manifest/datagen/geometry/geometry.sqlite, README.md
     data/manifest/datagen/geometry/geometry_archive.sqlite            shapes of earlier shape versions
     data/raw/datagen/geometry/raw/<name>.dat                          verbatim copies of accepted sources
+    data/raw/datagen/geometry/rejected/<hash8>/<name>.dat             verbatim copies of rejected sources
     data/raw/datagen/geometry/normalised/<shape_version>/<name>.dat   renderings of the fitted shapes
+    data/raw/datagen/geometry/normalised/<shape_version>/rejected/<hash8>/<name>.dat   ...of rejected fits
     data/raw/datagen/geometry/report/<ingest_id>/                     one report per file seen, plus summary.txt
+
+A rejected file sits in a folder named after its raw hash's first 8 characters: names are not unique
+among rejects (a corrected file keeps its name), and the file name must stay the name line.
     data/raw/datagen/geometry/report/calibration/                     calibration tables
 
 The manifest stores paths relative to `data/` with forward slashes, so a clone elsewhere resolves them.
@@ -30,10 +35,17 @@ class GeometryPaths:
         self.archive_db = self.manifest_dir / ARCHIVE_NAME
         self.files_dir = self.data_root / "raw" / "datagen" / "geometry"
         self.raw_dir = self.files_dir / "raw"
+        self.rejected_dir = self.files_dir / "rejected"
         self.calibration_dir = self.files_dir / "report" / "calibration"
 
     def norm_dir(self, shape_version: str) -> Path:
         return self.files_dir / "normalised" / shape_version
+
+    def rejected_raw(self, name: str, raw_hash: str) -> Path:
+        return self.rejected_dir / raw_hash[:8] / f"{name}.dat"
+
+    def rejected_norm(self, shape_version: str, name: str, raw_hash: str) -> Path:
+        return self.norm_dir(shape_version) / "rejected" / raw_hash[:8] / f"{name}.dat"
 
     def report_dir(self, ingest_id: str) -> Path:
         return self.files_dir / "report" / ingest_id

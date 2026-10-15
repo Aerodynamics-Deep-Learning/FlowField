@@ -1,9 +1,10 @@
 """
 Tests for `geometry.store`: the manifest database, i.e.:
 
-Step 1: Ensure opening creates, keeps and guards the schema
+Step 1: Ensure opening creates, keeps, migrates and guards the schema
     - test_open_creates_schema
     - test_reopen_keeps_data
+    - test_migrating_keeps_rows_and_backs_up
     - test_newer_schema_refused
 Step 2: Ensure an accepted airfoil round-trips and the lookups find it
     - test_add_and_read_back
@@ -18,6 +19,13 @@ Step 4: Ensure a shape version change finds the stale airfoils and archives the 
     - test_geometries_without_shape
     - test_archive_old_shapes
     - test_archive_is_created_only_when_needed
+Step 5: Ensure a rejection keeps everything measured, apart from the accepted tables
+    - test_rejection_round_trips
+    - test_rejection_before_the_fit_keeps_what_was_measured
+    - test_rejection_is_replaced_and_removed
+    - test_rejections_to_recheck
+    - test_outcomes_view
+    - test_archive_moves_old_rejections
 """
 
 import json
@@ -26,6 +34,7 @@ import sqlite3
 import numpy as np
 import pytest
 
+import src.datagen.geometry.manifest.store as store_module
 from src.datagen.geometry.build.add import Geom_add_airfoil
 from src.datagen.geometry.build.families import _family_contour
 from src.datagen.geometry.common.io import Geom_write_dat
@@ -42,6 +51,24 @@ def _result(folder, name="naca2412", m=2, p=4, t=12):
     res = Geom_add_airfoil(path)
     assert res.accepted, res.reason
     return res
+
+
+def _crossed(folder, name="crossfoil"):
+    """A tabulated airfoil whose TE is too open to close linearly: rejected after its fit."""
+    folder.mkdir(parents=True, exist_ok=True)
+    x = 0.5 * (1 - np.cos(np.linspace(0, np.pi, 101)))
+    half = (0.24 * (np.sqrt(x) - x) + 0.03 * x ** 30) / 2
+    path = folder / f"{name}.dat"
+    Geom_write_dat(path, name, np.vstack([np.stack([x, half], 1)[::-1], np.stack([x, -half], 1)[1:]]))
+    res = Geom_add_airfoil(path)
+    assert res.reject is RejectReason.SURFACES_CROSS
+    return res
+
+
+def _reject(store, res, version=_VERSION, ingest_id="20261013T0830Z_aaaa"):
+    store.add_rejection(res, res.reject, res.reason, ingest_id, f"rejected/{res.identity.name}.dat",
+                        f"normalised/rejected/{res.identity.name}.dat" if res.norm_coords is not None else None,
+                        version, f"report/{res.identity.name}.txt")
 
 
 @pytest.fixture
@@ -63,9 +90,10 @@ def test_open_creates_schema(tmp_path):
     GeometryStore.open(db).close()
 
     with sqlite3.connect(db) as conn:
-        tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
-        assert tables == {"ingests", "ingest_items", "geometries", "geometry_shapes"}
-        assert conn.execute("PRAGMA user_version").fetchone()[0] == 1
+        objects = {r for r in conn.execute("SELECT type, name FROM sqlite_master WHERE type IN ('table', 'view')")}
+        assert objects == {("table", t) for t in ("ingests", "ingest_items", "geometries", "geometry_shapes",
+                                                  "rejected_shapes")} | {("view", "geometry_outcomes")}
+        assert conn.execute("PRAGMA user_version").fetchone()[0] == 2
         assert conn.execute("PRAGMA journal_mode").fetchone()[0] == "delete"
     assert sorted(p.name for p in db.parent.iterdir()) == ["geometry.sqlite"]  # no side files left
 
@@ -77,6 +105,22 @@ def test_reopen_keeps_data(tmp_path, store):
     with GeometryStore.open(store.path) as again:
         assert again.name_owner("naca2412") is not None
     assert not list(store.path.parent.glob("*.bak-*"))  # nothing to migrate, nothing backed up
+
+
+def test_migrating_keeps_rows_and_backs_up(tmp_path, monkeypatch):
+    db = tmp_path / "geometry.sqlite"
+    monkeypatch.setattr(store_module, "_MIGRATIONS", store_module._MIGRATIONS[:1])  # the first released schema
+    with GeometryStore.open(db) as v1:
+        v1.begin_ingest("20261013T0830Z_aaaa", "2026-10-13T08:30:00Z", "roots", _VERSION, "abc1234", "summary.txt")
+        _add(v1, _result(tmp_path / "a"))
+    monkeypatch.undo()
+
+    with GeometryStore.open(db) as v2:
+        assert v2.get_geometry("naca2412") is not None and v2.rejections(_VERSION) == []
+        assert v2._conn.execute("PRAGMA user_version").fetchone()[0] == 2
+    with sqlite3.connect(db.with_name("geometry.sqlite.bak-v1")) as backup:
+        assert backup.execute("PRAGMA user_version").fetchone()[0] == 1
+        assert backup.execute("SELECT count(*) FROM geometries").fetchone()[0] == 1
 
 
 def test_newer_schema_refused(tmp_path):
@@ -213,4 +257,87 @@ def test_archive_is_created_only_when_needed(tmp_path, store):
 
     assert store.archive_old_shapes(_VERSION, "20261014T0900Z_bbbb", "2026-10-14T09:00:00Z") == []
     assert not store.path.with_name("geometry_archive.sqlite").exists()
+# endregion
+
+
+# region Step 5
+def test_rejection_round_trips(tmp_path, store):
+    res = _crossed(tmp_path)
+    _reject(store, res)
+    rec = store.get_rejection(res.identity.raw_hash, _VERSION)
+
+    assert rec.reason is RejectReason.SURFACES_CROSS and rec.detail == res.reason
+    assert (rec.name, rec.geometry_id, rec.raw_points, rec.family) == ("crossfoil", res.identity.geometry_id, 201, None)
+    assert rec.cst == res.cst and rec.closure is Closure.PRIED
+    assert (rec.rotation_deg, rec.root_te_gap, rec.source_dev, rec.fit_max, rec.te_wedge_deg, rec.norm_hash) == (
+        res.transform.rotation_deg, res.root_te_gap, res.source_dev, res.fit.max_dev, res.te_wedge_deg, res.norm_hash)
+    assert (rec.raw_path, rec.ingest_id) == ("rejected/crossfoil.dat", "20261013T0830Z_aaaa")
+    assert not store.has_geometry(res.identity.geometry_id) and store.get_geometry("crossfoil") is None
+    assert store.get_rejection(res.identity.raw_hash, "cst9-r1") is None
+    assert store.get_rejection_named("CROSSFOIL", _VERSION) == rec  # case-insensitive, like get_geometry
+    assert store.get_rejection_named("crossfoil", "cst9-r1") is None
+
+
+def test_rejection_before_the_fit_keeps_what_was_measured(tmp_path, store):
+    path = tmp_path / "naca0021.dat"  # a 12% file under a 21% name
+    Geom_write_dat(path, "naca0021", _family_contour(Family.NACA4, {"m": 0, "p": 0, "t": 12}, 101, False))
+    res = Geom_add_airfoil(path)
+    _reject(store, res)
+    rec = store.get_rejection(res.identity.raw_hash, _VERSION)
+
+    assert rec.reason is RejectReason.FAMILY_MISMATCH
+    assert rec.family is Family.NACA4 and rec.family_params == {"m": 0, "p": 0, "t": 21}
+    assert rec.closure is Closure.FORMULA and rec.root_te_gap > 0
+    assert (rec.cst, rec.fit_max, rec.norm_path, rec.norm_hash) == (None, None, None, None)
+
+
+def test_rejection_is_replaced_and_removed(tmp_path, store):
+    res = _crossed(tmp_path)
+    _reject(store, res)
+    store.begin_ingest("20261014T0900Z_bbbb", "2026-10-14T09:00:00Z", "/roots", _VERSION, "abc1234", "summary.txt")
+    _reject(store, res, ingest_id="20261014T0900Z_bbbb")  # judged again by a later run
+
+    assert [r.ingest_id for r in store.rejections(_VERSION)] == ["20261014T0900Z_bbbb"]
+    store.remove_rejection(res.identity.raw_hash, _VERSION)
+    assert store.rejections(_VERSION) == [] and store.find_rejection(res.identity.raw_hash) is None
+    res.identity = None
+    with pytest.raises(ValueError, match="never identified"):
+        store.add_rejection(res, "format", "", "20261013T0830Z_aaaa", "r.dat", None, _VERSION, "r.txt")
+
+
+def test_rejections_to_recheck(tmp_path, store):
+    crossed, accepted = _crossed(tmp_path / "a"), _result(tmp_path / "b")
+    _add(store, accepted)
+    store.begin_ingest("20261012T0800Z_0000", "2026-10-12T08:00:00Z", "/roots", "cst8-r0", "abc1234", "summary.txt")
+    _reject(store, crossed, version="cst8-r0", ingest_id="20261012T0800Z_0000")  # an older verdict on the file
+    _reject(store, crossed)
+    accepted.reject = RejectReason.FIT_TOLERANCE  # the stored airfoil, rejected by a later version
+    _reject(store, accepted, version="cst8-r2")
+
+    assert [(r.name, r.shape_version) for r in store.rejections_to_recheck()] == [("crossfoil", _VERSION)]
+    assert store.find_rejection(crossed.identity.raw_hash).shape_version == _VERSION
+
+
+def test_outcomes_view(tmp_path, store):
+    _add(store, _result(tmp_path / "a"))
+    _reject(store, _crossed(tmp_path / "b"))
+    rows = store._conn.execute("SELECT status, reason, name, shape_version, cst IS NOT NULL FROM geometry_outcomes "
+                               "ORDER BY name").fetchall()
+
+    assert rows == [("rejected", "surfaces_cross", "crossfoil", _VERSION, 1), ("accepted", None, "naca2412", _VERSION, 1)]
+
+
+def test_archive_moves_old_rejections(tmp_path, store):
+    res = _crossed(tmp_path)
+    _reject(store, res)
+    _reject(store, res, version="cst8-r2")
+    moved = store.archive_old_shapes("cst8-r2", "20261014T0900Z_bbbb", "2026-10-14T09:00:00Z")
+
+    assert moved == [_VERSION]
+    assert [r.shape_version for r in store.rejections_to_recheck()] == ["cst8-r2"]
+    with sqlite3.connect(store.path.with_name("geometry_archive.sqlite")) as archive:
+        rows = archive.execute("SELECT raw_hash, shape_version, shape FROM archived_rejections").fetchall()
+        assert archive.execute("SELECT count(*) FROM archived_shapes").fetchone()[0] == 0
+    assert [(r[0], r[1]) for r in rows] == [(res.identity.raw_hash, _VERSION)]
+    assert json.loads(rows[0][2])["reason"] == "surfaces_cross"
 # endregion

@@ -41,13 +41,16 @@ Sequence 1 (meshing_main): one study = one airfoil x one mesher/topology
 Sequence 2 (add airfoils to the database; manifest/ingest.py, one airfoil: build/add.py)
 0 - bring the stored airfoils to the current shape version: any without a
     shape under it (all, after a version bump) is refitted from its raw
-    copy; shapes of older versions move to geometry_archive.sqlite
+    copy, and every stored rejection is judged again from its copy (a
+    loosened gate lets it in); shapes and rejections of older versions move
+    to geometry_archive.sqlite
     a - then the user's folder, if given, supplies root .dat files
 1 - identify each root .dat (sorted path order)
     a - read strictly: name line == file stem, Selig `x y` rows
     b - geometry_id: hash of the family string for a parametric name
         (naca4/5, modified 4-digit, 16-series), else of the raw coords
-    c - already in the database (same geometry_id) -> duplicate, skip
+    c - already in the database (same geometry_id), or the same points
+        already stored as a rejection -> duplicate, skip
 2 - build the shape
     a - points: the family formula in closed-TE form, else the file's
     b - normalize (rigid): LE where the tangent is perpendicular to the
@@ -76,6 +79,10 @@ Sequence 2 (add airfoils to the database; manifest/ingest.py, one airfoil: build
         transaction: geometries (identity, never changes) and
         geometry_shapes (per shape_version: cst, rotation, closure, gap,
         source deviation, fit, TE wedge)
+    c - a rejection is stored just as fully, apart: its copy, its rendering
+        if it got a fit, and a rejected_shapes row (the same columns, plus
+        the reason; empty past the step that rejected it); only an
+        unreadable or crashing file is left with just its report
 5 - report: one per file seen plus a run summary; every outcome is an
     ingest_items row; a worst-fit point far off its neighbours where the
     file zig-zags is flagged as a suspect (likely mistyped) coordinate
