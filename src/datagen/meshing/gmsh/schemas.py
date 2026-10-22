@@ -2,6 +2,7 @@ from pydantic import BaseModel, Field, model_validator
 from typing import Optional, Union
 from enum import IntEnum, Enum
 
+from src.datagen.geometry.sample.fields import SamplingFields
 from src.datagen.schemas import Airfoil, Freestream
 
 class GMSH_ExitFlag(IntEnum):
@@ -52,10 +53,11 @@ class GMSH_CMeshingConfig(BaseModel):
     # Farfield meshing configs
     ff_growth_ratio: float = Field(1.1, gt=1.01, le=1.3, description="The growth ratio for the farfield meshing, to ensure smooth growth of mesh cells in the farfield region")
 
-class GMSH_OMeshingConfig(BaseModel):
+class GMSH_OMeshingConfig(SamplingFields):
     """
     Contract for the configs of GMSH's O-mesh topology (closed contour). The wall nodes are the input
-    points as given, so surface resolution and spacing are set by the airfoil, not here.
+    points as given; the sampling knobs inherited from `SamplingFields` set them, read by the sampler
+    before meshing, never by gmsh.
     """
     model_config = {"extra": "forbid"}
 

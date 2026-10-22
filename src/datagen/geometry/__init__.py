@@ -8,33 +8,36 @@ Layout:
 
 Sequence 1 (meshing_main): one study = one airfoil x one mesher/topology
 
-1 - define problem (once per study, defined by the problem/mesher call)
-    a - mesher gets called with a specific airfoil name
-    b - the airfoil's normalised rendering (from the manifest) is appended
-        as the tensor for Airfoil config; a placeholder until step 3 replaces it
-    c - the default freestream of the entire run gets appended (only Re
-        matters here, and should be the worst-case Re); c2d to read it from
-        the freestream too, instead of its own `recd`
-    d - the mesher and topology get appended, defined by the problem call
+1 - define the study (once, by the problem/mesher call;
+    meshing/optimizer/sampling.py)
+    a - the airfoil by name: its geometry_id, and its shape under the current
+        shape version (none: the airfoil can't be studied under it)
+    b - the mesher and topology, which fix the TE (Sequence 3, step 1)
+    c - the study's TE gap (0.4% chord by default) -> the contour, built once
+        (build_study_contour); a refused contour fails the study's setup
+    d - the default freestream of the entire run (only Re matters here, and
+        should be the worst-case Re); c2d to read it from the freestream too,
+        instead of its own `recd`
 2 - the mesh config is created (each evaluation) by:
     1 - either the optim procedure,
     2 - or the user specified mesh configs
-    3 - or the default mesh configs (unreliable)
-    -> MeshIn is built and validated here; an invalid config counts as a
-       failed evaluation, not a crash
-3 - get the actual geometry (each evaluation, see Sequence 3)
-    a - the geometry module samples the airfoil from its manifest CST, using
-        the config's point count and spacing knobs, and the TE the
-        mesher/topology requires
-    b - the sampled points (and le_idx) replace the root tensor
+    3 - or the default mesh configs (they pass on every stored airfoil)
+    -> validated as its config class; an invalid config counts as a failed
+       evaluation, not a crash
+3 - sample the contour with the config's knobs (each evaluation, Sequence 3;
+    sample_for_mesher)
+    a - a pre-check failure (turn, or n x jmax over the cell ceiling) rejects
+        the config before meshing: recorded, directly infeasible, and not
+        counted against the budget
+    b - otherwise the MeshIn is built from the points and le_idx
 4 - get output (each evaluation)
     a - the MeshIn is shoved into the mesher
     b - the outputted mesh is taken with its quality flagging
-    c - the sampling checks from step 3 are attached
-    d - store the values in the mesh manifest: config, sampler version,
-        sampling checks, mesh result
-5 - rerun the optim procedure if needed (back to 2.1); user/default configs
-    run steps 2-4 once
+    c - the sample report from step 3 is attached
+    d - store the values in the mesh manifest: config, shape and sampler
+        versions, sample report, mesh result
+5 - rerun the optim procedure if needed (back to 2.1) until its budget of
+    finished meshes is spent; user/default configs run steps 2-4 once
 6 - finish: keep the best feasible mesh's files, delete the rest, record the
     study's result
 

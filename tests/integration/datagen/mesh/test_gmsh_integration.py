@@ -61,9 +61,10 @@ def test_gmsh_integration(sterile_gmsh_input, mesh_quality_baseline):
 
 
 def test_gmsh_omesh_integration(sterile_gmsh_omesh_input):
-    """O-mesh counterpart to `test_gmsh_integration`; no baseline comparison, since Emre's
-    reference mesh is a C-mesh, not an O-mesh; this just checks the O-mesh path (real, sharp-TE
-    airfoil geometry, no mocking) structurally succeeds end to end."""
+    """O-mesh counterpart to `test_gmsh_integration`; no baseline comparison, since the gmsh O-mesh
+    is known LOW_QUALITY at the TE and Emre's reference (an O-grid, 699 x 250 nodes) would only
+    restate that; this just checks the O-mesh path (real, sharp-TE airfoil geometry, no mocking)
+    structurally succeeds end to end."""
 
     out = GMSH_MeshGenerator(sterile_gmsh_omesh_input)
 

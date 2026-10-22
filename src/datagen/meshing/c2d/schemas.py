@@ -2,6 +2,7 @@ from pydantic import BaseModel, Field, model_validator
 from typing import Optional, Literal
 from enum import IntEnum, Enum
 
+from src.datagen.geometry.sample.fields import SamplingFields
 from src.datagen.schemas import Airfoil, Freestream
 
 class C2D_ExitFlag(IntEnum):
@@ -25,10 +26,11 @@ class C2D_Topology(str, Enum):
     OGRD = "OGRD"
     CGRD = "CGRD"
 
-class C2D_MeshingConfig(BaseModel):
+class C2D_MeshingConfig(SamplingFields):
     """
     Contract for the configs of C2D. Surface points come from the input as given (c2d runs in BUFF
-    mode), so surface resolution and spacing are set by the airfoil, not here.
+    mode); the sampling knobs inherited from `SamplingFields` set them, read by the sampler before
+    meshing, never by c2d.
     """
     model_config = {"extra": "forbid"}
 

@@ -4,8 +4,9 @@ within the rules anywhere in the optimizer's search space, i.e.:
 
 Step 1: Ensure every stored shape builds a contour
     - test_every_stored_shape_builds_a_contour
-Step 2: Ensure sampling keeps its guarantees on every stored shape
+Step 2: Ensure sampling keeps its guarantees on every stored shape, and the defaults pass on each
     - test_random_configs_keep_the_rules
+    - test_default_knobs_pass_everywhere
 
 Reads the repo's own manifest under `data/`; skipped without it.
 """
@@ -19,6 +20,7 @@ from src.datagen.geometry.common.schemas import TETreatment
 from src.datagen.geometry.manifest.store import GeometryStore
 from src.datagen.geometry.sample.checks import SamplerAssertionError
 from src.datagen.geometry.sample.contour import ContourError, Geom_build_contour
+from src.datagen.geometry.sample.fields import SamplingFields
 from src.datagen.geometry.sample.sample import Geom_sample
 from tests.geometry_shapes import search_space_configs
 
@@ -74,4 +76,13 @@ def test_random_configs_keep_the_rules(contours):
     assert not broken, broken
     assert not on_caps, f"the clamped caps failed the pre-check: {on_caps}"
     assert counts["accepted"] > counts["turn"] > 0  # both outcomes exercised
+
+
+def test_default_knobs_pass_everywhere(contours):
+    # A study starts from the defaults, so they must not be rejected on any airfoil
+    rejected = [f"{name} ({te.value}): {smp.report.rejection.value} at x {smp.report.x_at_precheck_turn:.4f}"
+                for name, per_te in contours.items() for te in (TETreatment.ROUND, TETreatment.SHARP)
+                if not (smp := Geom_sample(per_te[te], SamplingFields())).accepted]
+
+    assert not rejected, rejected
 # endregion

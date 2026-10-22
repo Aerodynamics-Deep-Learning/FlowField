@@ -18,7 +18,7 @@ from src.datagen.geometry.sample.fields import SamplingFields
 def test_defaults():
     f = SamplingFields()
 
-    assert (f.dx_mid, f.le_ratio, f.te_ratio, f.cluster_width) == (DX_MAX, 0.08, 0.02, 0.08)
+    assert (f.dx_mid, f.le_ratio, f.te_ratio, f.cluster_width) == (DX_MAX, 0.025, 0.05, 0.05)
 
 
 @pytest.mark.parametrize("field, value", [("dx_mid", 0.0), ("dx_mid", DX_MAX * 1.001), ("le_ratio", 0.0),

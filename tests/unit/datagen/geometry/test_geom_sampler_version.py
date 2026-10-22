@@ -1,14 +1,14 @@
 """
 Tests that `SAMPLER_VERSION` names the samples made under it: three fixed shapes, each with every TE, are
-sampled at the default knobs and compared with what was pinned for the current version, i.e.:
+sampled at fixed knobs and compared with what was pinned for the current version, i.e.:
 
 Step 1: Ensure a change to the samples comes with a new sampler version
     - test_samples_match_their_version
 
 A failure means the contour -> spacing -> placement now puts points elsewhere. If that was meant, bump the
 revision in `SAMPLER_VERSION` (common/constants.py) and pin the values the failure prints under the new
-version; otherwise undo the change. The shapes are fixed coefficients, so a shape-version change can't
-trip this test.
+version; otherwise undo the change. The shapes are fixed coefficients and the knobs fixed values, so
+neither a shape-version change nor new field defaults can trip this test.
 """
 
 import numpy as np
@@ -53,6 +53,9 @@ _SHAPES = {
 }
 
 
+_FIELDS = SamplingFields(dx_mid=0.006, le_ratio=0.08, te_ratio=0.02, cluster_width=0.08)
+
+
 def _as_pins(current: dict) -> str:
     lines = [f"    {SAMPLER_VERSION!r}: {{"]
     lines += [f"        {key!r}: ({n}, {le_idx}, {round(total, 9)})," for key, (n, le_idx, total) in current.items()]
@@ -64,7 +67,7 @@ def test_samples_match_their_version():
     current = {}
     for name, cst in _SHAPES.items():
         for te in TETreatment:
-            smp = Geom_sample(Geom_build_contour(as_record(name, cst), te, 0.004), SamplingFields())
+            smp = Geom_sample(Geom_build_contour(as_record(name, cst), te, 0.004), _FIELDS)
             assert smp.accepted, smp.report.rejection
             current[(name, te.value)] = (len(smp.points), smp.le_idx, float(np.abs(smp.points).sum()))
     pins = f"Pin these in _PINNED:\n{_as_pins(current)}"
