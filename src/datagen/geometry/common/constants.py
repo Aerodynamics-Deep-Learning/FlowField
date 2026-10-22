@@ -61,8 +61,18 @@ MIN_DAT_POINTS = 5
 
 #region Sequence 3: the TE a mesher needs, and sampling for it
 
+# Names the contour -> spacing -> checks behind a sample, constants below included; bump the revision on
+# any change to it (tests/unit/datagen/geometry/test_geom_sampler_version.py fails until you do)
+SAMPLER_VERSION = "samp-r1"
+
+# Longest panel allowed anywhere, so the bound on the mid-chord spacing. Provisional, pending the SU2 sweeps
+DX_MAX = 0.006
+
 # Largest turn a sampled point may make; sets how fine the spacing on a round TE's caps must be
 THETA_MAX_DEG = 15.0
+
+# The turn pre-check passes below this share of its limit, so rounding cannot trip the post-check
+PRECHECK_MARGIN = 0.995
 
 # A round TE's welds sit at x = 1 - WELD_OFFSET * g, the gap g being the study's
 WELD_OFFSET = 0.5

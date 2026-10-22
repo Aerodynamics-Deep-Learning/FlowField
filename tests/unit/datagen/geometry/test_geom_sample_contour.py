@@ -18,39 +18,17 @@ Step 3: Ensure the tables, the caps' spacing limit, and the refusals
 
 import math
 import pickle
-from functools import cache
 
 import numpy as np
 import pytest
 
-from src.datagen.geometry.build.families import Geom_family_coords
-from src.datagen.geometry.build.normalize import Geom_close_te, Geom_normalize
-from src.datagen.geometry.build.parametrization import Geom_cst_eval, Geom_cst_fit, Geom_cst_slope, Geom_cst_te_wedge
-from src.datagen.geometry.common.constants import CST_N1, CST_N2, SHAPE_VERSION, THETA_MAX_DEG
-from src.datagen.geometry.common.schemas import Closure, CSTParams, Family, ShapeRecord, TETreatment
+from src.datagen.geometry.build.parametrization import Geom_cst_eval, Geom_cst_slope
+from src.datagen.geometry.common.constants import CST_N1, CST_N2, THETA_MAX_DEG
+from src.datagen.geometry.common.schemas import CSTParams, TETreatment
 from src.datagen.geometry.sample.contour import ContourError, Geom_build_contour, PinKind
+from tests.geometry_shapes import SHAPE_NAMES as _SHAPES, as_record as _record, stored_shape as _shape
 
 G = 0.004
-_SHAPES = ["naca0012", "naca4412", "cusp"]
-
-
-def _record(name: str, cst: CSTParams) -> ShapeRecord:
-    return ShapeRecord(geometry_id=name, shape_version=SHAPE_VERSION, cst=cst, rotation_deg=0.0,
-                       closure=Closure.FORMULA, root_te_gap=0.0, source_dev=0.0, fit_max=0.0,
-                       te_wedge_deg=Geom_cst_te_wedge(cst), norm_path=f"normalised/{name}.dat", norm_hash="0" * 64)
-
-
-@cache
-def _shape(name: str) -> ShapeRecord:
-    """Two NACA formula shapes through the ingest's own normalize/close/fit, and a cusp (wedge 0)."""
-    if name == "cusp":
-        return _record(name, CSTParams(n1=CST_N1, n2=CST_N2, le_weight=0.02,
-                                       upper=[0.17, 0.15, 0.20, 0.18, 0.16, 0.20, 0.19, 0.12, 0.05],
-                                       lower=[-0.17, -0.10, -0.08, -0.05, -0.06, -0.02, 0.01, 0.03, 0.05]))
-    digits = {"naca0012": {"m": 0, "p": 0, "t": 12}, "naca4412": {"m": 4, "p": 4, "t": 12}}[name]
-    pts, tf = Geom_normalize(Geom_family_coords(Family.NACA4, digits))
-    pts, _ = Geom_close_te(pts, tf.le_index)
-    return _record(name, Geom_cst_fit(pts, tf.le_index))
 
 
 def _pins(contour) -> dict:

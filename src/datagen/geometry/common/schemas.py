@@ -14,6 +14,7 @@ Summary:
     - GeometryRecord, ShapeRecord, RejectionRecord: rows of the manifest, as `store.GeometryStore`
       reads them back
     - TETreatment: the TE a mesher needs, which `contour.Geom_build_contour` gives a stored shape
+    - Rejection, SampleReport, Sample: what `sample.Geom_sample` placed, or why it refused, and how it measures
 """
 
 from enum import Enum
@@ -69,6 +70,12 @@ class TETreatment(str, Enum):
     SHARP = "sharp"  # the stored CST as is, closed at (1, 0)
     BLUNT = "blunt"  # opened to the study's gap and left open
     ROUND = "round"  # opened, then closed at (1, 0) by a Bezier cap on each side
+
+
+class Rejection(str, Enum):
+    """Why a sampling config was refused before any point was placed, so before meshing."""
+    TURN = "turn"      # its spacing would turn more than THETA_MAX_DEG somewhere
+    POINTS = "points"  # it needs more points than the caller allows
 
 
 class RootAirfoil(BaseModel):
@@ -242,3 +249,50 @@ class RejectionRecord(BaseModel):
     norm_hash: Optional[str] = None
     ingest_id: str  # the run that last judged it
     report_path: str
+
+
+class SampleReport(BaseModel):
+    """
+    What one sampling produced and how it measures, in plain numbers so it stores as JSON. Lengths in
+    chords. The measurements stay None for a rejected config, which placed no points.
+    """
+    sampler_version: str
+    shape_version: str
+    geometry_id: str
+    te: TETreatment
+    gap: Optional[float]
+    weld_x: Optional[float]
+    te_cap_limit: Optional[float]
+    dx_mid: float
+    le_spacing: float
+    te_spacing: float
+    te_clamped: bool                         # te_ratio * dx_mid was more than the caps let pass the pre-check
+    cluster_width: float
+    precheck_turn: float                     # largest curvature x spacing over its limit, minus 1: > 0 rejects
+    x_at_precheck_turn: float                # where that is: the nose, or wherever a rejection came from
+    n_required: int                          # points the spacing calls for, known before any is placed
+    rejection: Optional[Rejection] = None
+    n_points: Optional[int] = None
+    le_idx: Optional[int] = None
+    stretch_panels: Optional[list[int]] = None  # panels between consecutive pins
+    max_panel: Optional[float] = None
+    x_at_max_panel: Optional[float] = None
+    min_panel: Optional[float] = None
+    max_turn_deg: Optional[float] = None
+    x_at_max_turn: Optional[float] = None
+    max_dev: Optional[float] = None          # farthest the curve strays from its panels
+    x_at_max_dev: Optional[float] = None
+    max_panel_ratio: Optional[float] = None  # larger over smaller of neighbouring panels
+
+
+class Sample(BaseModel):
+    """The points one sampling placed (Selig order, closed TEs repeating the first last), or none if rejected."""
+    model_config = {"arbitrary_types_allowed": True}
+
+    points: Optional[np.ndarray] = None
+    le_idx: Optional[int] = None
+    report: SampleReport
+
+    @property
+    def accepted(self) -> bool:
+        return self.report.rejection is None

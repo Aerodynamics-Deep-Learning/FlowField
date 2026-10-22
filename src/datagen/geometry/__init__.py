@@ -109,16 +109,22 @@ Sequence 3 (sampling, Sequence 1 step 3): build the shape, then sample once
             refused for the study (ContourError)
     4 - pinned points: the closure point (or the open ends), the welds and
         the LE; the curve is tabulated by arc length and curvature
-3 - sample the shape
-    a - exactly n_surface points, placed by arc length from the config's
-        spacing knobs (le/te spacing, cluster width), positions evaluated
-        on the function
-    b - pinned points land exactly; first == last (blunt stays open)
-4 - sampling checks against the shape
-    a - max turn per point <= 15 deg (pinned points exempt)
-    b - max distance from the shape <= the deviation cap
-    c - max panel length <= H_MAX (provisional 0.006c)
-5 - return the sampled airfoil (points + le_idx) and the check report
+3 - the spacing wanted along the curve (sample/place.py), from the config's
+    knobs: dx_mid at mid-chord, dipping to le_ratio * dx_mid at the LE and
+    te_ratio * dx_mid at the TE over about cluster_width; a round TE's
+    spacing holds across its caps, clamped to their turn limit
+4 - pre-checks, before any point is placed; a failure rejects the config
+    (never meshed; directly infeasible for the optimizer)
+    a - turn: curvature x spacing stays under 15 deg everywhere
+    b - points: no more than the caller allows (its cell ceiling)
+5 - place the points: each stretch between pinned points gets ceil(the
+    integral of ds/h) panels, so n is derived and no panel exceeds its
+    target; positions evaluated on the curve, pinned points exact, first ==
+    last for a closed TE (a blunt one stays open)
+6 - post-checks a correct sampler cannot fail (SamplerAssertionError, a
+    bug): panel <= dx_mid <= DX_MAX, turn <= 15 deg (a sharp TE's closure
+    point skipped), deviation from the curve <= DEV_MAX
+7 - return the points, le_idx and the report (sample/sample.py)
 
 Note: the gmsh C-grid can only use the blunt branch once its anchor indices
 become x/c positions.
