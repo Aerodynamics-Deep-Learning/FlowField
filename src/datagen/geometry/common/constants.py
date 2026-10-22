@@ -58,3 +58,16 @@ DAT_DECIMALS = 10
 MIN_DAT_POINTS = 5
 
 #endregion
+
+#region Sequence 3: the TE a mesher needs, and sampling for it
+
+# Largest turn a sampled point may make; sets how fine the spacing on a round TE's caps must be
+THETA_MAX_DEG = 15.0
+
+# A round TE's welds sit at x = 1 - WELD_OFFSET * g, the gap g being the study's
+WELD_OFFSET = 0.5
+
+# Points per piece of a contour's dense arc-length and curvature tables
+ARC_TABLE_POINTS = 20001
+
+#endregion

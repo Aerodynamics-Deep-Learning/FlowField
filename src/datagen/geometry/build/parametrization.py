@@ -56,6 +56,32 @@ def Geom_cst_eval(cst: CSTParams, x: np.ndarray) -> tuple[np.ndarray, np.ndarray
     return basis @ np.asarray(cst.upper) + lem, basis @ np.asarray(cst.lower) + lem
 
 
+def Geom_cst_slope(cst: CSTParams, x: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """
+    The analytic slope dy/dx of both surfaces. Infinite at the LE, so x > 0; at x = 1 each surface's is -A_N.
+
+    Args:
+        cst (CSTParams): The shape
+        x (np.ndarray): Stations in (0, 1]
+
+    Returns:
+        tuple: (upper dy/dx, lower dy/dx) at `x`
+    """
+    x = np.asarray(x, dtype=float)
+    n, n1, n2 = cst.order, cst.n1, cst.n2
+    basis = _bernstein(x, n)
+    if n > 0:
+        lower_basis = _bernstein(x, n - 1)
+        d_basis = n * (np.pad(lower_basis, ((0, 0), (1, 0))) - np.pad(lower_basis, ((0, 0), (0, 1))))
+    else:
+        d_basis = np.zeros_like(basis)
+    c = _class(x, n1, n2)
+    d_c = n1 * x ** (n1 - 1) * (1 - x) ** n2 - n2 * x ** n1 * (1 - x) ** (n2 - 1)
+    d_lem = cst.le_weight * ((1 - x) ** (n + 0.5) - (n + 0.5) * x * (1 - x) ** (n - 0.5))
+    m = d_c[:, None] * basis + c[:, None] * d_basis
+    return m @ np.asarray(cst.upper) + d_lem, m @ np.asarray(cst.lower) + d_lem
+
+
 def Geom_cst_te_wedge(cst: CSTParams) -> float:
     """
     The angle between the surfaces where they meet at the TE: each arrives as y ~ A_N (1 - x).

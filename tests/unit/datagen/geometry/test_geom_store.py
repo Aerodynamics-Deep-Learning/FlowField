@@ -17,6 +17,7 @@ Step 3: Ensure the constraints and transactions hold
     - test_items_and_foreign_keys
 Step 4: Ensure a shape version change finds the stale airfoils and archives the old shapes
     - test_geometries_without_shape
+    - test_shapes_of_one_version
     - test_archive_old_shapes
     - test_archive_is_created_only_when_needed
 Step 5: Ensure a rejection keeps everything measured, apart from the accepted tables
@@ -233,6 +234,17 @@ def test_geometries_without_shape(tmp_path, store):
 
     assert [g.name for g in store.geometries_without_shape("cst8-r2")] == ["naca4412"]
     assert store.geometries_without_shape(_VERSION) == []
+
+
+def test_shapes_of_one_version(tmp_path, store):
+    a, b = _result(tmp_path / "a"), _result(tmp_path / "b", name="naca4412", m=4)
+    _add(store, b)
+    _add(store, a)
+    store.add_shape(a, a.identity.geometry_id, "normalised/cst8-r2/naca2412.dat", "cst8-r2")
+
+    assert [s.geometry_id for s in store.shapes(_VERSION)] == [a.identity.geometry_id, b.identity.geometry_id]  # by name
+    assert [(s.cst, s.shape_version) for s in store.shapes("cst8-r2")] == [(a.cst, "cst8-r2")]
+    assert store.shapes("cst9-r1") == []
 
 
 def test_archive_old_shapes(tmp_path, store):

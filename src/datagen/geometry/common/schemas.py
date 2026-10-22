@@ -13,6 +13,7 @@ Summary:
     - IngestItem, IngestSummary: what `ingest.Geom_ingest_folder` did with each file, and the run
     - GeometryRecord, ShapeRecord, RejectionRecord: rows of the manifest, as `store.GeometryStore`
       reads them back
+    - TETreatment: the TE a mesher needs, which `contour.Geom_build_contour` gives a stored shape
 """
 
 from enum import Enum
@@ -61,6 +62,13 @@ class Nose(str, Enum):
     SEPARATE = "separate"  # each surface its own A_0: two radii, a curvature jump at the LE
     SHARED = "shared"      # one A_0: one radius, but a cambered nose's lean is out of reach
     LEM = "lem"            # one A_0 plus Kulfan's leading-edge modification term: one radius, and the lean
+
+
+class TETreatment(str, Enum):
+    """The TE a mesher needs, given to a stored (closed) shape for sampling."""
+    SHARP = "sharp"  # the stored CST as is, closed at (1, 0)
+    BLUNT = "blunt"  # opened to the study's gap and left open
+    ROUND = "round"  # opened, then closed at (1, 0) by a Bezier cap on each side
 
 
 class RootAirfoil(BaseModel):

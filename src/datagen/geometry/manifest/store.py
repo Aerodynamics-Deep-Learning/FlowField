@@ -401,12 +401,13 @@ class GeometryStore:
         """An airfoil's stored shape under one shape version."""
         row = self._conn.execute("SELECT * FROM geometry_shapes WHERE geometry_id = ? AND shape_version = ?",
                                  (geometry_id, shape_version)).fetchone()
-        if row is None:
-            return None
-        geometry_id, version, cst, rotation, closure, gap, source_dev, fit_max, wedge, norm_path, norm_hash = row
-        return ShapeRecord(geometry_id=geometry_id, shape_version=version, cst=CSTParams.model_validate_json(cst),
-                           rotation_deg=rotation, closure=closure, root_te_gap=gap, source_dev=source_dev,
-                           fit_max=fit_max, te_wedge_deg=wedge, norm_path=norm_path, norm_hash=norm_hash)
+        return _shape(row) if row is not None else None
+
+    def shapes(self, shape_version: str) -> list[ShapeRecord]:
+        """Every stored shape under one shape version, by airfoil name."""
+        rows = self._conn.execute("SELECT s.* FROM geometry_shapes s JOIN geometries g USING (geometry_id) "
+                                  "WHERE s.shape_version = ? ORDER BY g.name", (shape_version,))
+        return [_shape(row) for row in rows]
 
     def get_rejection(self, raw_hash: str, shape_version: str) -> Optional[RejectionRecord]:
         """A file's rejection under one shape version."""
@@ -453,6 +454,13 @@ def _rejections(cur: sqlite3.Cursor):
         rec["family_params"] = json.loads(rec["family_params"]) if rec["family_params"] is not None else None
         rec["cst"] = CSTParams.model_validate_json(rec["cst"]) if rec["cst"] is not None else None
         yield RejectionRecord(**rec)
+
+
+def _shape(row: tuple) -> ShapeRecord:
+    geometry_id, version, cst, rotation, closure, gap, source_dev, fit_max, wedge, norm_path, norm_hash = row
+    return ShapeRecord(geometry_id=geometry_id, shape_version=version, cst=CSTParams.model_validate_json(cst),
+                       rotation_deg=rotation, closure=closure, root_te_gap=gap, source_dev=source_dev,
+                       fit_max=fit_max, te_wedge_deg=wedge, norm_path=norm_path, norm_hash=norm_hash)
 
 
 def _geometry(row: tuple) -> GeometryRecord:

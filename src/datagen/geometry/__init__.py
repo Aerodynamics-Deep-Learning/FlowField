@@ -3,6 +3,7 @@ Layout:
     common/    constants, schemas, the data/ layout, .dat I/O; imports nothing else in geometry
     build/     one root .dat -> a closed, fitted CST shape (pure), and the calibration of its limits
     manifest/  geometry.sqlite (store.py) and the folder ingest that fills it
+    sample/    a stored shape given the TE its mesher needs (contour.py), and its sampling (Sequence 3)
 
 
 Sequence 1 (meshing_main): one study = one airfoil x one mesher/topology
@@ -92,21 +93,22 @@ Sequence 3 (sampling, Sequence 1 step 3): build the shape, then sample once
 
 1 - the TE the mesher/topology requires:
         c2d/gmsh O-grid -> round, c2d C-grid -> sharp, gmsh C-grid -> blunt
-2 - build the shape as a continuous function of the CST (the same every
-    evaluation, so it can be built once per study and cached)
+2 - build the shape as one continuous curve in Selig order, once per study
+    (sample/contour.py); g is the study's TE gap, 0.4% chord by default
     1 - sharp: the CST as is
-    2 - blunt: the CST plus its linear TE-thickness term, opening the TE to
-        the study's fixed gap (e.g. 0.4% chord); linear adds no curvature,
-        unlike a short smoothstep ramp
-    3 - round: the blunt shape, then a circular arc (radius ~ half the gap)
-        that continues each opened surface's own tangent where it meets
-        it (no kink), trimming the surfaces there; rescaled so its tip
-        sits at x=1
-        a - it spans 180 deg minus the opened wedge: a semicircle only when
-            the surfaces arrive parallel (opening turns each surface's end
-            out by ~gap/2 rad, narrowing the wedge by ~gap rad, so a
-            near-cusp opens slightly divergent and its arc spans > 180 deg)
-        b - pinned points: the two tangent points and the tip (closure)
+    2 - blunt: each surface opened by x * g/2 from the LE, i.e. the CST's
+        linear TE-thickness term (the inverse of Sequence 2's closing; adds
+        no curvature); left open at (1, +-g/2)
+    3 - round: the blunt shape cut at the welds x = 1 - g/2, each cut piece
+        replaced by a quadratic Bezier cap W -> P1 -> (1, 0), P1 where the
+        surface's tangent at W reaches x = 1
+        a - the cap starts at W with the surface's own slope and reaches
+            (1, 0), mid-gap, with a vertical tangent: no kink anywhere, and
+            the chord stays exactly 1
+        b - each cap must stay on its own side of y = 0, else the shape is
+            refused for the study (ContourError)
+    4 - pinned points: the closure point (or the open ends), the welds and
+        the LE; the curve is tabulated by arc length and curvature
 3 - sample the shape
     a - exactly n_surface points, placed by arc length from the config's
         spacing knobs (le/te spacing, cluster width), positions evaluated

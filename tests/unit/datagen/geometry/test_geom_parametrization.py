@@ -6,6 +6,7 @@ Step 1: Ensure the basis and evaluation
     - test_eval_passes_through_le_and_te
     - test_le_term_changes_camber_only
     - test_te_wedge
+    - test_slope
 Step 2: Ensure the fit recovers the CST it was given, never crosses the TE, and why the nose is fitted as it is
     - test_fit_recovers_coefficients
     - test_fit_meets_a_crossed_te_as_a_cusp
@@ -25,8 +26,8 @@ from src.datagen.geometry.build.families import Geom_family_coords
 from src.datagen.geometry.build.normalize import Geom_close_te, Geom_normalize
 from src.datagen.geometry.common.constants import CST_N1, CST_N2
 from src.datagen.geometry.build.parametrization import (
-    Geom_cst_contour, Geom_cst_eval, Geom_cst_fit, Geom_cst_fit_metrics, Geom_cst_te_wedge, Geom_curve_distance,
-    _bernstein,
+    Geom_cst_contour, Geom_cst_eval, Geom_cst_fit, Geom_cst_fit_metrics, Geom_cst_slope, Geom_cst_te_wedge,
+    Geom_curve_distance, _bernstein,
 )
 from src.datagen.geometry.common.schemas import CSTParams, Family, Nose
 
@@ -66,6 +67,18 @@ def test_te_wedge():
 
     assert Geom_cst_te_wedge(cst) == pytest.approx(math.degrees(math.atan(yu[0] / h) - math.atan(yl[0] / h)), abs=1e-4)
     assert Geom_cst_te_wedge(CSTParams(n1=CST_N1, n2=CST_N2, upper=[0.1, -0.1], lower=[-0.1, 0.1])) < 0  # crossed
+
+
+@pytest.mark.parametrize("nose", list(Nose))
+def test_slope(nose):
+    cst, h = _cst(nose), 1e-6
+    x = np.linspace(0.02, 0.98, 25)
+    (su, sl), (pu, pl), (mu, ml) = Geom_cst_slope(cst, x), Geom_cst_eval(cst, x + h), Geom_cst_eval(cst, x - h)
+    (su_te,), (sl_te,) = Geom_cst_slope(cst, np.array([1.0]))
+
+    np.testing.assert_allclose(su, (pu - mu) / (2 * h), rtol=0, atol=1e-8)
+    np.testing.assert_allclose(sl, (pl - ml) / (2 * h), rtol=0, atol=1e-8)
+    assert (su_te, sl_te) == (-cst.upper[-1], -cst.lower[-1])  # each surface ends as ~A_N (1 - x)
 # endregion
 
 
