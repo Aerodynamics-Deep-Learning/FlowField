@@ -166,7 +166,7 @@ def test_sampled_configs_share_the_sampling_fields():
 def test_sampling_fields_stay_out_of_c2d_options(tmp_path):
     config = C2D_MeshingConfig(dx_mid=0.004, le_ratio=0.5)
     path = tmp_path / "grid_options.in"
-    _write_grid_options(str(path), config.to_params(), "foil", "OGRD", config.slvr)
+    _write_grid_options(str(path), config.to_params(), "foil", "OGRD", config.slvr, Re=2e6)
 
     assert not any(k in path.read_text() for k in SamplingFields.model_fields)  # c2d never sees them
 # endregion

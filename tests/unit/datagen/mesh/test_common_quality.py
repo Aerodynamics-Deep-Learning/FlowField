@@ -5,6 +5,7 @@ Step 1: Ensure `_read_su2` parses the format both backends write
     - test_read_su2_parses_nodes_elements_and_markers
     - test_read_su2_empty_element_blocks_keep_their_rank
     - test_read_su2_skips_comments_and_blank_lines
+    - test_read_su2_raises_on_a_block_cut_short
 Step 2: Ensure the metric helpers score known geometry correctly -- `_cell_metrics` for the
         cell-local area/skewness/aspect ratio/scaled Jacobian, `_orthogonal_quality` for the
         face-based one that also reads a cell's neighbours
@@ -183,6 +184,18 @@ def test_read_su2_skips_comments_and_blank_lines(tmp_path):
 
     assert nodes.shape == (4, 2)
     np.testing.assert_array_equal(quads, [[0, 1, 2, 3]])
+
+
+@pytest.mark.parametrize("text", [
+    "NDIME= 2\nNPOIN= 4\n0.0 0.0 0\n1.0 0.0 1\n",   # declares 4 nodes, holds 2
+    "NDIME= 2\nNELEM= 2\n9 0 1 2 3 0\n",            # declares 2 cells, holds 1
+])
+def test_read_su2_raises_on_a_block_cut_short(tmp_path, text):
+    # A truncated file must not parse as a smaller mesh; `C2D_count_su2_nodes` trusts NPOIN= and leans on this
+    path = tmp_path / "truncated.su2"
+    path.write_text(text)
+    with pytest.raises(IndexError):
+        _read_su2(str(path))
 # endregion
 
 

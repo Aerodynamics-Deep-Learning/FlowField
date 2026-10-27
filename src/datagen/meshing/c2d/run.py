@@ -54,7 +54,7 @@ def C2D_MeshGenerator(data: C2D_In) -> C2D_Out:
         # Try getting the mesh
         p3d_path, su2_path, vtk_path, nmf_path, log_text = C2D_generate_mesh(
             airfoil=data.airfoil, exe=exe, working_dir=data.working_dir,
-            config=data.meshing_config
+            config=data.meshing_config, Re=data.freestream.Re
         )
 
         if p3d_path is None:
@@ -124,16 +124,17 @@ def _c2d_reads_closed(dat_path: str) -> bool:
     return pts[0][1] == pts[-1][1]
 
 
-def _write_grid_options(path: str, params: dict, name: str, topo: str, slvr: str) -> None:
+def _write_grid_options(path: str, params: dict, name: str, topo: str, slvr: str, Re: float) -> None:
     """Writes C2D's `grid_options.in` namelist directly from `params` (expected to
-    already be complete, `C2D_MeshingConfig.to_params()` always supplies every field)."""
+    already be complete, `C2D_MeshingConfig.to_params()` always supplies every field), with the
+    freestream's `Re` as c2d's `recd`, which sizes the first cell."""
     fmt = lambda v: str(int(v)) if isinstance(v, int) else repr(float(v))
     with open(path, "w") as f:
         f.write("&SOPT\n")
         for k in ("radi", "nwke", "fdst", "fwkl", "fwki"):
             f.write("  %s = %s\n" % (k, fmt(params[k])))
-        f.write("/\n&VOPT\n  name = '%s'\n" % name)
-        for k in ("jmax", "ypls", "recd", "stp1", "stp2", "nrmt", "nrmb",
+        f.write("/\n&VOPT\n  name = '%s'\n  recd = %s\n" % (name, fmt(Re)))
+        for k in ("jmax", "ypls", "stp1", "stp2", "nrmt", "nrmb",
                   "alfa", "epsi", "epse", "funi", "asmt", "cfrc"):
             f.write("  %s = %s\n" % (k, fmt(params[k])))
         f.write("  slvr = '%s'\n  topo = '%s'\n" % (slvr, topo))
@@ -141,13 +142,13 @@ def _write_grid_options(path: str, params: dict, name: str, topo: str, slvr: str
 
 
 def C2D_generate_mesh(airfoil: Airfoil, exe: str, working_dir: str, config: C2D_MeshingConfig,
-                      timeout: int = 300):
+                      Re: float, timeout: int = 300):
     """
     Writes the airfoil to a `.dat` file, drives the C2D binary directly, and converts the
-    resulting grid to SU2/VTK. Mirrors `gmsh.run.GMSH_generate_cmesh`/`gmsh.run.GMSH_generate_omesh`'s roles 
+    resulting grid to SU2/VTK. Mirrors `gmsh.run.GMSH_generate_cmesh`/`gmsh.run.GMSH_generate_omesh`'s roles
     in `GMSH_MeshGenerator`: performs the actual meshing work and returns only the artifact paths the
     caller needs, flagging and exception handling stay in `C2D_MeshGenerator`, the same split
-    GMSH uses.
+    GMSH uses. `Re` is the freestream's, which c2d sizes the first cell from, as gmsh does.
 
     Returns (p3d_path, su2_path, vtk_path, nmf_path, log_text). `su2_path`/`vtk_path`/`nmf_path`
     are None if conversion didn't yield a `.su2`; all four paths are None if C2D itself
@@ -167,7 +168,7 @@ def C2D_generate_mesh(airfoil: Airfoil, exe: str, working_dir: str, config: C2D_
     confirm = "y\n" if topo != recommended else ""
 
     _write_grid_options(os.path.join(working_dir, "grid_options.in"), config.to_params(),
-                        name, topo, slvr)
+                        name, topo, slvr, Re)
     # BUFF meshes the input points as given: no c2d resampling, no TE fillet; it refuses an open contour
     stdin_cmds = os.path.basename(dat_path) + "\n" + confirm + "grid\nbuff\nquit\n"
 

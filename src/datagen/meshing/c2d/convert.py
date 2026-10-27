@@ -140,38 +140,29 @@ def convert(p3d_path, nmf_path, su2_path, weld_tol=1e-8, verbose=False):
     # order="F": flat index = p + j0*imax  -> matches nid(p, j0)
     coords = np.column_stack([X.reshape(-1, order="F"), Y.reshape(-1, order="F")])
 
-    # weld coincident nodes (closes the wake cut) 
+    # weld coincident nodes (closes the wake cut): each maps to the first node sharing its rounded
+    # key; + 0.0 folds -0.0 into 0.0, as a tuple key does
     decimals = max(0, int(round(-np.log10(weld_tol))))
-    keys = {}
-    remap = np.arange(imax * jmax)
-    for k in range(imax * jmax):
-        key = (round(float(coords[k, 0]), decimals), round(float(coords[k, 1]), decimals))
-        if key in keys:
-            remap[k] = keys[key]
-        else:
-            keys[key] = k
+    _, first, inverse = np.unique(np.round(coords, decimals) + 0.0, axis=0, return_index=True,
+                                  return_inverse=True)
+    remap = first[inverse.ravel()]
     n_welded = int(np.sum(remap != np.arange(imax * jmax)))
     log("Welded %d coincident node(s) along cut/seam." % n_welded)
 
-    # build quad cells (no i-wrap)
-    elems = []
-    neg_before = 0
-    for j0 in range(jmax - 1):
-        for p in range(imax - 1):
-            n0 = int(remap[nid(p,     j0)])
-            n1 = int(remap[nid(p + 1, j0)])
-            n2 = int(remap[nid(p + 1, j0 + 1)])
-            n3 = int(remap[nid(p,     j0 + 1)])
-            if len({n0, n1, n2, n3}) < 4:
-                continue  # degenerate (collapsed at cut) -- skip
-            x = coords[[n0, n1, n2, n3], 0]
-            y = coords[[n0, n1, n2, n3], 1]
-            area = 0.5 * ((x[0]*y[1]-x[1]*y[0]) + (x[1]*y[2]-x[2]*y[1]) +
-                          (x[2]*y[3]-x[3]*y[2]) + (x[3]*y[0]-x[0]*y[3]))
-            if area < 0:
-                neg_before += 1
-                n1, n3 = n3, n1  # reverse -> CCW
-            elems.append((n0, n1, n2, n3))
+    # build quad cells (no i-wrap), j0 outer and p inner
+    j0, p = np.divmod(np.arange((jmax - 1) * (imax - 1)), imax - 1)
+    base = nid(p, j0)
+    n0, n1, n2, n3 = remap[base], remap[base + 1], remap[base + imax + 1], remap[base + imax]
+    # degenerate (collapsed at cut) -- skip
+    keep = (n0 != n1) & (n0 != n2) & (n0 != n3) & (n1 != n2) & (n1 != n3) & (n2 != n3)
+    n0, n1, n2, n3 = n0[keep], n1[keep], n2[keep], n3[keep]
+    x, y = coords[:, 0], coords[:, 1]
+    area = 0.5 * ((x[n0]*y[n1]-x[n1]*y[n0]) + (x[n1]*y[n2]-x[n2]*y[n1]) +
+                  (x[n2]*y[n3]-x[n3]*y[n2]) + (x[n3]*y[n0]-x[n0]*y[n3]))
+    neg = area < 0
+    n1, n3 = np.where(neg, n3, n1), np.where(neg, n1, n3)  # reverse -> CCW
+    elems = np.stack([n0, n1, n2, n3], axis=1)
+    neg_before = int(neg.sum())
     log("Built %d quads (%d reversed to CCW)." % (len(elems), neg_before))
 
     # markers from .nmf 
@@ -196,8 +187,11 @@ def convert(p3d_path, nmf_path, su2_path, weld_tol=1e-8, verbose=False):
            MARKER_FARFIELD, len(marker_edges[MARKER_FARFIELD])))
 
     # compact node numbering
-    used = sorted({n for e in elems for n in e})
-    old2new = {old: new for new, old in enumerate(used)}
+    used_mask = np.zeros(imax * jmax, dtype=bool)
+    used_mask[elems.ravel()] = True
+    used = np.flatnonzero(used_mask)
+    old2new = np.full(imax * jmax, -1)
+    old2new[used] = np.arange(len(used))
     new_coords = coords[used]
 
     # A collapsed cell can leave a marker edge on a node no surviving cell uses. That piece of
@@ -205,32 +199,28 @@ def convert(p3d_path, nmf_path, su2_path, weld_tol=1e-8, verbose=False):
     # (before this) raise KeyError mid-write and leave a truncated .su2 on disk.
     n_orphan = 0
     for tag, edges in marker_edges.items():
-        kept = [(na, nb) for na, nb in edges if na in old2new and nb in old2new]
-        n_orphan += len(edges) - len(kept)
-        marker_edges[tag] = kept
+        e = np.array(edges, dtype=int).reshape(-1, 2)
+        kept = (old2new[e] >= 0).all(axis=1)
+        n_orphan += int((~kept).sum())
+        marker_edges[tag] = old2new[e[kept]]
     if n_orphan:
         log("Dropped %d marker edge(s) left on collapsed cells." % n_orphan)
 
-    def mp(n):
-        return old2new[n]
-
-    # write SU2 
+    # write SU2: one %-format per block over a flat tuple, since per-row lists cost more in GC than the writing
+    cells = old2new[elems]
+    xs, ys = new_coords[:, 0].tolist(), new_coords[:, 1].tolist()
+    tags = [t for t in (MARKER_AIRFOIL, MARKER_FARFIELD) if len(marker_edges[t])]
+    out = ["%% SU2 mesh converted from C2D by plot3d_to_su2.py\n", "NDIME= 2\n",
+           "NELEM= %d\n" % len(cells), ("9 %d %d %d %d\n" * len(cells)) % tuple(cells.ravel().tolist()),
+           "NPOIN= %d\n" % len(used),
+           ("%.16e %.16e %d\n" * len(used)) % tuple(v for row in zip(xs, ys, range(len(used))) for v in row),
+           "NMARK= %d\n" % len(tags)]
+    for t in tags:
+        e = marker_edges[t]
+        out.append("MARKER_TAG= %s\nMARKER_ELEMS= %d\n" % (t, len(e)))
+        out.append(("3 %d %d\n" * len(e)) % tuple(e.ravel().tolist()))
     with open(su2_path, "w") as f:
-        f.write("%% SU2 mesh converted from C2D by plot3d_to_su2.py\n")
-        f.write("NDIME= 2\n")
-        f.write("NELEM= %d\n" % len(elems))
-        for e in elems:
-            f.write("9 %d %d %d %d\n" % (mp(e[0]), mp(e[1]), mp(e[2]), mp(e[3])))
-        f.write("NPOIN= %d\n" % len(used))
-        for k, (x, y) in enumerate(new_coords):
-            f.write("%.16e %.16e %d\n" % (x, y, k))
-        tags = [t for t in (MARKER_AIRFOIL, MARKER_FARFIELD) if marker_edges[t]]
-        f.write("NMARK= %d\n" % len(tags))
-        for t in tags:
-            f.write("MARKER_TAG= %s\n" % t)
-            f.write("MARKER_ELEMS= %d\n" % len(marker_edges[t]))
-            for (na, nb) in marker_edges[t]:
-                f.write("3 %d %d\n" % (mp(na), mp(nb)))
+        f.write("".join(out))
 
     log("Wrote %s  (%d nodes, %d elems, markers: %s)"
         % (su2_path, len(used), len(elems), ", ".join(tags)))

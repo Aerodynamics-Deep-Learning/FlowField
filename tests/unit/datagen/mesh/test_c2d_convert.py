@@ -46,6 +46,8 @@ Step 7: Ensure `.nmf` face types map onto the right SU2 marker tags
     - test_clean_grid_drops_no_marker_edges
 Step 8: Ensure `convert` stays quiet unless asked to talk
     - test_convert_is_silent_by_default
+Step 9: Ensure the written bytes stay as they are, since a re-mesh is checked against its recorded `.su2` hash
+    - test_written_su2_is_byte_exact
 
 Scope: a defect here is expensive: `convert` writes a file SU2 will happily run on, so a wrong
 cell is wrong physics rather than a crash. Grids come from the local `_write_p3d`/`_write_nmf`
@@ -283,6 +285,8 @@ def test_clockwise_grid_is_reversed_to_ccw(tmp_path):
     stats, (nodes, quads, _t, _m), _ = _convert(tmp_path, ys=ys)
     assert stats["reversed_cells"] == 2, "both cells were clockwise and had to be flipped"
     assert all(a > 0 for a in _areas(nodes, quads)), "every written cell must end up CCW"
+    # A positive area alone would pass a cell with a repeated corner too
+    assert quads.tolist() == [[0, 3, 4, 1], [1, 4, 5, 2]], "a flip swaps the 2nd and 4th corners, keeping all four"
 
 
 def test_counterclockwise_grid_is_left_alone(tmp_path):
@@ -424,4 +428,22 @@ def test_convert_is_silent_by_default(tmp_path, capsys):
     # `C2D_generate_mesh` passes verbose=False, but the default matters for anyone else calling it
     _convert(tmp_path)
     assert capsys.readouterr().out == ""
+# endregion
+
+
+# region Step 9
+def test_written_su2_is_byte_exact(tmp_path):
+    # 3x3 so there are two rows of cells: the j0-outer, p-inner cell order shows. The node format, cell
+    # order and marker edge direction don't change the mesh, but they do change its hash.
+    xs = [0.0, 1.0, 2.0] * 3
+    ys = [0.0] * 3 + [1.0] * 3 + [2.0] * 3
+    _stats, _parsed, su2 = _convert(tmp_path, xs=xs, ys=ys, imax=3, jmax=3)
+    nodes = "".join("%.16e %.16e %d\n" % (x, y, k) for k, (x, y) in enumerate(zip(xs, ys)))
+    assert open(su2).read() == (
+        "%% SU2 mesh converted from C2D by plot3d_to_su2.py\nNDIME= 2\n"
+        "NELEM= 4\n9 0 1 4 3\n9 1 2 5 4\n9 3 4 7 6\n9 4 5 8 7\n"
+        "NPOIN= 9\n" + nodes +
+        "NMARK= 2\n"
+        f"MARKER_TAG= {MARKER_AIRFOIL}\nMARKER_ELEMS= 2\n3 2 1\n3 1 0\n"
+        f"MARKER_TAG= {MARKER_FARFIELD}\nMARKER_ELEMS= 2\n3 8 7\n3 7 6\n")
 # endregion

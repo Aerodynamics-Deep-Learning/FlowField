@@ -16,6 +16,8 @@ Step 3: Ensure C2D_count_su2_nodes reads the cheap node count the runner flags o
     - test_count_su2_nodes_returns_zero_for_missing_path
 Step 4: Ensure the exe is driven in BUFF mode, answering its topology prompt only when it asks
     - test_c2d_driven_in_buff_mode
+Step 5: Ensure c2d sizes the first cell from the freestream's Re, not a config value
+    - test_first_cell_sized_from_the_freestream_re
 
 Scope: the c2d runner only. The gmsh counterpart is test_gmsh_runner.py, and the dispatcher that
 maps a C2D_ExitFlag onto a MeshExitFlag is test_common_entry.py.
@@ -149,11 +151,24 @@ def test_count_su2_nodes_returns_zero_for_missing_path(tmp_path):
 def test_c2d_driven_in_buff_mode(tmp_path, airfoil, topo, confirms):
     with patch(f"{RUNNER}.subprocess.run") as mock_run:
         mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
-        C2D_generate_mesh(airfoil, "/fake/c2d", str(tmp_path), C2D_MeshingConfig(topo=topo))
+        C2D_generate_mesh(airfoil, "/fake/c2d", str(tmp_path), C2D_MeshingConfig(topo=topo), Re=2e6)
 
     stdin = mock_run.call_args.kwargs["input"].splitlines()
     assert stdin == [f"{airfoil.airfoil_name}.dat"] + (["y"] if confirms else []) + ["grid", "buff", "quit"]
     options = (tmp_path / "grid_options.in").read_text()
     assert f"topo = '{topo}'" in options
     assert not any(k in options for k in ("nsrf", "lesp", "tesp"))  # BUFF takes the surface from the input
+# endregion
+
+
+# region Step 5
+def test_first_cell_sized_from_the_freestream_re(tmp_path):
+    # The generator hands the freestream's Re down; no c2d exe runs, the options file is written first
+    with patch(f"{RUNNER}.C2D_find_exe", return_value="/fake/c2d"), \
+         patch(f"{RUNNER}.subprocess.run", return_value=MagicMock(returncode=0, stdout="", stderr="")):
+        C2D_MeshGenerator(_c2d_in(str(tmp_path)))
+
+    options = (tmp_path / "grid_options.in").read_text().splitlines()
+    assert [line.strip() for line in options if line.strip().startswith("recd")] == [f"recd = {_freestream().Re!r}"]
+    assert "recd" not in C2D_MeshingConfig.model_fields
 # endregion

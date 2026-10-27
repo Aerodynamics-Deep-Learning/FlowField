@@ -16,8 +16,8 @@ Sequence 1 (meshing_main): one study = one airfoil x one mesher/topology
     c - the study's TE gap (0.4% chord by default) -> the contour, built once
         (build_study_contour); a refused contour fails the study's setup
     d - the default freestream of the entire run (only Re matters here, and
-        should be the worst-case Re); c2d to read it from the freestream too,
-        instead of its own `recd`
+        should be the worst-case Re); c2d reads it from the freestream too, as
+        gmsh does
 2 - the mesh config is created (each evaluation) by:
     1 - either the optim procedure,
     2 - or the user specified mesh configs
