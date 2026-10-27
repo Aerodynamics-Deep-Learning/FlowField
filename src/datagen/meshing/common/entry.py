@@ -64,8 +64,8 @@ def _score_mesh(data: MeshIn, out, flag: MeshExitFlag):
     """
     The post-mesh verdicts, in order: quality, then geometric deviation.
 
-    Deviation only runs on a mesh that already passed quality, i.e.: there is nothing to learn from the
-    boundary of a mesh that is already rejected, and the quality pass has proved the file parses.
+    Deviation is measured on every mesh the quality pass could read, so each one records it, but the
+    quality verdict keeps precedence: deviation only decides the flag of a mesh that passed quality.
 
     Returns:
         MeshExitFlag, MeshQualitySummary | None, MeshGeoDeviationSummary | None, int | None
@@ -80,12 +80,18 @@ def _score_mesh(data: MeshIn, out, flag: MeshExitFlag):
     flag, quality, analyzed_nodes = Common_evaluate_mesh_quality(out.mesh_path)
     if analyzed_nodes is not None:
         num_nodes = analyzed_nodes # Get the num of nodes, will append it
-    if flag != MeshExitFlag.SUCCESS: # If flag is not successful, just return it
+    if quality is None and flag != MeshExitFlag.SUCCESS: # Unreadable mesh, no boundary to measure
         return flag, quality, geo_dev, num_nodes
 
-    # Get the geometric deviation check
-    flag, geo_dev = Common_evaluate_mesh_geo_dev(out.mesh_path, data.airfoil)
-    return flag, quality, geo_dev, num_nodes # Return all
+    # Get the geometric deviation check; a crash on an already-failed mesh keeps that mesh's verdict
+    try:
+        geo_flag, geo_dev = Common_evaluate_mesh_geo_dev(out.mesh_path, data.airfoil)
+    except Exception:
+        if flag == MeshExitFlag.SUCCESS:
+            raise
+        logger.exception("Could not measure deviation on the %s mesh at %s", flag.name, out.mesh_path)
+        return flag, quality, None, num_nodes
+    return (geo_flag if flag == MeshExitFlag.SUCCESS else flag), quality, geo_dev, num_nodes # Return all
 
 
 def _run_gmsh(data: MeshIn) -> MeshOut:

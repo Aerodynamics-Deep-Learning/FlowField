@@ -26,6 +26,9 @@ Step 6: Ensure the config MeshIn resolved reaches the backend unmodified
     - test_entry_forwards_the_resolved_config_to_gmsh
     - test_entry_forwards_the_resolved_config_to_c2d
     - test_entry_one_c2d_config_sweeps_both_topologies
+Step 7: Ensure deviation is measured on every readable mesh, without overriding the quality verdict
+    - test_entry_quality_verdict_outranks_deviation
+    - test_entry_deviation_crash_keeps_a_failed_quality_verdict
 
 Scope: this file covers the dispatcher only. Each backend's own runner is tested in
 test_gmsh_runner.py / test_c2d_runner.py, the shared validators in test_common_utils.py, and the
@@ -45,7 +48,9 @@ from src.datagen.meshing.gmsh.schemas import (
     GMSH_CMeshingConfig, GMSH_ExitFlag, GMSH_Topology,
 )
 from src.datagen.meshing.c2d.schemas import C2D_ExitFlag, C2D_MeshingConfig, C2D_Topology
-from src.datagen.meshing.common.schemas import MeshIn, MeshBackend, MeshTopology, MeshExitFlag
+from src.datagen.meshing.common.schemas import (
+    MeshIn, MeshBackend, MeshTopology, MeshExitFlag, MeshQualitySummary, MeshGeoDeviationSummary,
+)
 from src.datagen.meshing.common.entry import Common_GenerateMesh
 
 
@@ -415,4 +420,52 @@ def test_entry_one_c2d_config_sweeps_both_topologies(mock_generator):
         assert out.flag == MeshExitFlag.SUBPROCESS_FAIL
         assert mock_generator.call_args.args[0].meshing_config.topo == C2D_Topology[topology.name].value
     assert config.topo is None
+# endregion
+
+
+# region Step 7
+_QUALITY = MeshQualitySummary(ncell=10, max_skew=0.2, min_ortho=0.9, min_jac=0.9, max_ar=10.0,
+                              max_size_ratio=1.3, acceptable=False)
+_GEO_DEV = MeshGeoDeviationSummary(n_boundary_nodes=5, max_dev_mesh_to_input=1e-5, max_dev_input_to_mesh=1e-5,
+                                   rms_dev_mesh_to_input=1e-6, rms_dev_input_to_mesh=1e-6, chord=1.0, acceptable=True)
+
+
+@pytest.mark.parametrize("quality_flag, geo_flag, expected", [
+    (MeshExitFlag.LOW_QUALITY, MeshExitFlag.SUCCESS, MeshExitFlag.LOW_QUALITY),
+    (MeshExitFlag.LOW_QUALITY, MeshExitFlag.GEOMETRY_DEVIATION_FAIL, MeshExitFlag.LOW_QUALITY),
+    (MeshExitFlag.UNACCEPTABLE_QUALITY, MeshExitFlag.SUCCESS, MeshExitFlag.UNACCEPTABLE_QUALITY),
+    (MeshExitFlag.SUCCESS, MeshExitFlag.GEOMETRY_DEVIATION_FAIL, MeshExitFlag.GEOMETRY_DEVIATION_FAIL),
+    (MeshExitFlag.SUCCESS, MeshExitFlag.SUCCESS, MeshExitFlag.SUCCESS),
+])
+@patch("src.datagen.meshing.common.entry.Common_evaluate_mesh_geo_dev")
+@patch("src.datagen.meshing.common.entry.Common_evaluate_mesh_quality")
+@patch("src.datagen.meshing.common.entry.GMSH_MeshGenerator")
+def test_entry_quality_verdict_outranks_deviation(mock_generator, mock_quality, mock_geo_dev,
+                                                  quality_flag, geo_flag, expected):
+    # Every readable mesh records its deviation; deviation only decides the flag when quality passed
+    mock_generator.return_value = _mock_backend_out(GMSH_ExitFlag.SUCCESS)
+    mock_quality.return_value = (quality_flag, _QUALITY, 1234)
+    mock_geo_dev.return_value = (geo_flag, _GEO_DEV)
+
+    out = Common_GenerateMesh(_mesh_in(MeshBackend.GMSH, MeshTopology.CGRD))
+
+    assert out.flag == expected
+    assert out.quality == _QUALITY and out.geo_dev == _GEO_DEV
+
+
+@patch("src.datagen.meshing.common.entry.Common_evaluate_mesh_geo_dev")
+@patch("src.datagen.meshing.common.entry.Common_evaluate_mesh_quality")
+@patch("src.datagen.meshing.common.entry.GMSH_MeshGenerator")
+def test_entry_deviation_crash_keeps_a_failed_quality_verdict(mock_generator, mock_quality, mock_geo_dev):
+    # Unlike on a passing mesh (test_entry_geo_dev_exception_becomes_flag), the verdict is already
+    # decided here, so losing the deviation must not lose the quality result with it
+    mock_generator.return_value = _mock_backend_out(GMSH_ExitFlag.SUCCESS)
+    mock_quality.return_value = (MeshExitFlag.LOW_QUALITY, _QUALITY, 1234)
+    mock_geo_dev.side_effect = ValueError("unreadable MARKER_AIRFOIL block")
+
+    out = Common_GenerateMesh(_mesh_in(MeshBackend.GMSH, MeshTopology.CGRD))
+
+    assert out.flag == MeshExitFlag.LOW_QUALITY
+    assert out.quality == _QUALITY and out.geo_dev is None
+    assert out.num_nodes == 1234
 # endregion

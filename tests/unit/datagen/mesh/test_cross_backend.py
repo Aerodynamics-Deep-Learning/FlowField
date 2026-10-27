@@ -86,9 +86,8 @@ def test_gmsh_backend_produces_scorable_su2(tmp_path):
     assert out.mesh_path is not None
     assert out.quality is not None
     assert _su2_marker_tags(out.mesh_path) == _EXPECTED_MARKERS
-    # `_score_mesh` measures deviation only on a mesh the quality pass accepted, so the two are
-    # tied. 
-    assert (out.geo_dev is not None) == (out.flag == MeshExitFlag.SUCCESS)
+    # `_score_mesh` measures deviation on every mesh it can read, whatever the quality verdict
+    assert out.geo_dev is not None
 # endregion
 
 
