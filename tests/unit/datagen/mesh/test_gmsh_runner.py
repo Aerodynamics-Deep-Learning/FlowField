@@ -9,6 +9,7 @@ Step 1: Ensure gmsh-specific structural failure modes route to the expected GMSH
     - test_clean_exit_without_a_mesh_is_fatal
     - test_runner_extrusion_fail
     - test_runner_success
+    - test_runner_saves_the_vtk_only_when_asked
 Step 2: Ensure a gmsh failure is caught from its output, since its exit code alone is not reliable
     - test_run_script_raises_on_gmsh_failure
     - test_run_script_returns_the_log_on_a_clean_run
@@ -41,12 +42,13 @@ _NACA0012 = [
 ]
 
 
-def _gmsh_in(working_dir: str) -> GMSH_In:
+def _gmsh_in(working_dir: str, **kwargs) -> GMSH_In:
     coords = torch.tensor(_NACA0012, dtype=torch.float32)
     return GMSH_In(
         airfoil=Airfoil(airfoil_name="naca_test", coords_tensor=coords, chord=1.0, le_idx=12),
         freestream=Freestream(alpha=0.0, Re=2e6, mach=0.3), topology=GMSH_Topology.CGRD,
         meshing_config=GMSH_CMeshingConfig(upper_anchor_idx=6, lower_anchor_idx=18), working_dir=working_dir,
+        **kwargs,
     )
 
 
@@ -99,6 +101,18 @@ def test_runner_success(tmp_path):
     assert out.mesh_path_vtk == out.mesh_path.replace("_mesh.su2", "_mesh.vtk")
     assert out.mesh_path_vtk.startswith(str(tmp_path))
     assert Path(out.verbose_list[0]).read_text() == "log"
+
+
+@pytest.mark.parametrize("write_vtk", [True, False])
+def test_runner_saves_the_vtk_only_when_asked(tmp_path, write_vtk):
+    su2 = "NDIME= 2\nNELEM= 1\n9 0 1 2 3 0\nNPOIN= 4\n0 0 0\n1 0 1\n1 1 2\n0 1 3\nNMARK= 0\n"
+    with patch(f"{RUNNER}.find_tool", return_value="/fake/gmsh"), \
+         patch(f"{RUNNER}.GMSH_run_script", side_effect=_writes_su2(su2)) as run:
+        out = GMSH_MeshGenerator(_gmsh_in(str(tmp_path), write_vtk=write_vtk))
+
+    assert out.flag == GMSH_ExitFlag.SUCCESS
+    assert ('.vtk";' in run.call_args.kwargs["geo"].text()) is write_vtk  # the script's Save line
+    assert (out.mesh_path_vtk is not None) is write_vtk
 # endregion
 
 

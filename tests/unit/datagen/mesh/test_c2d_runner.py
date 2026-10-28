@@ -18,12 +18,16 @@ Step 4: Ensure the exe is driven in BUFF mode, answering its topology prompt onl
     - test_c2d_driven_in_buff_mode
 Step 5: Ensure c2d sizes the first cell from the freestream's Re, not a config value
     - test_first_cell_sized_from_the_freestream_re
+Step 6: Ensure the .vtk is converted only when asked for
+    - test_generate_mesh_writes_the_vtk_only_when_asked
+    - test_generator_forwards_write_vtk
 
 Scope: the c2d runner only. The gmsh counterpart is test_gmsh_runner.py, and the dispatcher that
 maps a C2D_ExitFlag onto a MeshExitFlag is test_common_entry.py.
 """
 
 import tempfile
+from pathlib import Path
 from unittest.mock import patch, MagicMock
 
 import torch
@@ -171,4 +175,39 @@ def test_first_cell_sized_from_the_freestream_re(tmp_path):
     options = (tmp_path / "grid_options.in").read_text().splitlines()
     assert [line.strip() for line in options if line.strip().startswith("recd")] == [f"recd = {_freestream().Re!r}"]
     assert "recd" not in C2D_MeshingConfig.model_fields
+# endregion
+
+
+# region Step 6
+def _c2d_writes_p3d(args, cwd, **kwargs):
+    """A `subprocess.run` stand-in for a c2d run that wrote its grid."""
+    (Path(cwd) / "naca_closed.p3d").write_text("")
+    return MagicMock(returncode=0, stdout="", stderr="")
+
+
+@pytest.mark.parametrize("write_vtk", [True, False])
+def test_generate_mesh_writes_the_vtk_only_when_asked(tmp_path, write_vtk):
+    with patch(f"{RUNNER}.subprocess.run", side_effect=_c2d_writes_p3d), \
+         patch(f"{RUNNER}.convert", side_effect=lambda p3d, nmf, su2, verbose: Path(su2).write_text("")), \
+         patch(f"{RUNNER}.su2_to_vtk") as to_vtk:
+        _, su2_path, vtk_path, _, _ = C2D_generate_mesh(
+            _closed_airfoil(), "/fake/c2d", str(tmp_path), C2D_MeshingConfig(topo="OGRD"), Re=2e6,
+            write_vtk=write_vtk)
+
+    assert su2_path == str(tmp_path / "naca_closed.su2")
+    assert to_vtk.called is write_vtk
+    assert vtk_path == (str(tmp_path / "naca_closed.vtk") if write_vtk else None)
+
+
+def test_generator_forwards_write_vtk(tmp_path):
+    su2_path = tmp_path / "mock.su2"
+    su2_path.write_text("NPOIN= 3\n0.0 0.0 0\n1.0 0.0 1\n0.5 1.0 2\n")
+    data = _c2d_in(str(tmp_path)).model_copy(update={"write_vtk": False})
+    with patch(f"{RUNNER}.C2D_find_exe", return_value="/fake/c2d"), \
+         patch(f"{RUNNER}.C2D_generate_mesh", return_value=(
+             "/tmp/mock.p3d", str(su2_path), None, "/tmp/mock.nmf", "log")) as generate:
+        out = C2D_MeshGenerator(data)
+
+    assert generate.call_args.kwargs["write_vtk"] is False
+    assert out.flag == C2D_ExitFlag.SUCCESS and out.mesh_path_vtk is None
 # endregion

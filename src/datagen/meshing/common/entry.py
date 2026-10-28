@@ -77,7 +77,7 @@ def _score_mesh(data: MeshIn, out, flag: MeshExitFlag):
         return flag, quality, geo_dev, num_nodes
 
     # Get the initial mesh quality pre-geometric devation check
-    flag, quality, analyzed_nodes = Common_evaluate_mesh_quality(out.mesh_path)
+    flag, quality, analyzed_nodes = Common_evaluate_mesh_quality(out.mesh_path, count_limits=data.count_limits)
     if analyzed_nodes is not None:
         num_nodes = analyzed_nodes # Get the num of nodes, will append it
     if quality is None and flag != MeshExitFlag.SUCCESS: # Unreadable mesh, no boundary to measure
@@ -107,7 +107,8 @@ def _run_gmsh(data: MeshIn) -> MeshOut:
                 freestream=data.freestream,
                 topology=topology,
                 meshing_config=data.mesh_config,
-                working_dir=data.working_dir
+                working_dir=data.working_dir,
+                write_vtk=data.write_vtk
             )
     except ValidationError as e:
         logger.error("GMSH_In rejected the dispatched MeshIn: %s", e)
@@ -138,7 +139,8 @@ def _run_c2d(data: MeshIn) -> MeshOut:
             freestream=data.freestream,
             topology=topology,
             meshing_config=data.mesh_config,
-            working_dir=data.working_dir
+            working_dir=data.working_dir,
+            write_vtk=data.write_vtk
         )
     except ValidationError as e:
         logger.error("C2D_In rejected the dispatched MeshIn: %s", e)

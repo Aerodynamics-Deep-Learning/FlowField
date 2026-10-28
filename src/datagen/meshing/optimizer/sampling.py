@@ -21,7 +21,7 @@ from src.datagen.geometry.sample.contour import Contour, Geom_build_contour
 from src.datagen.geometry.sample.fields import SamplingFields
 from src.datagen.geometry.sample.sample import Geom_sample
 from src.datagen.meshing.c2d.schemas import C2D_MeshingConfig
-from src.datagen.meshing.common.schemas import MeshBackend, MeshIn, MeshingConfig, MeshTopology
+from src.datagen.meshing.common.schemas import MeshBackend, MeshIn, MeshingConfig, MeshTopology, QualityLimits
 from src.datagen.schemas import Airfoil, Freestream
 
 # The TE each pairing meshes; None: not sampled (the gmsh C-mesh, until its anchor indices become x/c)
@@ -73,7 +73,8 @@ def build_study_contour(shape: ShapeRecord, backend: MeshBackend, topology: Mesh
 
 def sample_for_mesher(config: MeshingConfig, contour: Contour, *, airfoil_name: str, chord: float,
                       freestream: Freestream, backend: MeshBackend, topology: MeshTopology,
-                      working_dir: str) -> SampledInput:
+                      working_dir: str, count_limits: Optional[QualityLimits] = None,
+                      write_vtk: bool = True) -> SampledInput:
     """
     Samples a study's contour with one config's knobs and builds the mesher's input from the points.
 
@@ -86,6 +87,9 @@ def sample_for_mesher(config: MeshingConfig, contour: Contour, *, airfoil_name: 
         backend (MeshBackend): The study's mesher
         topology (MeshTopology): Its topology
         working_dir (str): The evaluation's own, existing run directory
+        count_limits (QualityLimits | None): Limits the quality summary counts bad cells against;
+            None counts against constants.py
+        write_vtk (bool): Whether the mesher also writes the diagnostic .vtk
 
     Returns:
         SampledInput: The MeshIn (None if a pre-check rejected the config) and the sample's report
@@ -110,5 +114,6 @@ def sample_for_mesher(config: MeshingConfig, contour: Contour, *, airfoil_name: 
     airfoil = Airfoil(airfoil_name=airfoil_name, coords_tensor=torch.tensor(sample.points, dtype=torch.float64),
                       chord=chord, le_idx=sample.le_idx)
     mesh_in = MeshIn(airfoil=airfoil, freestream=freestream, working_dir=working_dir, backend=backend,
-                     topology=topology, mesh_config=config)
+                     topology=topology, mesh_config=config, count_limits=count_limits or QualityLimits(),
+                     write_vtk=write_vtk)
     return SampledInput(mesh_in=mesh_in, report=sample.report)

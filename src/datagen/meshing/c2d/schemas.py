@@ -83,6 +83,7 @@ class C2D_In(BaseModel):
     topology: C2D_Topology
     meshing_config: C2D_MeshingConfig
     working_dir: str = Field(..., description="Directory where the generated mesh will be saved")
+    write_vtk: bool = Field(True, description="Also convert the .su2 to the diagnostic .vtk")
 
     @model_validator(mode="after")
     def _sync_topo_with_topology(self) -> "C2D_In":

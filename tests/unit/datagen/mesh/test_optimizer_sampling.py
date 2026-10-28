@@ -7,6 +7,7 @@ Step 1: Ensure each pairing gets the TE its mesher's own gate asks for
     - test_sampled_input_passes_the_mesher_gates
 Step 2: Ensure the MeshIn carries exactly the sample
     - test_mesh_in_carries_exactly_the_sample
+    - test_mesh_in_carries_the_reporting_options
 Step 3: Ensure rejections build nothing, and setup mistakes raise
     - test_rejected_config_builds_no_mesh_in
     - test_cell_ceiling_follows_jmax
@@ -20,7 +21,7 @@ import torch
 from src.datagen.geometry.common.schemas import Rejection, TETreatment
 from src.datagen.geometry.sample.sample import Geom_sample
 from src.datagen.meshing.c2d.schemas import C2D_MeshingConfig
-from src.datagen.meshing.common.schemas import MeshBackend, MeshTopology
+from src.datagen.meshing.common.schemas import MeshBackend, MeshTopology, QualityLimits
 from src.datagen.meshing.common.utils import (
     _TE_REQUIREMENTS, Common_te_shape_warnings, Common_validate_te_closure, TEClosure, TEShape,
 )
@@ -96,6 +97,19 @@ def test_mesh_in_carries_exactly_the_sample(pairing, tmp_path):
     assert (mesh_in.backend, mesh_in.topology, mesh_in.working_dir) == (*pairing, str(tmp_path))
     assert mesh_in.mesh_config is config and config.model_dump() == before  # passed through, untouched
     assert sampled.report == alone.report
+
+
+def test_mesh_in_carries_the_reporting_options(tmp_path):
+    contour = build_study_contour(stored_shape("naca4412"), *C2D_O)
+    limits = QualityLimits(skew_max=0.4, ortho_min=0.75, jac_min=0.75)
+    default = _sampled(C2D_O, contour=contour, tmp_path=tmp_path).mesh_in
+    given = sample_for_mesher(C2D_MeshingConfig(), contour, airfoil_name="naca4412", chord=0.5,
+                              freestream=Freestream(alpha=2.0, Re=5e6, mach=0.5), backend=C2D_O[0],
+                              topology=C2D_O[1], working_dir=str(tmp_path), count_limits=limits,
+                              write_vtk=False).mesh_in
+
+    assert (default.count_limits, default.write_vtk) == (QualityLimits(), True)
+    assert (given.count_limits, given.write_vtk) == (limits, False)
 # endregion
 
 

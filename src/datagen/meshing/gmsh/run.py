@@ -89,8 +89,10 @@ def GMSH_MeshGenerator(data: GMSH_In, timeout: int = 300) -> GMSH_Out:
         geo.setNumber("Mesh.SaveAll", 0)
         mesh_path = os.path.join(data.working_dir, f"{name}_mesh.su2")
         geo.write(mesh_path)
-        mesh_path_vtk = os.path.join(data.working_dir, f"{name}_mesh.vtk")
-        geo.write(mesh_path_vtk)
+        mesh_path_vtk = None
+        if data.write_vtk:
+            mesh_path_vtk = os.path.join(data.working_dir, f"{name}_mesh.vtk")
+            geo.write(mesh_path_vtk)
 
         # Run it; any gmsh-side failure raises into the FATAL_ERROR handler below
         log_text = GMSH_run_script(exe=exe, geo=geo, geo_path=geo_path, working_dir=data.working_dir, timeout=timeout)

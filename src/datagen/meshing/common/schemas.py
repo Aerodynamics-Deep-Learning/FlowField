@@ -6,6 +6,8 @@ Summary:
     - MeshOut: The output schema to the main handle function `entry::Common_GenerateMesh`
     - MeshExitFlag: The exit flag to keep track of meshing-success
     - MeshQualitySummary: Data schema that governs the quality summary no fail meshes
+    - QualityLimits: The limits the quality summary counts bad cells against, for reporting only
+    - MetricDistribution: One quality metric's spread over the mesh and where its worst value sits
     - MeshGeoDeviationSummary: Geometric deviation summary that quantifies diff between geometry and mesh
     - MeshBackend: Flag on which backend to use
     - MeshTopology: Flag on which meshing topology/grid structure to use
@@ -19,6 +21,7 @@ from pydantic import BaseModel, Field, model_validator
 from src.datagen.schemas import Airfoil, Freestream
 from src.datagen.meshing.gmsh.schemas import GMSH_CMeshingConfig, GMSH_OMeshingConfig
 from src.datagen.meshing.c2d.schemas import C2D_MeshingConfig
+from src.datagen.meshing.common.constants import SKEWNESS_LIMIT, ORTHO_MIN, JACOBIAN_LIMIT, SIZE_RATIO_LIMIT
 
 class MeshBackend(str, Enum):
     """Which meshing implementation to dispatch to."""
@@ -67,6 +70,17 @@ _CONFIG_FOR_PAIRING = {
 MeshingConfig = Union[GMSH_CMeshingConfig, GMSH_OMeshingConfig, C2D_MeshingConfig]
 
 
+class QualityLimits(BaseModel):
+    """
+    The limits `common.quality` counts bad cells against (`MetricDistribution.n_bad`). Reporting only:
+    the verdict always gates on `constants.py`, so a caller can count against stricter limits of its own.
+    """
+    skew_max: float = SKEWNESS_LIMIT
+    ortho_min: float = ORTHO_MIN
+    jac_min: float = JACOBIAN_LIMIT
+    size_ratio_max: float = SIZE_RATIO_LIMIT
+
+
 class MeshIn(BaseModel):
     """Backend-agnostic contract for the input to mesh generation."""
     # extra="forbid": mesh_config defaults when omitted, so a mistyped keyword would otherwise be
@@ -83,6 +97,11 @@ class MeshIn(BaseModel):
         "the pairing's own config class is instantiated with its defaults; a plain dict is "
         "coerced to that class. See `_resolve_mesh_config`."
     )
+    count_limits: QualityLimits = Field(
+        default_factory=QualityLimits, description="Limits the quality summary counts bad cells "
+        "against; the verdict itself always gates on constants.py"
+    )
+    write_vtk: bool = Field(True, description="Also write the diagnostic .vtk next to the .su2")
 
     @model_validator(mode="before")
     @classmethod
@@ -113,6 +132,17 @@ class MeshIn(BaseModel):
         return {**raw, "mesh_config": config}  # A copy: model_validate hands over the caller's own dict
 
 
+class MetricDistribution(BaseModel):
+    """One quality metric over the whole mesh: per cell, or per interior face for the size ratio."""
+    p50: float # Median
+    t99: float = Field(..., description="The value 99% of cells are at least as good as")
+    t999: float = Field(..., description="The value 99.9% of cells are at least as good as")
+    n_bad: int = Field(..., description="Cells (faces, for the size ratio) past the `QualityLimits` limit")
+    x: float # Worst cell's centroid (face's midpoint, for the size ratio)
+    y: float
+    dwall: Optional[float] = Field(..., description="Worst location's distance to the nearest MARKER_AIRFOIL node; None without that marker")
+
+
 class MeshQualitySummary(BaseModel):
     """Backend-agnostic `.su2` quality summary, from `common.quality.analyze_su2`."""
     ncell: int
@@ -122,6 +152,11 @@ class MeshQualitySummary(BaseModel):
     max_ar: float # Maximum aspect ratio, self explanatory, not as hard as ortho or jac
     max_size_ratio: float = Field(..., description="Worst neighbour size jump: larger over smaller cell area across any interior face, 1 where neighbours match. The one gate that sees how abruptly cell size changes, which every other metric scores cell by cell")
     acceptable: bool
+    neg: Optional[int] = None # Inverted (non-positive area) cells
+    skew_dist: Optional[MetricDistribution] = None
+    ortho_dist: Optional[MetricDistribution] = None
+    jac_dist: Optional[MetricDistribution] = None
+    size_ratio_dist: Optional[MetricDistribution] = None # None with no interior face
 
 class MeshGeoDeviationSummary(BaseModel):
     """

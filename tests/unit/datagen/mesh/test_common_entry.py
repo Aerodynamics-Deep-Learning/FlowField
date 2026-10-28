@@ -26,6 +26,7 @@ Step 6: Ensure the config MeshIn resolved reaches the backend unmodified
     - test_entry_forwards_the_resolved_config_to_gmsh
     - test_entry_forwards_the_resolved_config_to_c2d
     - test_entry_one_c2d_config_sweeps_both_topologies
+    - test_entry_forwards_the_reporting_options
 Step 7: Ensure deviation is measured on every readable mesh, without overriding the quality verdict
     - test_entry_quality_verdict_outranks_deviation
     - test_entry_deviation_crash_keeps_a_failed_quality_verdict
@@ -50,6 +51,7 @@ from src.datagen.meshing.gmsh.schemas import (
 from src.datagen.meshing.c2d.schemas import C2D_ExitFlag, C2D_MeshingConfig, C2D_Topology
 from src.datagen.meshing.common.schemas import (
     MeshIn, MeshBackend, MeshTopology, MeshExitFlag, MeshQualitySummary, MeshGeoDeviationSummary,
+    QualityLimits,
 )
 from src.datagen.meshing.common.entry import Common_GenerateMesh
 
@@ -420,6 +422,23 @@ def test_entry_one_c2d_config_sweeps_both_topologies(mock_generator):
         assert out.flag == MeshExitFlag.SUBPROCESS_FAIL
         assert mock_generator.call_args.args[0].meshing_config.topo == C2D_Topology[topology.name].value
     assert config.topo is None
+
+
+@pytest.mark.parametrize("backend, topology, generator, flag", [
+    (MeshBackend.C2D, MeshTopology.OGRD, "C2D_MeshGenerator", C2D_ExitFlag.SUCCESS),
+    (MeshBackend.GMSH, MeshTopology.CGRD, "GMSH_MeshGenerator", GMSH_ExitFlag.SUCCESS),
+])
+@patch("src.datagen.meshing.common.entry.Common_evaluate_mesh_quality",
+       return_value=(MeshExitFlag.CONVERSION_FAIL, None, None))
+def test_entry_forwards_the_reporting_options(mock_quality, backend, topology, generator, flag):
+    # Both default to the old behaviour, so dropping either would pass every other test
+    limits = QualityLimits(skew_max=0.4, ortho_min=0.75, jac_min=0.75)
+    with patch(f"src.datagen.meshing.common.entry.{generator}",
+               return_value=_mock_backend_out(flag)) as mock_generator:
+        Common_GenerateMesh(_mesh_in(backend, topology, count_limits=limits, write_vtk=False))
+
+    assert mock_generator.call_args.args[0].write_vtk is False
+    assert mock_quality.call_args.kwargs["count_limits"] == limits
 # endregion
 
 

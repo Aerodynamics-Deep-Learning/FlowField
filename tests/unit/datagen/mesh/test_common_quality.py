@@ -44,6 +44,11 @@ Step 4: Ensure `Common_evaluate_mesh_quality` maps those metrics onto the right 
     - test_quality_unparseable_su2_is_conversion_fail
 Step 5: Ensure the summary helpers narrow/format the analysis correctly
     - test_summary_from_analysis_matches_the_schema
+Step 6: Ensure each metric's distribution says how much of the mesh is bad and where the worst sits
+    - test_cell_distributions_on_known_cells
+    - test_size_ratio_distribution_sits_on_its_face
+    - test_count_limits_change_the_counts_not_the_verdict
+    - test_distributions_absent_without_cells_faces_or_wall
 
 Scope: the helpers directly. `entry.py`'s use of the verdict is covered in test_common_entry.py.
 """
@@ -51,13 +56,13 @@ Scope: the helpers directly. `entry.py`'s use of the verdict is covered in test_
 import numpy as np
 import pytest
 
-from src.datagen.meshing.common.schemas import MeshExitFlag, MeshQualitySummary
+from src.datagen.meshing.common.schemas import MeshExitFlag, MeshQualitySummary, MetricDistribution, QualityLimits
 from src.datagen.meshing.common.quality import (
     Common_evaluate_mesh_quality, _read_su2, _cell_metrics, _orthogonal_quality, _size_ratio,
     _analyze_su2, _summary_from_analysis,
 )
 from src.datagen.meshing.common.constants import (
-    SKEWNESS_LIMIT, ORTHO_MIN, JACOBIAN_LIMIT, ASPECT_RATIO_LIMIT, SIZE_RATIO_LIMIT,
+    SKEWNESS_LIMIT, ORTHO_MIN, JACOBIAN_LIMIT, ASPECT_RATIO_LIMIT, SIZE_RATIO_LIMIT, MARKER_AIRFOIL,
 )
 
 
@@ -549,4 +554,84 @@ def test_summary_from_analysis_matches_the_schema(tmp_path):
     assert summary.max_skew == pytest.approx(a["max_skew"])
     assert summary.min_jac == pytest.approx(a["min_jac"])
     assert summary.acceptable is False
+# endregion
+
+
+# region Step 6
+# Three disjoint cells, square / slanted / thin, 3 apart in x: no shared face, so each scores alone.
+# The wall is the square's bottom edge.
+_TRIO_NODES = ([[x, y] for x, y in _SQUARE] + [[x + 3.0, y] for x, y in _SLANTED]
+               + [[x + 6.0, y] for x, y in _THIN])
+_TRIO_QUADS = [[0, 1, 2, 3], [4, 5, 6, 7], [8, 9, 10, 11]]
+_SLANTED_SKEW, _SLANTED_ORTHO = 0.92955, 0.11043  # see Step 2; its Jacobian equals its ortho
+
+
+def _trio(tmp_path, name="trio.su2"):
+    return _write_su2(tmp_path / name, _TRIO_NODES, quads=_TRIO_QUADS, markers={MARKER_AIRFOIL: [(0, 1)]})
+
+
+def test_cell_distributions_on_known_cells(tmp_path):
+    a = _analyze_su2(_trio(tmp_path))
+    centre = (0.95 + 3.0, 0.05)  # the slanted cell's centroid, worst on every cell metric
+    to_wall = float(np.hypot(centre[0] - 1.0, centre[1]))  # nearest wall node is (1, 0)
+
+    # Three values: the median is the middle one, the tails interpolate between the two worst
+    skew = a["skew_dist"]
+    assert skew["p50"] == pytest.approx(0.0, abs=1e-12)
+    assert skew["t99"] == pytest.approx(0.98 * _SLANTED_SKEW, abs=1e-5)
+    assert skew["t999"] == pytest.approx(0.998 * _SLANTED_SKEW, abs=1e-5)
+    assert skew["n_bad"] == 1  # the slanted cell, over SKEWNESS_LIMIT
+    for metric in ("ortho_dist", "jac_dist"):  # low is bad: the tails read from the bottom
+        d = a[metric]
+        assert d["p50"] == pytest.approx(1.0)
+        assert d["t99"] == pytest.approx(_SLANTED_ORTHO + 0.02 * (1 - _SLANTED_ORTHO), abs=1e-5)
+        assert d["t999"] == pytest.approx(_SLANTED_ORTHO + 0.002 * (1 - _SLANTED_ORTHO), abs=1e-5)
+        assert d["n_bad"] == 0  # 0.110 clears ORTHO_MIN and JACOBIAN_LIMIT, both 0.10
+    for metric in ("skew_dist", "ortho_dist", "jac_dist"):
+        assert (a[metric]["x"], a[metric]["y"]) == pytest.approx(centre)
+        assert a[metric]["dwall"] == pytest.approx(to_wall)
+
+
+def test_size_ratio_distribution_sits_on_its_face(tmp_path):
+    # Widths 1, 2, 1.2: faces read 2.0 at x=1 and 1.667 at x=3; the wall is the strip's bottom
+    nodes, quads, boundary = _strip_mesh([1.0, 2.0, 1.2])
+    path = _write_su2(tmp_path / "steps.su2", nodes, quads=quads,
+                      markers={MARKER_AIRFOIL: boundary[:3], "MARKER_FARFIELD": boundary[3:]})
+    _, quality, _ = Common_evaluate_mesh_quality(path)
+    d = quality.size_ratio_dist
+
+    assert isinstance(d, MetricDistribution)
+    assert d.p50 == pytest.approx((2.0 + 2.0 / 1.2) / 2)
+    assert d.t99 == pytest.approx(2.0 / 1.2 + 0.99 * (2.0 - 2.0 / 1.2))
+    assert d.n_bad == 2  # both over SIZE_RATIO_LIMIT
+    assert (d.x, d.y) == pytest.approx((1.0, 0.5))  # the face's midpoint, not a cell's centroid
+    assert d.dwall == pytest.approx(0.5)
+
+
+def test_count_limits_change_the_counts_not_the_verdict(tmp_path):
+    # The verdict gates on constants.py whatever the caller counts against
+    path = _trio(tmp_path)
+    cell_metrics = ("skew_dist", "ortho_dist", "jac_dist")
+    default = _analyze_su2(path)  # None counts against constants.py
+    strict = _analyze_su2(path, QualityLimits(skew_max=0.95, ortho_min=0.5, jac_min=0.5))
+
+    assert [default[m]["n_bad"] for m in cell_metrics] == [1, 0, 0]
+    assert [strict[m]["n_bad"] for m in cell_metrics] == [0, 1, 1]
+    assert [_analyze_su2(path, QualityLimits())[m] for m in cell_metrics] == [default[m] for m in cell_metrics]
+    for key in ("max_skew", "min_ortho", "min_jac", "acceptable"):
+        assert strict[key] == default[key]
+
+    growing = _strip(tmp_path, [1.0, 1.2, 1.44])  # 1.2 growth, SUCCESS at SIZE_RATIO_LIMIT
+    flag, quality, _ = Common_evaluate_mesh_quality(growing, count_limits=QualityLimits(size_ratio_max=1.1))
+    assert flag == MeshExitFlag.SUCCESS and quality.acceptable is True
+    assert quality.size_ratio_dist.n_bad == 2
+
+
+def test_distributions_absent_without_cells_faces_or_wall(tmp_path):
+    empty = _analyze_su2(_write_su2(tmp_path / "empty.su2", nodes=_SQUARE))
+    single = _analyze_su2(_one_quad(tmp_path, _SQUARE))  # marked MARKER_FARFIELD only
+
+    assert all(empty[m] is None for m in ("skew_dist", "ortho_dist", "jac_dist", "size_ratio_dist"))
+    assert single["size_ratio_dist"] is None  # one cell, no interior face
+    assert single["skew_dist"]["dwall"] is None  # no MARKER_AIRFOIL to measure against
 # endregion

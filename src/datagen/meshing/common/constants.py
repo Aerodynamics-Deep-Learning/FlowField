@@ -95,7 +95,8 @@ JACOBIAN_LIMIT = 0.10
 # a 20-chord wake stretch cells enormously on purpose: the meshes above reach 8.8e5 (c2d C-grid)
 # and 5.7e5 (gmsh C-mesh), and high aspect ratio near the wall is the design "must have".
 # Set at an order of magnitude above the worst of those so it fires only on a genuinely collapsed edge,
-# which `_cell_metrics`' 1e-30 divisor floor sends to ~1e30, rather than policing stretching.
+# which `_cell_metrics`' 1e-30 divisor floor sends to ~1e30, rather than policing stretching. That
+# margin holds at Re 5e6; at 1.5e7 the same C-grid reads 2.4e6 (~4x under it), the O-grid ~9e3.
 ASPECT_RATIO_LIMIT = 1.0e7
 
 # Larger over smaller cell area across an interior face, worst face wins: how abruptly cell size
@@ -103,8 +104,9 @@ ASPECT_RATIO_LIMIT = 1.0e7
 # its own. In a structured grid it is the growth rate along whichever direction crosses the face.
 # It is what stops a cell-count minimizer: coarsening c2d's O-grid passes every other gate
 # (jmax=30 scores skew 0.35) while nearly every radial neighbour pair grows 2.7x. Set against the
-# good meshes above (1.14-1.21) and the usual 1.2-1.25 wall-normal growth rule: it admits c2d down to
-# jmax=130 at 300 surface points, or 250 surface points at jmax=200 (measured on NACA0012, one knob at a time).
+# good meshes above (1.14-1.21) and the usual 1.2-1.25 wall-normal growth rule: at Re 5e6 it admits c2d down
+# to jmax=130 at 300 surface points, or 250 surface points at jmax=200 (measured on NACA0012, one knob at a
+# time). At Re 1.5e7 the O-grid floor is jmax 138 by c2d's size-ratio law, 139-150 measured.
 # Area ratio reads a triangle next to an equal-edged quad as 2 by shape alone, so a hybrid tri/quad
 # mesh would need this normalized first; every mesh both backends write is all-quad.
 SIZE_RATIO_LIMIT = 1.25

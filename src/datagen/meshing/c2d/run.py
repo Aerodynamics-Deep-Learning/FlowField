@@ -54,7 +54,7 @@ def C2D_MeshGenerator(data: C2D_In) -> C2D_Out:
         # Try getting the mesh
         p3d_path, su2_path, vtk_path, nmf_path, log_text = C2D_generate_mesh(
             airfoil=data.airfoil, exe=exe, working_dir=data.working_dir,
-            config=data.meshing_config, Re=data.freestream.Re
+            config=data.meshing_config, Re=data.freestream.Re, write_vtk=data.write_vtk
         )
 
         if p3d_path is None:
@@ -142,17 +142,18 @@ def _write_grid_options(path: str, params: dict, name: str, topo: str, slvr: str
 
 
 def C2D_generate_mesh(airfoil: Airfoil, exe: str, working_dir: str, config: C2D_MeshingConfig,
-                      Re: float, timeout: int = 300):
+                      Re: float, timeout: int = 300, write_vtk: bool = True):
     """
     Writes the airfoil to a `.dat` file, drives the C2D binary directly, and converts the
-    resulting grid to SU2/VTK. Mirrors `gmsh.run.GMSH_generate_cmesh`/`gmsh.run.GMSH_generate_omesh`'s roles
+    resulting grid to SU2 (and VTK, unless `write_vtk` is False). Mirrors
+    `gmsh.run.GMSH_generate_cmesh`/`gmsh.run.GMSH_generate_omesh`'s roles
     in `GMSH_MeshGenerator`: performs the actual meshing work and returns only the artifact paths the
     caller needs, flagging and exception handling stay in `C2D_MeshGenerator`, the same split
     GMSH uses. `Re` is the freestream's, which c2d sizes the first cell from, as gmsh does.
 
     Returns (p3d_path, su2_path, vtk_path, nmf_path, log_text). `su2_path`/`vtk_path`/`nmf_path`
-    are None if conversion didn't yield a `.su2`; all four paths are None if C2D itself
-    never produced a `.p3d`. `log_text` is C2D's captured stdout/stderr (or the caught
+    are None if conversion didn't yield a `.su2` (`vtk_path` also without `write_vtk`); all four
+    paths are None if C2D itself never produced a `.p3d`. `log_text` is C2D's captured stdout/stderr (or the caught
     launch/timeout error) and is always populated, mirroring how GMSH's own logger output is
     always available for `GMSH_MeshGenerator` to dump regardless of outcome.
     """
@@ -194,6 +195,8 @@ def C2D_generate_mesh(airfoil: Airfoil, exe: str, working_dir: str, config: C2D_
     if not os.path.isfile(su2_path):
         return p3d_path, None, None, None, log_text
 
+    if not write_vtk:
+        return p3d_path, su2_path, None, nmf_path, log_text
     su2_to_vtk(su2_path, vtk_path)
     return p3d_path, su2_path, vtk_path, nmf_path, log_text
 

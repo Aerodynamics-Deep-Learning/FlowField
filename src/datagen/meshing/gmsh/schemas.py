@@ -95,6 +95,7 @@ class GMSH_In(BaseModel):
         "config class is instantiated with its defaults; a plain dict is coerced to that class."
     )
     working_dir: str = Field(..., description="Directory where the generated mesh will be saved")
+    write_vtk: bool = Field(True, description="Also have gmsh save the diagnostic .vtk")
 
     @model_validator(mode="before")
     @classmethod

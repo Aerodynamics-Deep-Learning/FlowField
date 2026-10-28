@@ -16,6 +16,8 @@ Step 4: Ensure a mistyped keyword can't silently fall back to the default config
 Step 5: Ensure the sampled pairings' configs carry the same sampling knobs, and only those
     - test_sampled_configs_share_the_sampling_fields
     - test_sampling_fields_stay_out_of_c2d_options
+Step 6: Ensure MeshIn's reporting options default to what the pipeline did before they existed
+    - test_reporting_options_default_to_the_gates_and_a_vtk
 """
 
 import tempfile
@@ -29,7 +31,8 @@ from src.datagen.schemas import Airfoil, Freestream
 from src.datagen.meshing.gmsh.schemas import GMSH_CMeshingConfig, GMSH_OMeshingConfig
 from src.datagen.meshing.c2d.run import _write_grid_options
 from src.datagen.meshing.c2d.schemas import C2D_MeshingConfig
-from src.datagen.meshing.common.schemas import MeshIn, MeshBackend, MeshTopology
+from src.datagen.meshing.common.schemas import MeshIn, MeshBackend, MeshTopology, QualityLimits
+from src.datagen.meshing.common.constants import SKEWNESS_LIMIT, ORTHO_MIN, JACOBIAN_LIMIT, SIZE_RATIO_LIMIT
 
 
 def _mesh_in(backend, topology, **kwargs) -> MeshIn:
@@ -169,4 +172,15 @@ def test_sampling_fields_stay_out_of_c2d_options(tmp_path):
     _write_grid_options(str(path), config.to_params(), "foil", "OGRD", config.slvr, Re=2e6)
 
     assert not any(k in path.read_text() for k in SamplingFields.model_fields)  # c2d never sees them
+# endregion
+
+
+# region Step 6
+def test_reporting_options_default_to_the_gates_and_a_vtk():
+    data = _mesh_in(MeshBackend.C2D, MeshTopology.OGRD)
+
+    assert data.count_limits == QualityLimits()
+    assert QualityLimits().model_dump() == dict(skew_max=SKEWNESS_LIMIT, ortho_min=ORTHO_MIN,
+                                                jac_min=JACOBIAN_LIMIT, size_ratio_max=SIZE_RATIO_LIMIT)
+    assert data.write_vtk is True
 # endregion
