@@ -247,13 +247,13 @@ class MeshQualityBaseline:
 
     All four bounds are on `common.quality`'s scale, so they can be read directly against
     `common.constants`, this stays the stricter of the two, tripping on a regression before the
-    pipeline's own absolute gate would. Measured 2026-09-18, baseline vs the two meshes actually
-    checked here (gmsh C-mesh, c2d O-grid):
+    pipeline's own absolute gate would. Measured on the fixtures above (Re 5e6), baseline vs the two
+    meshes actually checked here (gmsh C-mesh, c2d O-grid in BUFF mode on the rounded closed contour):
 
                       skew max/mean     jacobian min/mean    ortho min/mean
         baseline       0.166 / 0.017      0.966 / 0.9990      0.967 / 0.9990
         gmsh C-mesh    0.446 / 0.049      0.765 / 0.9908      0.765 / 0.9908
-        c2d  O-grid    0.231 / 0.026      0.935 / 0.9977      0.937 / 0.9978
+        c2d  O-grid    0.269 / 0.020      0.912 / 0.9983      0.915 / 0.9983
     """
 
     MIN_SCALED_JACOBIAN_RATIO = 0.5  # generated mean scaled_jacobian >= half the baseline's
