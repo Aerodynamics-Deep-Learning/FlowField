@@ -54,31 +54,36 @@ CORNER_TURN_LIMIT = 45.0
 #
 # All five are measured by `common.quality` (four per cell by `_cell_metrics`/`_orthogonal_quality`,
 # the size ratio per interior face) and applied together in `_analyze_su2`. The limits come from
-# real meshes at the configs the integration tier uses (`tests/integration/datagen/mesh/conftest.py`),
-# plus Emre's reference `example_naca0012.vtk`:
+# real meshes at the configs the integration tier uses (`tests/integration/datagen/mesh/conftest.py`,
+# Re 5e6 unless marked), plus Emre's reference `example_naca0012.vtk`. The c2d grids and the gmsh
+# O-mesh mesh the graded closed NACA0012 of `tests/closed_airfoils.py` as given (round TE on c2d's
+# O-grid, sharp otherwise); the gmsh C-mesh resamples its own open contour:
 #
 #                             max_skew   min_ortho   min_jac    max_ar   max_size_ratio
-#     reference .vtk            0.166      0.967      0.966     2.9e3        1.14
-#     gmsh C-mesh               0.446      0.765      0.765     5.7e5        242
-#     gmsh O-mesh               0.909      0.143      0.143     2.1e3        1.21
-#     c2d  O-grid               0.231      0.937      0.935     6.7e3        1.18
-#     c2d  C-grid               0.367      0.839      0.838     8.8e5        1.18
+#     reference .vtk            0.166      0.967      0.966     2.9e3       1.138
+#     gmsh C-mesh               0.446      0.765      0.765     5.7e5       242
+#     gmsh O-mesh               0.908      0.144      0.144     1.9e3       1.208
+#     c2d  O-grid               0.269      0.915      0.912     4.3e3       1.185
+#     c2d  C-grid               0.454      0.758      0.757     8.8e5       1.205
+#     c2d  O-grid, Re 1.5e7     0.273      0.913      0.909     1.2e4       1.175
+#     c2d  C-grid, Re 1.5e7     0.476      0.735      0.734     2.4e6       1.207
 #
 # Both gmsh rows are rejected: the O-mesh on skew at its sharp TE, the C-mesh on size ratio where its
-# wake meets the TE. The per-cell gates below pass that C-mesh, so their margins are read against it.
+# wake meets the TE. The per-cell gates below pass the rest, with the c2d C-grid worst on each, so
+# their margins are read against it.
 
-# Equiangle skewness: 0 perfect, 1 degenerate. Every mesh here but the O-mesh sits at 0.45 or below,
-# so this leaves a wide margin before a real defect.
+# Equiangle skewness: 0 perfect, 1 degenerate. Every mesh here but the gmsh O-mesh sits at 0.48 or
+# below, so this leaves a wide margin before a real defect.
 SKEWNESS_LIMIT = 0.85
 
 # Orthogonal quality: measured off face normals rather than inferred from skew: per face, the cosine
 # between its outward normal and the centroid->face-centroid vector, and across a shared face the
 # cosine against the vector joining the two cell centroids, worst face wins. That neighbour term is
 # what makes this its own axis and not skewness read backwards; it measures how squarely a face
-# sits between the two cells sharing it, which no single cell's corner angles can show. It binds on
-# ~2% of cells in the O-mesh above. Every other mesh sits at 0.765 and up while the known-bad O-mesh
-# reads 0.143, so this floor currently only catches near-degenerate cells; tightening it toward 0.2 and
-# more would make orthogonality reject that O-mesh on its own rather than leaving it to the skew gate.
+# sits between the two cells sharing it, which no single cell's corner angles can show. Every other
+# mesh sits at 0.735 and up while the known-bad gmsh O-mesh reads 0.144, so this floor currently only
+# catches near-degenerate cells; tightening it toward 0.2 and more would make orthogonality reject
+# that O-mesh on its own rather than leaving it to the skew gate.
 ORTHO_MIN = 0.10
 
 # Scaled Jacobian: the minimum over a cell's corners of the normalized cross product of the two edges
@@ -88,7 +93,7 @@ ORTHO_MIN = 0.10
 # well-shaped, and the shoelace `neg` check only sees a cell's net area, which a partly folded quad
 # keeps positive. <= 0 is therefore UNACCEPTABLE_QUALITY rather than LOW_QUALITY, matching the
 # "minSICN <= 0" wording already in `MeshExitFlag` (gmsh's SICN is this same quantity). The worst
-# mesh here but the O-mesh measures 0.765, so this floor only ever fires on folding. May consider increasing.
+# mesh here but the gmsh O-mesh measures 0.734, so this floor only ever fires on folding. May consider increasing.
 JACOBIAN_LIMIT = 0.10
 
 # Longest edge / shortest edge, and deliberately far looser than the rest. A y+=1 boundary layer and
@@ -96,7 +101,7 @@ JACOBIAN_LIMIT = 0.10
 # and 5.7e5 (gmsh C-mesh), and high aspect ratio near the wall is the design "must have".
 # Set at an order of magnitude above the worst of those so it fires only on a genuinely collapsed edge,
 # which `_cell_metrics`' 1e-30 divisor floor sends to ~1e30, rather than policing stretching. That
-# margin holds at Re 5e6; at 1.5e7 the same C-grid reads 2.4e6 (~4x under it), the O-grid ~9e3.
+# margin holds at Re 5e6; at 1.5e7 the C-grid's 2.4e6 sits ~4x under it.
 ASPECT_RATIO_LIMIT = 1.0e7
 
 # Larger over smaller cell area across an interior face, worst face wins: how abruptly cell size
