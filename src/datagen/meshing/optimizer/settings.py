@@ -18,8 +18,8 @@ from src.datagen.meshing.c2d.schemas import C2D_MeshingConfig
 from src.datagen.meshing.optimizer.constants import (
     BACKEND, CELL_CEILING, DESIGN_RE, GATE_AR_MAX, GATE_GEO_DEV_MAX, GATE_JAC_MIN, GATE_ORTHO_MIN,
     GATE_SIZE_RATIO_MAX, GATE_SKEW_MAX, GOLDEN_JMAX, JMAX_BUMP_MAX, JMAX_BUMP_STEP, LADDER_VERSION,
-    MAX_BB_EVAL_FACTOR, NOMAD_SEED, NSTAR_CW_GRID, NSTAR_LE_GRID, NSTAR_POLISH_EVALS, PINNED, RUNG2_BUDGET,
-    RUNG3_BUDGET, TE_GAP_DEFAULT, TOPOLOGY,
+    MAX_BB_EVAL_FACTOR, NOMAD_SEED, NSTAR_CW_GRID, NSTAR_LE_GRID, PINNED, RUNG2_BUDGET, RUNG3_BUDGET,
+    TE_GAP_DEFAULT, TOPOLOGY,
 )
 from src.datagen.meshing.optimizer.space import KNOBS, space_json
 from src.datagen.utils.tools import find_tool
@@ -80,8 +80,7 @@ def build_settings(**overrides) -> dict:
         "rung3_budget": RUNG3_BUDGET,
         "max_bb_eval_factor": MAX_BB_EVAL_FACTOR,
         "nomad_seed": NOMAD_SEED,
-        "nstar_json": json.dumps({"le_grid": NSTAR_LE_GRID, "cw_grid": NSTAR_CW_GRID,
-                                  "polish_evals": NSTAR_POLISH_EVALS}, sort_keys=True),
+        "nstar_json": json.dumps({"le_grid": NSTAR_LE_GRID, "cw_grid": NSTAR_CW_GRID}, sort_keys=True),
         "search_space_json": space_json(),
         "pinned_json": json.dumps(pinned(), sort_keys=True),
     }

@@ -269,7 +269,7 @@ def test_nomad_is_left_without_a_stop_callback(settings):
     _smoothing(_Executor(settings, _never_passes), budget=3)  # over when it returns
     points = []
 
-    def bb(x):  # a plain NOMAD run after it, as the n* polish will be
+    def bb(x):  # a plain NOMAD run after it in the same process
         points.append(x.get_coord(0))
         x.setBBO(f"{(x.get_coord(0) - 0.3) ** 2!r}".encode())
         return 1

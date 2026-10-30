@@ -85,10 +85,9 @@ JMAX_MAX = 200
 
 #region n*, the sampler-only search for the fewest surface points
 
-# le_ratio log-spaced over [RATIO_MIN, 1] x cluster_width over its range, then a NOMAD polish from the best
+# le_ratio log-spaced over [RATIO_MIN, 1] x cluster_width over its range; no finer search past the grid
 NSTAR_LE_GRID = 40
 NSTAR_CW_GRID = 30
-NSTAR_POLISH_EVALS = 600
 
 #endregion
 

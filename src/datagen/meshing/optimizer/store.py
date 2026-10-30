@@ -52,11 +52,10 @@ _MIGRATIONS = [
         batch_id TEXT NOT NULL, geometry_id TEXT NOT NULL, airfoil_name TEXT NOT NULL,
         status TEXT NOT NULL CHECK (status IN ('running', 'passed', 'failed', 'aborted')),
         final_rung TEXT, route TEXT, golden_failed_gates TEXT,  -- JSON lists
-        n_star INTEGER, n_star_knobs_json TEXT, n_star_grid_evals INTEGER, n_star_polish_evals INTEGER,
-        n_star_s REAL,
-        meshes_golden INTEGER, meshes_bump INTEGER, meshes_smoothing INTEGER, meshes_mads INTEGER,
+        n_star INTEGER, n_star_knobs_json TEXT, n_star_grid_evals INTEGER, n_star_s REAL,
+        meshes_golden INTEGER, meshes_bump INTEGER, meshes_smoothing INTEGER, meshes_mads INTEGER,  -- c2d runs
         n_rejected INTEGER, n_dominated INTEGER,
-        nomad_json TEXT,                    -- per NOMAD rung: run_flag, stop_reason, seed, budget, calls, meshed, x0s
+        nomad_json TEXT,                    -- per NOMAD rung: run_flag, stop_reason, seed, budget, calls, mesher_runs, x0s
         best_run_id TEXT,                   -- this ladder's own fewest-node pass
         error_text TEXT, host TEXT, git_commit TEXT, git_dirty INTEGER,
         started_at TEXT NOT NULL, finished_at TEXT, wall_s REAL
