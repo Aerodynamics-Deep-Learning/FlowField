@@ -1,5 +1,5 @@
 """
-Tests for `meshing.optimizer.store`, the mesh study's run store, i.e.:
+Tests for `meshing.optimizer.manifest.store`, the mesh study's run store, i.e.:
 
 Step 1: Ensure the schema builds, strict, and has a column for everything a run reports
     - test_a_new_store_builds_the_schema
@@ -47,9 +47,9 @@ import pytest
 
 from src.datagen.geometry.common.schemas import SampleReport
 from src.datagen.meshing.common.schemas import MeshGeoDeviationSummary, MeshQualitySummary, MetricDistribution
-from src.datagen.meshing.optimizer import store as store_module
-from src.datagen.meshing.optimizer.settings import build_settings
-from src.datagen.meshing.optimizer.store import RUN_COLUMNS, RunStore, git_state, su2_sha256, utc_now
+from src.datagen.meshing.optimizer.common.settings import build_settings
+from src.datagen.meshing.optimizer.manifest import store as store_module
+from src.datagen.meshing.optimizer.manifest.store import RUN_COLUMNS, RunStore, git_state, su2_sha256, utc_now
 
 # SampleReport fields a run does not store, and why
 _REPORT_NOT_STORED = {
@@ -69,7 +69,7 @@ def settings(tmp_path, monkeypatch):
     """A real settings row, built against a stand-in c2d."""
     exe = tmp_path / "c2d.exe"
     exe.write_bytes(b"not really c2d")
-    monkeypatch.setattr("src.datagen.meshing.optimizer.settings.find_tool", lambda key: str(exe))
+    monkeypatch.setattr("src.datagen.meshing.optimizer.common.settings.find_tool", lambda key: str(exe))
     return build_settings()
 
 

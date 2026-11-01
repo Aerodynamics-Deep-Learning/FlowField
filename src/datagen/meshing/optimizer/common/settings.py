@@ -15,13 +15,13 @@ from src.datagen.geometry.common.constants import (
     DX_MAX, PRECHECK_MARGIN, SAMPLER_VERSION, SHAPE_VERSION, THETA_MAX_DEG,
 )
 from src.datagen.meshing.c2d.schemas import C2D_MeshingConfig
-from src.datagen.meshing.optimizer.constants import (
+from src.datagen.meshing.optimizer.common.constants import (
     BACKEND, CELL_CEILING, DESIGN_RE, GATE_AR_MAX, GATE_GEO_DEV_MAX, GATE_JAC_MIN, GATE_ORTHO_MIN,
     GATE_SIZE_RATIO_MAX, GATE_SKEW_MAX, GOLDEN_JMAX, JMAX_BUMP_MAX, JMAX_BUMP_STEP, LADDER_VERSION,
     MAX_BB_EVAL_FACTOR, NOMAD_SEED, NSTAR_CW_GRID, NSTAR_LE_GRID, PINNED, RUNG2_BUDGET, RUNG3_BUDGET,
     TE_GAP_DEFAULT, TOPOLOGY,
 )
-from src.datagen.meshing.optimizer.space import KNOBS, space_json
+from src.datagen.meshing.optimizer.common.space import KNOBS, space_json
 from src.datagen.utils.tools import find_tool
 
 # What the run code reads from the row; the rest describes the code or the executable, so overriding it

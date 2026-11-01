@@ -13,13 +13,13 @@ import pytest
 from src.datagen.geometry.common.constants import DX_MAX
 from src.datagen.meshing.c2d.run import C2D_find_exe
 from src.datagen.meshing.common.schemas import MeshBackend, MeshTopology
-from src.datagen.meshing.optimizer.constants import SMOOTHING_DEFAULTS
-from src.datagen.meshing.optimizer.executor import RunContext, RunExecutor
-from src.datagen.meshing.optimizer.mads import run_mads
-from src.datagen.meshing.optimizer.sampling import build_study_contour
-from src.datagen.meshing.optimizer.settings import build_settings
-from src.datagen.meshing.optimizer.space import knobs_for
-from src.datagen.meshing.optimizer.store import RunStore
+from src.datagen.meshing.optimizer.common.constants import SMOOTHING_DEFAULTS
+from src.datagen.meshing.optimizer.common.settings import build_settings
+from src.datagen.meshing.optimizer.common.space import knobs_for
+from src.datagen.meshing.optimizer.evaluate.executor import RunContext, RunExecutor
+from src.datagen.meshing.optimizer.evaluate.sampling import build_study_contour
+from src.datagen.meshing.optimizer.manifest.store import RunStore
+from src.datagen.meshing.optimizer.search.mads import run_mads
 from tests.geometry_shapes import stored_shape
 
 _needs_c2d = pytest.mark.skipif(C2D_find_exe() is None, reason="c2d executable not built in this environment")

@@ -1,6 +1,6 @@
 """
 Real meshers on sampled input: a stored shape's contour, sampled at the default knobs by
-`meshing.optimizer.sampling`, through `Common_GenerateMesh`, i.e.:
+`meshing.optimizer.evaluate.sampling`, through `Common_GenerateMesh`, i.e.:
 
 Step 1: Ensure c2d meshes a sample as it is, and well
     - test_c2d_ogrid_meshes_the_sample
@@ -24,7 +24,7 @@ from src.datagen.meshing.common.geo_dev import _boundary_from_su2
 from src.datagen.meshing.common.quality import _cell_metrics, _read_su2
 from src.datagen.meshing.common.schemas import MeshBackend, MeshExitFlag, MeshTopology, QualityLimits
 from src.datagen.meshing.gmsh.schemas import GMSH_OMeshingConfig
-from src.datagen.meshing.optimizer.sampling import build_study_contour, sample_for_mesher
+from src.datagen.meshing.optimizer.evaluate.sampling import build_study_contour, sample_for_mesher
 from src.datagen.schemas import Freestream
 from src.datagen.utils.tools import find_tool
 from tests.geometry_shapes import stored_shape

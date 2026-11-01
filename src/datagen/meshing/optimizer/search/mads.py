@@ -19,8 +19,8 @@ from typing import NamedTuple, Optional, Sequence
 
 import PyNomad
 
-from src.datagen.meshing.optimizer.executor import RunExecutor, nomad_outputs
-from src.datagen.meshing.optimizer.space import Knob, from_x, input_types, nomad_bounds, to_x
+from src.datagen.meshing.optimizer.common.space import Knob, from_x, input_types, nomad_bounds, to_x
+from src.datagen.meshing.optimizer.evaluate.executor import RunExecutor, nomad_outputs
 
 _OUTPUT_TYPES = "BB_OUTPUT_TYPE OBJ EB EB PB PB PB PB PB PB"
 

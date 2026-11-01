@@ -22,7 +22,7 @@ from src.datagen.geometry.sample.fields import SamplingFields
 from src.datagen.geometry.sample.sample import Geom_sample
 from src.datagen.meshing.c2d.schemas import C2D_MeshingConfig
 from src.datagen.meshing.common.schemas import MeshBackend, MeshIn, MeshingConfig, MeshTopology, QualityLimits
-from src.datagen.meshing.optimizer.constants import CELL_CEILING, TE_GAP_DEFAULT
+from src.datagen.meshing.optimizer.common.constants import CELL_CEILING, TE_GAP_DEFAULT
 from src.datagen.schemas import Airfoil, Freestream
 
 # The TE each pairing meshes; None: not sampled (the gmsh C-mesh, until its anchor indices become x/c)

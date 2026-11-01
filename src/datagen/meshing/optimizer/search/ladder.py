@@ -32,13 +32,13 @@ from typing import Callable, NamedTuple, Optional
 from src.datagen.geometry.common.schemas import ShapeRecord
 from src.datagen.meshing.c2d.schemas import C2D_MeshingConfig
 from src.datagen.meshing.common.schemas import MeshBackend, MeshTopology
-from src.datagen.meshing.optimizer.constants import SMOOTHING_DEFAULTS
-from src.datagen.meshing.optimizer.executor import RunContext, RunExecutor, nomad_outputs
-from src.datagen.meshing.optimizer.mads import RungResult, run_mads
-from src.datagen.meshing.optimizer.nstar import NStarResult, n_star_search
-from src.datagen.meshing.optimizer.sampling import build_study_contour
-from src.datagen.meshing.optimizer.space import knobs_for
-from src.datagen.meshing.optimizer.store import RunStore, utc_now
+from src.datagen.meshing.optimizer.common.constants import SMOOTHING_DEFAULTS
+from src.datagen.meshing.optimizer.common.space import knobs_for
+from src.datagen.meshing.optimizer.evaluate.executor import RunContext, RunExecutor, nomad_outputs
+from src.datagen.meshing.optimizer.evaluate.sampling import build_study_contour
+from src.datagen.meshing.optimizer.manifest.store import RunStore, utc_now
+from src.datagen.meshing.optimizer.search.mads import RungResult, run_mads
+from src.datagen.meshing.optimizer.search.nstar import NStarResult, n_star_search
 
 # The gates smoothing can fix; a run failing only these goes to rung 2
 SHAPE_GATES = frozenset({"inverted", "skew", "ortho", "jac"})

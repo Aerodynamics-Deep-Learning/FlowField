@@ -34,10 +34,10 @@ from src.datagen.geometry.sample.contour import Contour
 from src.datagen.meshing.c2d.schemas import C2D_MeshingConfig
 from src.datagen.meshing.common.entry import Common_GenerateMesh
 from src.datagen.meshing.common.schemas import MeshBackend, MeshExitFlag, MeshTopology, QualityLimits
-from src.datagen.meshing.optimizer.constants import CHORD, PINNED
-from src.datagen.meshing.optimizer.sampling import sample_for_mesher
-from src.datagen.meshing.optimizer.settings import config_schema_fp
-from src.datagen.meshing.optimizer.store import git_state, su2_sha256, utc_now
+from src.datagen.meshing.optimizer.common.constants import CHORD, PINNED
+from src.datagen.meshing.optimizer.common.settings import config_schema_fp
+from src.datagen.meshing.optimizer.evaluate.sampling import sample_for_mesher
+from src.datagen.meshing.optimizer.manifest.store import git_state, su2_sha256, utc_now
 from src.datagen.schemas import Freestream
 
 # The gates a meshed row can fail, in the order `failed_gates` lists them

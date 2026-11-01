@@ -1,5 +1,5 @@
 """
-Tests for `meshing.optimizer.sampling`: a study's contour, and each config's sample turned into a MeshIn, i.e.:
+Tests for `meshing.optimizer.evaluate.sampling`: a study's contour, and each config's sample turned into a MeshIn, i.e.:
 
 Step 1: Ensure each pairing gets the TE its mesher's own gate asks for
     - test_te_map_agrees_with_the_closure_gate
@@ -26,7 +26,7 @@ from src.datagen.meshing.common.utils import (
     _TE_REQUIREMENTS, Common_te_shape_warnings, Common_validate_te_closure, TEClosure, TEShape,
 )
 from src.datagen.meshing.gmsh.schemas import GMSH_CMeshingConfig, GMSH_OMeshingConfig
-from src.datagen.meshing.optimizer.sampling import (
+from src.datagen.meshing.optimizer.evaluate.sampling import (
     CELL_CEILING, TE_FOR_PAIRING, TE_GAP_DEFAULT, build_study_contour, sample_for_mesher,
 )
 from src.datagen.schemas import Freestream

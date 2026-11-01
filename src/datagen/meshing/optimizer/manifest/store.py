@@ -26,7 +26,7 @@ from typing import Optional
 import numpy as np
 
 from src.datagen.geometry.common.paths import REPO_ROOT
-from src.datagen.meshing.optimizer.paths import MESHING_DB
+from src.datagen.meshing.optimizer.common.paths import MESHING_DB
 
 # Never edit a released migration; append a new one
 _MIGRATIONS = [

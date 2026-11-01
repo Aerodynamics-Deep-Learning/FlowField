@@ -33,7 +33,7 @@ from src.datagen.geometry.manifest.store import GeometryStore
 from src.datagen.geometry.sample.contour import Geom_build_contour
 from src.datagen.geometry.sample.fields import SamplingFields
 from src.datagen.geometry.sample.sample import Geom_sample
-from src.datagen.meshing.optimizer.sampling import TE_GAP_DEFAULT
+from src.datagen.meshing.optimizer.evaluate.sampling import TE_GAP_DEFAULT
 
 _CASES = {
     "naca4412": {"te": "round"},                                          # every default: ~600 points

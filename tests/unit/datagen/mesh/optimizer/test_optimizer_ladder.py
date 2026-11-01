@@ -1,5 +1,5 @@
 """
-Tests for `meshing.optimizer.ladder`, one airfoil's study, i.e.:
+Tests for `meshing.optimizer.search.ladder`, one airfoil's study, i.e.:
 
 Step 1: Ensure the golden run, and each rung its verdict routes the ladder to
     - test_a_golden_pass_ends_the_ladder
@@ -36,13 +36,13 @@ import pytest
 
 from src.datagen.geometry.common.constants import DX_MAX
 from src.datagen.geometry.sample.contour import ContourError
-from src.datagen.meshing.optimizer import ladder
-from src.datagen.meshing.optimizer.constants import SMOOTHING_DEFAULTS
-from src.datagen.meshing.optimizer.executor import RunContext, RunResult, StudySetupError, failed_gates
-from src.datagen.meshing.optimizer.ladder import LadderOutcome, record, run_ladder
-from src.datagen.meshing.optimizer.nstar import NStarResult
-from src.datagen.meshing.optimizer.settings import build_settings
-from src.datagen.meshing.optimizer.store import RunStore
+from src.datagen.meshing.optimizer.common.constants import SMOOTHING_DEFAULTS
+from src.datagen.meshing.optimizer.common.settings import build_settings
+from src.datagen.meshing.optimizer.evaluate.executor import RunContext, RunResult, StudySetupError, failed_gates
+from src.datagen.meshing.optimizer.manifest.store import RunStore
+from src.datagen.meshing.optimizer.search import ladder
+from src.datagen.meshing.optimizer.search.ladder import LadderOutcome, record, run_ladder
+from src.datagen.meshing.optimizer.search.nstar import NStarResult
 from tests.geometry_shapes import stored_shape
 
 NSTAR = NStarResult(n=400, knobs=dict(dx_mid=DX_MAX, le_ratio=0.62, te_ratio=1.0, cluster_width=0.026), evals=1200,
@@ -145,7 +145,7 @@ def _raises(error):
 def settings(tmp_path, monkeypatch):
     exe = tmp_path / "c2d.exe"
     exe.write_bytes(b"not really c2d")
-    monkeypatch.setattr("src.datagen.meshing.optimizer.settings.find_tool", lambda key: str(exe))
+    monkeypatch.setattr("src.datagen.meshing.optimizer.common.settings.find_tool", lambda key: str(exe))
     return build_settings(rung2_budget=4, rung3_budget=5)  # apart, so neither can stand in for the other
 
 

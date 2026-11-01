@@ -1,5 +1,5 @@
 """
-Tests for `meshing.optimizer.mads`, the NOMAD driver, i.e.:
+Tests for `meshing.optimizer.search.mads`, the NOMAD driver, i.e.:
 
 Step 1: Ensure the budget counts new c2d runs only, and every point is a whole config of its rung
     - test_the_budget_counts_c2d_runs_only
@@ -37,11 +37,11 @@ import PyNomad
 import pytest
 
 from src.datagen.geometry.common.constants import DX_MAX
-from src.datagen.meshing.optimizer.constants import SMOOTHING_DEFAULTS
-from src.datagen.meshing.optimizer.executor import RunResult, StudySetupError, failed_gates
-from src.datagen.meshing.optimizer.mads import run_mads
-from src.datagen.meshing.optimizer.settings import build_settings
-from src.datagen.meshing.optimizer.space import knobs_for
+from src.datagen.meshing.optimizer.common.constants import SMOOTHING_DEFAULTS
+from src.datagen.meshing.optimizer.common.settings import build_settings
+from src.datagen.meshing.optimizer.common.space import knobs_for
+from src.datagen.meshing.optimizer.evaluate.executor import RunResult, StudySetupError, failed_gates
+from src.datagen.meshing.optimizer.search.mads import run_mads
 
 GOLDEN = {"dx_mid": DX_MAX, "le_ratio": 0.025, "te_ratio": 1.0, "cluster_width": 0.026, "jmax": 147,
           **SMOOTHING_DEFAULTS}
@@ -132,7 +132,7 @@ def _nodes(knobs):
 def settings(tmp_path, monkeypatch):
     exe = tmp_path / "c2d.exe"
     exe.write_bytes(b"not really c2d")
-    monkeypatch.setattr("src.datagen.meshing.optimizer.settings.find_tool", lambda key: str(exe))
+    monkeypatch.setattr("src.datagen.meshing.optimizer.common.settings.find_tool", lambda key: str(exe))
     return build_settings()
 
 

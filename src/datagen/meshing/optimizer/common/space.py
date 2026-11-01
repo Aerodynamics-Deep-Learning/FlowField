@@ -14,7 +14,7 @@ import math
 from typing import Literal, NamedTuple, Sequence
 
 from src.datagen.geometry.common.constants import DX_MAX
-from src.datagen.meshing.optimizer.constants import (
+from src.datagen.meshing.optimizer.common.constants import (
     CLUSTER_WIDTH_MAX, CLUSTER_WIDTH_MIN, DX_MID_MIN, JMAX_MAX, JMAX_MIN, RATIO_MIN,
 )
 

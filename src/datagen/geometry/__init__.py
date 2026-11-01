@@ -9,7 +9,7 @@ Layout:
 Sequence 1 (meshing_main): one study = one airfoil x one mesher/topology
 
 1 - define the study (once, by the problem/mesher call;
-    meshing/optimizer/sampling.py)
+    meshing/optimizer/evaluate/sampling.py)
     a - the airfoil by name: its geometry_id, and its shape under the current
         shape version (none: the airfoil can't be studied under it)
     b - the mesher and topology, which fix the TE (Sequence 3, step 1)

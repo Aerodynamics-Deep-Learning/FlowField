@@ -1,5 +1,5 @@
 """
-Tests for `meshing.optimizer.settings` and the constants it records, i.e.:
+Tests for `meshing.optimizer.common.settings` and the constants it records, i.e.:
 
 Step 1: Ensure the row holds every column under a stable id
     - test_row_holds_every_column_with_the_id_last
@@ -28,12 +28,12 @@ import pytest
 from src.datagen.meshing.c2d.schemas import C2D_MeshingConfig, C2D_Topology
 from src.datagen.meshing.common import constants as common
 from src.datagen.meshing.common.schemas import MeshBackend, MeshTopology
-from src.datagen.meshing.optimizer import constants as C
-from src.datagen.meshing.optimizer import sampling
-from src.datagen.meshing.optimizer.settings import (
+from src.datagen.meshing.optimizer.common import constants as C
+from src.datagen.meshing.optimizer.common.settings import (
     OVERRIDABLE, build_settings, config_schema_fp, mesher_sha256, pinned,
 )
-from src.datagen.meshing.optimizer.space import KNOBS
+from src.datagen.meshing.optimizer.common.space import KNOBS
+from src.datagen.meshing.optimizer.evaluate import sampling
 from src.datagen.schemas import Freestream
 
 _COLUMNS = [
@@ -50,7 +50,7 @@ def exe(tmp_path, monkeypatch):
     """A stand-in c2d executable that `find_tool` resolves."""
     path = tmp_path / "c2d.exe"
     path.write_bytes(b"not really c2d")
-    monkeypatch.setattr("src.datagen.meshing.optimizer.settings.find_tool",
+    monkeypatch.setattr("src.datagen.meshing.optimizer.common.settings.find_tool",
                         lambda key: str(path) if key == "c2d" else None)
     return path
 
@@ -80,7 +80,7 @@ def test_a_rebuilt_exe_makes_new_settings(exe):
 
 
 def test_missing_exe_raises(monkeypatch):
-    monkeypatch.setattr("src.datagen.meshing.optimizer.settings.find_tool", lambda key: None)
+    monkeypatch.setattr("src.datagen.meshing.optimizer.common.settings.find_tool", lambda key: None)
 
     with pytest.raises(FileNotFoundError, match="tools.toml"):
         mesher_sha256()

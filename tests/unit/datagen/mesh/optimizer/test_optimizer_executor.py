@@ -1,5 +1,5 @@
 """
-Tests for `meshing.optimizer.executor`, one config into one run row, i.e.:
+Tests for `meshing.optimizer.evaluate.executor`, one config into one run row, i.e.:
 
 Step 1: Ensure every outcome becomes the right row, and only setup failures raise
     - test_a_passing_mesh_is_recorded_whole
@@ -56,14 +56,14 @@ from src.datagen.meshing.common.schemas import (
     MeshBackend, MeshExitFlag, MeshGeoDeviationSummary, MeshQualitySummary, MeshTopology, MetricDistribution,
     QualityLimits,
 )
-from src.datagen.meshing.optimizer import executor as executor_module
-from src.datagen.meshing.optimizer.constants import PINNED, SMOOTHING_DEFAULTS
-from src.datagen.meshing.optimizer.executor import (
+from src.datagen.meshing.optimizer.common.constants import PINNED, SMOOTHING_DEFAULTS
+from src.datagen.meshing.optimizer.common.settings import build_settings, config_schema_fp
+from src.datagen.meshing.optimizer.evaluate import executor as executor_module
+from src.datagen.meshing.optimizer.evaluate.executor import (
     RunContext, RunExecutor, StudySetupError, failed_gates, nomad_outputs,
 )
-from src.datagen.meshing.optimizer.sampling import build_study_contour
-from src.datagen.meshing.optimizer.settings import build_settings, config_schema_fp
-from src.datagen.meshing.optimizer.store import RUN_COLUMNS, RunStore
+from src.datagen.meshing.optimizer.evaluate.sampling import build_study_contour
+from src.datagen.meshing.optimizer.manifest.store import RUN_COLUMNS, RunStore
 from tests.geometry_shapes import stored_shape
 
 GOLDEN = {"dx_mid": DX_MAX, "le_ratio": 0.025, "te_ratio": 1.0, "cluster_width": 0.026, "jmax": 147,
@@ -132,7 +132,7 @@ class _Mesher:
 def settings(tmp_path, monkeypatch):
     exe = tmp_path / "c2d.exe"
     exe.write_bytes(b"not really c2d")
-    monkeypatch.setattr("src.datagen.meshing.optimizer.settings.find_tool", lambda key: str(exe))
+    monkeypatch.setattr("src.datagen.meshing.optimizer.common.settings.find_tool", lambda key: str(exe))
     return build_settings()
 
 
@@ -292,7 +292,7 @@ def test_gates_fail_in_order(settings):
 def test_gates_and_limits_come_from_the_settings_row(tmp_path, monkeypatch, contour, work):
     exe = tmp_path / "c2d.exe"
     exe.write_bytes(b"c2d")
-    monkeypatch.setattr("src.datagen.meshing.optimizer.settings.find_tool", lambda key: str(exe))
+    monkeypatch.setattr("src.datagen.meshing.optimizer.common.settings.find_tool", lambda key: str(exe))
     strict = build_settings(gate_skew_max=0.2)  # the default summary's 0.25 now fails
     mesher = _Mesher()
     row = _run(_executor(strict, work, [], mesher, monkeypatch), contour).row

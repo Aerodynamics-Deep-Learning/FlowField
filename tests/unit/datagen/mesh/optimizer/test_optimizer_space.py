@@ -1,5 +1,5 @@
 """
-Tests for `meshing.optimizer.space`, the knobs NOMAD searches, i.e.:
+Tests for `meshing.optimizer.common.space`, the knobs NOMAD searches, i.e.:
 
 Step 1: Ensure the table sits inside the config's own bounds, and each rung moves the right knobs
     - test_every_bound_is_a_valid_config
@@ -19,8 +19,8 @@ import pytest
 
 from src.datagen.geometry.common.constants import DX_MAX
 from src.datagen.meshing.c2d.schemas import C2D_MeshingConfig
-from src.datagen.meshing.optimizer.constants import GOLDEN_JMAX, RATIO_MIN, SMOOTHING_DEFAULTS
-from src.datagen.meshing.optimizer.space import (
+from src.datagen.meshing.optimizer.common.constants import GOLDEN_JMAX, RATIO_MIN, SMOOTHING_DEFAULTS
+from src.datagen.meshing.optimizer.common.space import (
     KNOBS, from_x, input_types, knobs_for, nomad_bounds, space_json, to_x,
 )
 
