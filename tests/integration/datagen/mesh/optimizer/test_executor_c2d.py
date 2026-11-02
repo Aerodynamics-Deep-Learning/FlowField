@@ -14,9 +14,9 @@ from src.datagen.geometry.common.constants import DX_MAX
 from src.datagen.meshing.c2d.run import C2D_find_exe
 from src.datagen.meshing.common.schemas import MeshBackend, MeshTopology
 from src.datagen.meshing.optimizer.common.constants import SMOOTHING_DEFAULTS
-from src.datagen.meshing.optimizer.common.settings import build_settings
+from src.datagen.meshing.optimizer.common.settings import Optim_build_settings
 from src.datagen.meshing.optimizer.evaluate.executor import RunContext, RunExecutor
-from src.datagen.meshing.optimizer.evaluate.sampling import build_study_contour
+from src.datagen.meshing.optimizer.evaluate.sampling import Optim_build_study_contour
 from src.datagen.meshing.optimizer.manifest.store import RunStore
 from tests.geometry_shapes import stored_shape
 
@@ -29,9 +29,9 @@ GOLDEN = {"dx_mid": DX_MAX, "le_ratio": 0.025, "te_ratio": 1.0, "cluster_width":
 # region Step 1
 @_needs_c2d
 def test_golden_run_repeats_and_leaves_nothing(tmp_path):
-    settings = build_settings()
+    settings = Optim_build_settings()
     ctx = RunContext.create(settings, tmp_path / "work")
-    contour = build_study_contour(stored_shape("naca0012"), MeshBackend.C2D, MeshTopology.OGRD)
+    contour = Optim_build_study_contour(stored_shape("naca0012"), MeshBackend.C2D, MeshTopology.OGRD)
     rows = []
     for seq in range(2):
         RunExecutor(ctx, rows.append).run(ladder_id=None, geometry_id="naca0012", airfoil_name="naca0012",

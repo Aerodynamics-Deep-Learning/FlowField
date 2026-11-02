@@ -24,7 +24,7 @@ from src.datagen.meshing.common.geo_dev import _boundary_from_su2
 from src.datagen.meshing.common.quality import _cell_metrics, _read_su2
 from src.datagen.meshing.common.schemas import MeshBackend, MeshExitFlag, MeshTopology, QualityLimits
 from src.datagen.meshing.gmsh.schemas import GMSH_OMeshingConfig
-from src.datagen.meshing.optimizer.evaluate.sampling import build_study_contour, sample_for_mesher
+from src.datagen.meshing.optimizer.evaluate.sampling import Optim_build_study_contour, Optim_sample_for_mesher
 from src.datagen.schemas import Freestream
 from src.datagen.utils.tools import find_tool
 from tests.geometry_shapes import stored_shape
@@ -34,10 +34,10 @@ _needs_gmsh = pytest.mark.skipif(find_tool("gmsh") is None, reason="gmsh executa
 
 
 def _mesh(name, backend, topology, config, workspace, **kwargs):
-    contour = build_study_contour(stored_shape(name), backend, topology)
-    sampled = sample_for_mesher(config, contour, airfoil_name=name, chord=1.0,
-                                freestream=Freestream(alpha=0.0, Re=5e6, mach=0.5), backend=backend,
-                                topology=topology, working_dir=str(workspace), **kwargs)
+    contour = Optim_build_study_contour(stored_shape(name), backend, topology)
+    sampled = Optim_sample_for_mesher(config, contour, airfoil_name=name, chord=1.0,
+                                      freestream=Freestream(alpha=0.0, Re=5e6, mach=0.5), backend=backend,
+                                      topology=topology, working_dir=str(workspace), **kwargs)
     assert sampled.mesh_in is not None, sampled.report.rejection
     return sampled, Common_GenerateMesh(sampled.mesh_in)
 

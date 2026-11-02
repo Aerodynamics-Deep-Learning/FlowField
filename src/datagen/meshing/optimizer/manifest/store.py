@@ -6,12 +6,12 @@ The mesh study's run store, `meshing.sqlite`: the one module that reads and writ
     runs      one row per evaluation, meshed or not: config, sample, quality, deviation and verdict
     best      per (airfoil, settings), its fewest-node passing run; triggers keep it pointing at one
 
-No mesh file is kept: a run's `config_json` re-meshes it, and `su2_sha256` checks the result.
+No mesh file is kept: a run's `config_json` re-meshes it, and `Optim_su2_sha256` checks the result.
 
 Schema changes land as numbered migrations in `_MIGRATIONS`, tracked by `PRAGMA user_version`, as in the
 geometry manifest. The file is committed, so it runs in rollback-journal mode. One process writes, and
 every write commits at once, so a crash loses at most the row in flight. Timestamps are ISO-8601 UTC
-with milliseconds (`utc_now`).
+with milliseconds (`Optim_utc_now`).
 """
 
 import hashlib
@@ -32,7 +32,7 @@ from src.datagen.meshing.optimizer.common.paths import MESHING_DB
 _MIGRATIONS = [
     """
     CREATE TABLE settings (
-        settings_id TEXT PRIMARY KEY,       -- settings.build_settings: hash of every column but created_at, label
+        settings_id TEXT PRIMARY KEY,       -- settings.Optim_build_settings: hash of every column but created_at, label
         created_at TEXT NOT NULL, label TEXT,
         ladder_version TEXT NOT NULL, backend TEXT NOT NULL, topology TEXT NOT NULL, design_re REAL NOT NULL,
         shape_version TEXT NOT NULL, sampler_version TEXT NOT NULL, mesher_sha256 TEXT NOT NULL,
@@ -41,8 +41,9 @@ _MIGRATIONS = [
         gate_skew_max REAL NOT NULL, gate_ortho_min REAL NOT NULL, gate_jac_min REAL NOT NULL,
         gate_ar_max REAL NOT NULL, gate_size_ratio_max REAL NOT NULL, gate_geo_dev_max REAL NOT NULL,
         golden_jmax INTEGER NOT NULL, jmax_bump_step INTEGER NOT NULL, jmax_bump_max INTEGER NOT NULL,
-        rung2_budget INTEGER NOT NULL, rung3_budget INTEGER NOT NULL, max_bb_eval_factor INTEGER NOT NULL,
-        nomad_seed INTEGER NOT NULL,
+        rung2_budget INTEGER NOT NULL, rung3_budget INTEGER NOT NULL,
+        rung3_patience INTEGER NOT NULL, rung3_min_gain REAL NOT NULL,  -- rung 3's plateau stop
+        max_bb_eval_factor INTEGER NOT NULL, nomad_seed INTEGER NOT NULL,
         nstar_json TEXT NOT NULL, search_space_json TEXT NOT NULL, pinned_json TEXT NOT NULL
     ) STRICT;
 
@@ -55,7 +56,7 @@ _MIGRATIONS = [
         n_star INTEGER, n_star_knobs_json TEXT, n_star_grid_evals INTEGER, n_star_s REAL,
         meshes_golden INTEGER, meshes_bump INTEGER, meshes_smoothing INTEGER, meshes_mads INTEGER,  -- c2d runs
         n_rejected INTEGER, n_dominated INTEGER,
-        nomad_json TEXT,                    -- per NOMAD rung: run_flag, stop_reason, seed, budget, calls, mesher_runs, x0s
+        nomad_json TEXT,                    -- per NOMAD rung: flag, stop, ended, seed, budget, calls, c2d runs, x0s
         best_run_id TEXT,                   -- this ladder's own fewest-node pass
         error_text TEXT, host TEXT, git_commit TEXT, git_dirty INTEGER,
         started_at TEXT NOT NULL, finished_at TEXT, wall_s REAL
@@ -248,7 +249,7 @@ class RunStore:
         Records a settings row unless its id is already there; a repeat keeps the first label and time.
 
         Args:
-            values (dict): `settings.build_settings()`'s row
+            values (dict): `settings.Optim_build_settings()`'s row
             label (str | None): A note for people, not part of the id
 
         Returns:
@@ -261,7 +262,7 @@ class RunStore:
         if set(values) != expected:
             raise ValueError(f"settings row is off: missing {sorted(expected - set(values))}, "
                              f"unknown {sorted(set(values) - expected)}")
-        row = {**values, "created_at": utc_now(), "label": label}
+        row = {**values, "created_at": Optim_utc_now(), "label": label}
         with self.transaction():
             self._insert("settings", row, on_conflict="ON CONFLICT(settings_id) DO NOTHING")
         return values["settings_id"]
@@ -314,7 +315,7 @@ class RunStore:
                 "INSERT INTO best (geometry_id, settings_id, run_id, chosen_at) VALUES (?, ?, ?, ?) "
                 "ON CONFLICT(geometry_id, settings_id) DO UPDATE SET run_id = excluded.run_id, "
                 "chosen_at = excluded.chosen_at WHERE run_id != excluded.run_id",
-                (geometry_id, settings_id, hit[0], utc_now()))
+                (geometry_id, settings_id, hit[0], Optim_utc_now()))
         return hit[0]
 
     def abort_running(self) -> int:
@@ -329,7 +330,7 @@ class RunStore:
             cur = self._conn.execute(
                 "UPDATE ladders SET status = 'aborted', finished_at = ?, "
                 "error_text = COALESCE(error_text, 'still running when a campaign started') "
-                "WHERE status = 'running'", (utc_now(),))
+                "WHERE status = 'running'", (Optim_utc_now(),))
         return cur.rowcount
 
 #endregion
@@ -347,6 +348,12 @@ class RunStore:
     def run(self, run_id: str) -> Optional[dict]:
         """A run row by column name, JSON columns as stored, or None."""
         return self._one("SELECT * FROM runs WHERE run_id = ?", run_id)
+
+    def runs(self, ladder_id: str) -> list[dict]:
+        """A ladder's runs in the order it emitted them, as `run` returns each."""
+        cur = self._conn.execute("SELECT * FROM runs WHERE ladder_id = ? ORDER BY rowid", (ladder_id,))
+        names = [d[0] for d in cur.description]
+        return [dict(zip(names, row)) for row in cur]
 
     def best(self, geometry_id: str, settings_id: str) -> Optional[str]:
         """The airfoil's best run_id under these settings, or None."""
@@ -411,12 +418,12 @@ def _sql(value):
     return value
 
 
-def utc_now() -> str:
+def Optim_utc_now() -> str:
     """Now, as ISO-8601 UTC with milliseconds: '2026-10-28T14:03:12.481Z'."""
     return datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
 
-def su2_sha256(path) -> tuple[str, int]:
+def Optim_su2_sha256(path) -> tuple[str, int]:
     """
     A `.su2`'s SHA-256 with CRLF folded to LF, so a re-mesh on any platform checks against it, and its
     size in bytes as written.
@@ -425,7 +432,7 @@ def su2_sha256(path) -> tuple[str, int]:
     return hashlib.sha256(data.replace(b"\r\n", b"\n")).hexdigest(), len(data)
 
 
-def git_state() -> tuple[str, Optional[int]]:
+def Optim_git_state() -> tuple[str, Optional[int]]:
     """
     The commit the code runs at, and whether `src/datagen` differs from it, untracked files included
     (the store itself lives under `data/`, so writing it never counts). ("unknown", None) outside git.

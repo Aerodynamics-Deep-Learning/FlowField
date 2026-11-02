@@ -1,6 +1,6 @@
 """
 The mesh study's fixed choices in one place: what it meshes, the gates a mesh must pass, the ladder's
-steps and budgets, and the search space's bounds. `settings.build_settings` records every one that shapes
+steps and budgets, and the search space's bounds. `settings.Optim_build_settings` records every one that shapes
 or judges a mesh, so a run can always say what it was held to.
 
 Imports only `meshing.common.constants`, which imports nothing.
@@ -55,13 +55,18 @@ JMAX_BUMP_MAX = 10
 RUNG2_BUDGET = 30
 RUNG3_BUDGET = 100
 
+# Rung 3 ends once its last RUNG3_PATIENCE c2d runs cut the best's nodes by less than this share of them.
+# Provisional: the calibration sets them
+RUNG3_PATIENCE = 20
+RUNG3_MIN_GAIN = 0.005
+
 # NOMAD's own evaluation cap, as a multiple of the budget; only guards a runaway, since rejections are free
 MAX_BB_EVAL_FACTOR = 10
 
 NOMAD_SEED = 1
 
 # Bump by hand on any change to the ladder's flow logic
-LADDER_VERSION = "ladder-r1"
+LADDER_VERSION = "ladder-r2"
 
 #endregion
 

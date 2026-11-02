@@ -28,10 +28,10 @@ from src.datagen.geometry.sample.fields import SamplingFields
 from src.datagen.geometry.sample.sample import Geom_sample
 from src.datagen.meshing.common.schemas import MeshBackend, MeshTopology
 from src.datagen.meshing.optimizer.common.constants import CLUSTER_WIDTH_MAX, CLUSTER_WIDTH_MIN, RATIO_MIN
-from src.datagen.meshing.optimizer.common.settings import build_settings
-from src.datagen.meshing.optimizer.common.space import knobs_for, nomad_bounds, to_x
-from src.datagen.meshing.optimizer.evaluate.sampling import build_study_contour
-from src.datagen.meshing.optimizer.search.nstar import n_star_search
+from src.datagen.meshing.optimizer.common.settings import Optim_build_settings
+from src.datagen.meshing.optimizer.common.space import Optim_knobs_for, Optim_nomad_bounds, Optim_to_x
+from src.datagen.meshing.optimizer.evaluate.sampling import Optim_build_study_contour
+from src.datagen.meshing.optimizer.search.nstar import Optim_n_star_search
 from tests.geometry_shapes import SHAPE_NAMES, stored_shape
 
 SAMPLING = ("dx_mid", "le_ratio", "te_ratio", "cluster_width")
@@ -42,7 +42,7 @@ def settings(tmp_path, monkeypatch):
     exe = tmp_path / "c2d.exe"
     exe.write_bytes(b"not really c2d")
     monkeypatch.setattr("src.datagen.meshing.optimizer.common.settings.find_tool", lambda key: str(exe))
-    return build_settings()
+    return Optim_build_settings()
 
 
 def _sized(settings, le_grid, cw_grid):
@@ -65,8 +65,8 @@ class _Sampler:
 @pytest.mark.parametrize("name", SHAPE_NAMES)
 def test_n_star_is_the_grids_fewest_accepted_points(settings, name):
     settings = _sized(settings, 8, 3)
-    contour = build_study_contour(stored_shape(name), MeshBackend.C2D, MeshTopology.OGRD)
-    result = n_star_search(contour, settings)
+    contour = Optim_build_study_contour(stored_shape(name), MeshBackend.C2D, MeshTopology.OGRD)
+    result = Optim_n_star_search(contour, settings)
 
     # The grid, by hand: le_ratio log-spaced over [0.002, 1], cluster_width over its range
     les = [RATIO_MIN ** (1 - i / 7) for i in range(8)]
@@ -90,7 +90,7 @@ def test_n_star_is_the_grids_fewest_accepted_points(settings, name):
 def test_ties_go_to_the_finest_nose_then_the_narrowest_cluster(settings, monkeypatch):
     sampler = _Sampler(lambda f: (None, 400 if f.le_ratio > 0.01 and f.cluster_width > 0.1 else 450))
     monkeypatch.setattr("src.datagen.meshing.optimizer.search.nstar.Geom_sample", sampler)
-    result = n_star_search(None, _sized(settings, 5, 4))
+    result = Optim_n_star_search(None, _sized(settings, 5, 4))
 
     tied = [f for f, _ in sampler.calls if f.le_ratio > 0.01 and f.cluster_width > 0.1]
     assert len(tied) > 1 and result.n == 400
@@ -104,8 +104,8 @@ def test_ties_go_to_the_finest_nose_then_the_narrowest_cluster(settings, monkeyp
 def test_the_grid_comes_from_the_settings(settings, monkeypatch):
     sampler = _Sampler(lambda f: (None, 400))
     monkeypatch.setattr("src.datagen.meshing.optimizer.search.nstar.Geom_sample", sampler)
-    settings = build_settings(golden_jmax=150)
-    result = n_star_search(None, settings)
+    settings = Optim_build_settings(golden_jmax=150)
+    result = Optim_n_star_search(None, settings)
 
     assert json.loads(settings["nstar_json"]) == {"le_grid": 40, "cw_grid": 30}
     assert result.evals == len(sampler.calls) == 1200
@@ -131,10 +131,10 @@ def test_n_stars_knobs_are_a_start_nomad_can_take(settings, monkeypatch, corner)
         return (None, 400) if at else (Rejection.TURN, 300)
 
     monkeypatch.setattr("src.datagen.meshing.optimizer.search.nstar.Geom_sample", _Sampler(verdict))
-    result = n_star_search(None, settings)
-    rung3 = knobs_for(3)
-    lb, ub = nomad_bounds(rung3)
-    x = to_x({**result.knobs, "jmax": 147, "asmt": 40, "epsi": 20.0, "funi": 0.02, "alfa": 1.0}, rung3)
+    result = Optim_n_star_search(None, settings)
+    rung3 = Optim_knobs_for(3)
+    lb, ub = Optim_nomad_bounds(rung3)
+    x = Optim_to_x({**result.knobs, "jmax": 147, "asmt": 40, "epsi": 20.0, "funi": 0.02, "alfa": 1.0}, rung3)
 
     assert result.n == 400
     assert all(lo <= v <= hi for v, lo, hi in zip(x, lb, ub))
@@ -145,7 +145,7 @@ def test_n_stars_knobs_are_a_start_nomad_can_take(settings, monkeypatch, corner)
 def test_no_accepted_point_gives_no_n_star(settings, monkeypatch):
     sampler = _Sampler(lambda f: (Rejection.POINTS, 9000))
     monkeypatch.setattr("src.datagen.meshing.optimizer.search.nstar.Geom_sample", sampler)
-    result = n_star_search(None, _sized(settings, 4, 2))
+    result = Optim_n_star_search(None, _sized(settings, 4, 2))
 
     assert (result.n, result.knobs, result.evals) == (None, None, 8)
 
@@ -156,5 +156,5 @@ def test_a_sampler_bug_is_raised(settings, monkeypatch):
 
     monkeypatch.setattr("src.datagen.meshing.optimizer.search.nstar.Geom_sample", broken)
     with pytest.raises(SamplerAssertionError, match="stations out of order"):
-        n_star_search(None, _sized(settings, 4, 2))
+        Optim_n_star_search(None, _sized(settings, 4, 2))
 # endregion

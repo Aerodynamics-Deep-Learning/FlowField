@@ -2,10 +2,10 @@
 The meshing side of Sequence 3 (see `geometry/__init__.py`): a study's contour, and each config's sample
 turned into the mesher's input.
 
-    build_study_contour  once per study: the stored shape with the TE its (backend, topology) needs, or
-                         None for a pairing that is not sampled
-    sample_for_mesher    each evaluation: samples the contour with the config's knobs, under the cell
-                         ceiling, and builds the MeshIn from the points; a rejected config builds none
+    Optim_build_study_contour  once per study: the stored shape with the TE its (backend, topology) needs,
+                               or None for a pairing that is not sampled
+    Optim_sample_for_mesher    each evaluation: samples the contour with the config's knobs, under the cell
+                               ceiling, and builds the MeshIn from the points; a rejected config builds none
 
 The MeshIn is only ever built here, from sampled points: there is no placeholder tensor to forget to
 replace. Sits above both geometry and meshing, since the mesh configs import the knobs from geometry.
@@ -42,8 +42,8 @@ class SampledInput(BaseModel):
     report: SampleReport
 
 
-def build_study_contour(shape: ShapeRecord, backend: MeshBackend, topology: MeshTopology,
-                        gap: float = TE_GAP_DEFAULT) -> Optional[Contour]:
+def Optim_build_study_contour(shape: ShapeRecord, backend: MeshBackend, topology: MeshTopology,
+                              gap: float = TE_GAP_DEFAULT) -> Optional[Contour]:
     """
     The contour a study samples, once.
 
@@ -66,16 +66,16 @@ def build_study_contour(shape: ShapeRecord, backend: MeshBackend, topology: Mesh
     return None if te is None else Geom_build_contour(shape, te, gap)
 
 
-def sample_for_mesher(config: MeshingConfig, contour: Contour, *, airfoil_name: str, chord: float,
-                      freestream: Freestream, backend: MeshBackend, topology: MeshTopology,
-                      working_dir: str, count_limits: Optional[QualityLimits] = None,
-                      write_vtk: bool = True) -> SampledInput:
+def Optim_sample_for_mesher(config: MeshingConfig, contour: Contour, *, airfoil_name: str, chord: float,
+                            freestream: Freestream, backend: MeshBackend, topology: MeshTopology,
+                            working_dir: str, count_limits: Optional[QualityLimits] = None,
+                            write_vtk: bool = True) -> SampledInput:
     """
     Samples a study's contour with one config's knobs and builds the mesher's input from the points.
 
     Args:
         config (MeshingConfig): The evaluation's validated mesh config, carrying the sampling knobs
-        contour (Contour): The study's contour, from `build_study_contour`
+        contour (Contour): The study's contour, from `Optim_build_study_contour`
         airfoil_name (str): The name the mesher writes its files under
         chord (float): The airfoil's physical chord
         freestream (Freestream): The study's freestream

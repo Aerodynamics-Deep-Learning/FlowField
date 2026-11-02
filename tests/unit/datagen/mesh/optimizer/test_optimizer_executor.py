@@ -57,12 +57,12 @@ from src.datagen.meshing.common.schemas import (
     QualityLimits,
 )
 from src.datagen.meshing.optimizer.common.constants import PINNED, SMOOTHING_DEFAULTS
-from src.datagen.meshing.optimizer.common.settings import build_settings, config_schema_fp
+from src.datagen.meshing.optimizer.common.settings import Optim_build_settings, Optim_config_schema_fp
 from src.datagen.meshing.optimizer.evaluate import executor as executor_module
 from src.datagen.meshing.optimizer.evaluate.executor import (
-    RunContext, RunExecutor, StudySetupError, failed_gates, nomad_outputs,
+    Optim_failed_gates, Optim_nomad_outputs, RunContext, RunExecutor, StudySetupError,
 )
-from src.datagen.meshing.optimizer.evaluate.sampling import build_study_contour
+from src.datagen.meshing.optimizer.evaluate.sampling import Optim_build_study_contour
 from src.datagen.meshing.optimizer.manifest.store import RUN_COLUMNS, RunStore
 from tests.geometry_shapes import stored_shape
 
@@ -133,12 +133,12 @@ def settings(tmp_path, monkeypatch):
     exe = tmp_path / "c2d.exe"
     exe.write_bytes(b"not really c2d")
     monkeypatch.setattr("src.datagen.meshing.optimizer.common.settings.find_tool", lambda key: str(exe))
-    return build_settings()
+    return Optim_build_settings()
 
 
 @pytest.fixture(scope="module")
 def contour():
-    return build_study_contour(stored_shape("naca0012"), MeshBackend.C2D, MeshTopology.OGRD)
+    return Optim_build_study_contour(stored_shape("naca0012"), MeshBackend.C2D, MeshTopology.OGRD)
 
 
 @pytest.fixture
@@ -246,7 +246,7 @@ def test_crashes_are_recorded_not_raised(settings, contour, work, monkeypatch, w
     if where == "sampler":
         def broken(*args, **kwargs):
             raise SamplerAssertionError("a panel past DX_MAX")
-        monkeypatch.setattr(executor_module, "sample_for_mesher", broken)
+        monkeypatch.setattr(executor_module, "Optim_sample_for_mesher", broken)
     row = _run(executor, contour).row
 
     assert rows == [row] and row["status"] == "crashed"
@@ -286,14 +286,14 @@ def test_gates_fail_in_order(settings):
     row = dict(entry_flag="CONVERSION_FAIL", q_neg_cells=0, q_jac_min=-0.2, q_skew_max=0.9, q_ortho_min=0.8,
                q_ar_max=1e3, q_size_ratio_max=2.0, g_max_mesh_to_input=None)
 
-    assert failed_gates(row, settings) == ["conversion", "inverted", "skew", "jac", "size_ratio", "geo_dev"]
+    assert Optim_failed_gates(row, settings) == ["conversion", "inverted", "skew", "jac", "size_ratio", "geo_dev"]
 
 
 def test_gates_and_limits_come_from_the_settings_row(tmp_path, monkeypatch, contour, work):
     exe = tmp_path / "c2d.exe"
     exe.write_bytes(b"c2d")
     monkeypatch.setattr("src.datagen.meshing.optimizer.common.settings.find_tool", lambda key: str(exe))
-    strict = build_settings(gate_skew_max=0.2)  # the default summary's 0.25 now fails
+    strict = Optim_build_settings(gate_skew_max=0.2)  # the default summary's 0.25 now fails
     mesher = _Mesher()
     row = _run(_executor(strict, work, [], mesher, monkeypatch), contour).row
 
@@ -372,7 +372,8 @@ def test_every_status_fits_the_store(settings, contour, work, monkeypatch, tmp_p
 def test_run_context_create(settings, tmp_path):
     ctx = RunContext.create(settings, tmp_path)
 
-    assert (ctx.host, ctx.config_schema_fp, ctx.work_root) == (socket.gethostname(), config_schema_fp(), str(tmp_path))
+    assert (ctx.host, ctx.config_schema_fp, ctx.work_root) == \
+        (socket.gethostname(), Optim_config_schema_fp(), str(tmp_path))
     assert uuid.UUID(ctx.batch_id) and ctx.git_dirty in (0, 1, None)
     assert RunContext.create(settings, tmp_path, batch_id="b").batch_id == "b"
     assert pickle.loads(pickle.dumps(ctx)) == ctx  # a pool's workers each take one
@@ -388,7 +389,7 @@ def _meshed_row(**kw):
 
 
 def test_nomad_outputs_for_a_meshed_row(settings):
-    out = nomad_outputs(_meshed_row(), "nodes", settings)
+    out = Optim_nomad_outputs(_meshed_row(), "nodes", settings)
 
     assert out == pytest.approx([
         468 * 147,                         # OBJ: (n - 1) * jmax
@@ -398,7 +399,7 @@ def test_nomad_outputs_for_a_meshed_row(settings):
         -2.302585, 0.0,                    #      ln(AR / 1e7), ln(SR / 1.25), on the gate
         2e-4 / 2.5e-3 - 1,                 #      geometric deviation, the worse direction
     ], abs=1e-6)
-    assert nomad_outputs(_meshed_row(), "violation", settings)[0] == pytest.approx(1 - 0.6 / 0.75)
+    assert Optim_nomad_outputs(_meshed_row(), "violation", settings)[0] == pytest.approx(1 - 0.6 / 0.75)
 
 
 @pytest.mark.parametrize("knobs, rejection", [
@@ -410,7 +411,7 @@ def test_nomad_outputs_for_a_meshed_row(settings):
 def test_rejected_rows_keep_their_barriers(settings, contour, work, monkeypatch, knobs, rejection):
     # The EBs' signs are the sampler's own verdict: positive exactly on the check that rejected
     row = _run(_executor(settings, work, [], _Mesher(), monkeypatch), contour, knobs=knobs).row
-    obj, eb_turn, eb_cells, *pb = nomad_outputs(row, "nodes", settings)
+    obj, eb_turn, eb_cells, *pb = Optim_nomad_outputs(row, "nodes", settings)
 
     assert row["s_rejection"] == rejection
     assert (eb_turn > 0, eb_cells > 0) == (rejection == "turn", rejection == "points")
@@ -424,16 +425,16 @@ def test_rejected_rows_keep_their_barriers(settings, contour, work, monkeypatch,
     _meshed_row(entry_flag="CONVERSION_FAIL"),  # no PB measures it, so NOMAD would read it as feasible
 ], ids=["dominated", "mesher_failed", "crashed", "config_invalid", "conversion"])
 def test_failed_evaluations_return_none(settings, row):
-    assert nomad_outputs(row, "nodes", settings) is None
+    assert Optim_nomad_outputs(row, "nodes", settings) is None
 
 
 def test_unmeasured_deviation_is_a_large_violation(settings):
-    assert nomad_outputs(_meshed_row(g_max_mesh_to_input=None), "nodes", settings)[-1] == 1e3
+    assert Optim_nomad_outputs(_meshed_row(g_max_mesh_to_input=None), "nodes", settings)[-1] == 1e3
 
 
 def test_unknown_objective_raises(settings):
     with pytest.raises(ValueError, match="'nodes' or 'violation'"):
-        nomad_outputs(_meshed_row(), "cells", settings)
+        Optim_nomad_outputs(_meshed_row(), "cells", settings)
 # endregion
 
 

@@ -2,11 +2,12 @@
 The mesh study's search space: the config fields NOMAD moves, their bounds and scales, and the rungs that
 move them. NOMAD sees log10 of a log knob, so a ratio spanning 500x is searched evenly across it.
 
-    knobs_for     the knobs a rung searches
-    to_x, from_x  a knob dict to NOMAD's point and back (undoing the log, rounding integers, clamping)
-    nomad_bounds  NOMAD's lower and upper bounds
-    input_types   NOMAD's BB_INPUT_TYPE line
-    space_json    the whole table, for the settings row
+    Optim_knobs_for           the knobs a rung searches
+    Optim_to_x, Optim_from_x  a knob dict to NOMAD's point and back (undoing the log, rounding integers,
+                              clamping)
+    Optim_nomad_bounds        NOMAD's lower and upper bounds
+    Optim_input_types         NOMAD's BB_INPUT_TYPE line
+    Optim_space_json          the whole table, for the settings row
 """
 
 import json
@@ -44,7 +45,7 @@ KNOBS = (
 )
 
 
-def knobs_for(rung: int) -> tuple[Knob, ...]:
+def Optim_knobs_for(rung: int) -> tuple[Knob, ...]:
     """
     The knobs a NOMAD rung searches, in table order.
 
@@ -62,7 +63,7 @@ def knobs_for(rung: int) -> tuple[Knob, ...]:
     return tuple(k for k in KNOBS if rung in k.rungs)
 
 
-def to_x(values: dict, knobs: Sequence[Knob]) -> list[float]:
+def Optim_to_x(values: dict, knobs: Sequence[Knob]) -> list[float]:
     """
     A knob dict as NOMAD's point.
 
@@ -76,7 +77,7 @@ def to_x(values: dict, knobs: Sequence[Knob]) -> list[float]:
     return [math.log10(values[k.name]) if k.scale == "log" else float(values[k.name]) for k in knobs]
 
 
-def from_x(x: Sequence[float], knobs: Sequence[Knob]) -> dict:
+def Optim_from_x(x: Sequence[float], knobs: Sequence[Knob]) -> dict:
     """
     NOMAD's point back as config values: the log undone, integers rounded, then clamped into [lo, hi],
     since the log's round trip can step just past a bound.
@@ -96,18 +97,18 @@ def from_x(x: Sequence[float], knobs: Sequence[Knob]) -> dict:
     return values
 
 
-def nomad_bounds(knobs: Sequence[Knob]) -> tuple[list[float], list[float]]:
+def Optim_nomad_bounds(knobs: Sequence[Knob]) -> tuple[list[float], list[float]]:
     """NOMAD's lower and upper bounds for `knobs`, log10 for log knobs."""
-    lb = to_x({k.name: k.lo for k in knobs}, knobs)
-    ub = to_x({k.name: k.hi for k in knobs}, knobs)
+    lb = Optim_to_x({k.name: k.lo for k in knobs}, knobs)
+    ub = Optim_to_x({k.name: k.hi for k in knobs}, knobs)
     return lb, ub
 
 
-def input_types(knobs: Sequence[Knob]) -> str:
+def Optim_input_types(knobs: Sequence[Knob]) -> str:
     """NOMAD's parameter line typing each coordinate, e.g. "BB_INPUT_TYPE ( R R I )"."""
     return f"BB_INPUT_TYPE ( {' '.join(k.type for k in knobs)} )"
 
 
-def space_json() -> str:
+def Optim_space_json() -> str:
     """The whole knob table as sorted JSON, recorded in the settings row."""
     return json.dumps([k._asdict() for k in KNOBS], sort_keys=True)

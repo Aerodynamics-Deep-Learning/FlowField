@@ -17,10 +17,10 @@ import pytest
 from src.datagen.geometry.common.constants import DX_MAX
 from src.datagen.meshing.c2d.run import C2D_find_exe
 from src.datagen.meshing.optimizer.common.constants import CLUSTER_WIDTH_MIN, SMOOTHING_DEFAULTS
-from src.datagen.meshing.optimizer.common.settings import build_settings
+from src.datagen.meshing.optimizer.common.settings import Optim_build_settings
 from src.datagen.meshing.optimizer.evaluate.executor import RunContext
 from src.datagen.meshing.optimizer.manifest.store import RunStore
-from src.datagen.meshing.optimizer.search.ladder import record, run_ladder
+from src.datagen.meshing.optimizer.search.ladder import Optim_record, Optim_run_ladder
 from tests.geometry_shapes import stored_shape
 
 _needs_c2d = pytest.mark.skipif(C2D_find_exe() is None, reason="c2d executable not built in this environment")
@@ -29,10 +29,10 @@ _needs_c2d = pytest.mark.skipif(C2D_find_exe() is None, reason="c2d executable n
 # region Step 1
 @_needs_c2d
 def test_a_low_golden_jmax_bumps_to_a_pass(tmp_path):
-    settings = build_settings(golden_jmax=139)
+    settings = Optim_build_settings(golden_jmax=139)
     events = []
-    outcome = run_ladder("naca0012", stored_shape("naca0012"), RunContext.create(settings, tmp_path / "work"),
-                         events.append)
+    outcome = Optim_run_ladder("naca0012", stored_shape("naca0012"), RunContext.create(settings, tmp_path / "work"),
+                               events.append)
     runs = [e[1] for e in events if e[0] == "run"]
     end = events[-1][2]
     golden, *bumps = runs
@@ -54,7 +54,7 @@ def test_a_low_golden_jmax_bumps_to_a_pass(tmp_path):
     with RunStore.open(tmp_path / "meshing.sqlite") as store:
         store.ensure_settings(settings)
         for event in events:
-            record(store, event)
+            Optim_record(store, event)
         ladder = store.ladder(outcome.ladder_id)
         assert ladder["status"] == "passed" and json.loads(ladder["route"]) == ["golden", "jmax_bump"]
         assert store.best("naca0012", settings["settings_id"]) == ladder["best_run_id"] == runs[-1]["run_id"]

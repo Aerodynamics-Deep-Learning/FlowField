@@ -14,7 +14,7 @@ Sequence 1 (meshing_main): one study = one airfoil x one mesher/topology
         shape version (none: the airfoil can't be studied under it)
     b - the mesher and topology, which fix the TE (Sequence 3, step 1)
     c - the study's TE gap (0.4% chord by default) -> the contour, built once
-        (build_study_contour); a refused contour fails the study's setup
+        (Optim_build_study_contour); a refused contour fails the study's setup
     d - the default freestream of the entire run (only Re matters here, and
         should be the worst-case Re); c2d reads it from the freestream too, as
         gmsh does
@@ -25,7 +25,7 @@ Sequence 1 (meshing_main): one study = one airfoil x one mesher/topology
     -> validated as its config class; an invalid config counts as a failed
        evaluation, not a crash
 3 - sample the contour with the config's knobs (each evaluation, Sequence 3;
-    sample_for_mesher)
+    Optim_sample_for_mesher)
     a - a pre-check failure (turn, or n x jmax over the cell ceiling) rejects
         the config before meshing: recorded, directly infeasible, and not
         counted against the budget

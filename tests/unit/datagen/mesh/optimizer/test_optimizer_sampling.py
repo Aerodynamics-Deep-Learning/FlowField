@@ -27,7 +27,7 @@ from src.datagen.meshing.common.utils import (
 )
 from src.datagen.meshing.gmsh.schemas import GMSH_CMeshingConfig, GMSH_OMeshingConfig
 from src.datagen.meshing.optimizer.evaluate.sampling import (
-    CELL_CEILING, TE_FOR_PAIRING, TE_GAP_DEFAULT, build_study_contour, sample_for_mesher,
+    CELL_CEILING, TE_FOR_PAIRING, TE_GAP_DEFAULT, Optim_build_study_contour, Optim_sample_for_mesher,
 )
 from src.datagen.schemas import Freestream
 from tests.geometry_shapes import SHAPE_NAMES, stored_shape
@@ -38,10 +38,10 @@ _CONFIG = {C2D_O: C2D_MeshingConfig, C2D_C: C2D_MeshingConfig, GMSH_O: GMSH_OMes
 
 
 def _sampled(pairing, config=None, name="naca4412", contour=None, tmp_path="."):
-    contour = contour or build_study_contour(stored_shape(name), *pairing)
-    return sample_for_mesher(config or _CONFIG[pairing](), contour, airfoil_name=name, chord=0.5,
-                             freestream=Freestream(alpha=2.0, Re=5e6, mach=0.5), backend=pairing[0],
-                             topology=pairing[1], working_dir=str(tmp_path))
+    contour = contour or Optim_build_study_contour(stored_shape(name), *pairing)
+    return Optim_sample_for_mesher(config or _CONFIG[pairing](), contour, airfoil_name=name, chord=0.5,
+                                   freestream=Freestream(alpha=2.0, Re=5e6, mach=0.5), backend=pairing[0],
+                                   topology=pairing[1], working_dir=str(tmp_path))
 
 
 # region Step 1
@@ -60,14 +60,14 @@ def test_te_map_agrees_with_the_closure_gate():
 def test_build_study_contour():
     shape = stored_shape("naca0012")
 
-    assert build_study_contour(shape, *C2D_O).te is TETreatment.ROUND
-    assert build_study_contour(shape, *C2D_O).gap == TE_GAP_DEFAULT
-    assert build_study_contour(shape, *C2D_O, gap=0.006).gap == 0.006
-    assert build_study_contour(shape, *C2D_C).te is TETreatment.SHARP
-    assert build_study_contour(shape, *GMSH_O).te is TETreatment.ROUND
-    assert build_study_contour(shape, *GMSH_C) is None
+    assert Optim_build_study_contour(shape, *C2D_O).te is TETreatment.ROUND
+    assert Optim_build_study_contour(shape, *C2D_O).gap == TE_GAP_DEFAULT
+    assert Optim_build_study_contour(shape, *C2D_O, gap=0.006).gap == 0.006
+    assert Optim_build_study_contour(shape, *C2D_C).te is TETreatment.SHARP
+    assert Optim_build_study_contour(shape, *GMSH_O).te is TETreatment.ROUND
+    assert Optim_build_study_contour(shape, *GMSH_C) is None
     with pytest.raises(ValueError, match="no TE"):
-        build_study_contour(shape, MeshBackend.UNKNOWN, MeshTopology.OGRD)
+        Optim_build_study_contour(shape, MeshBackend.UNKNOWN, MeshTopology.OGRD)
 
 
 @pytest.mark.parametrize("name", SHAPE_NAMES)
@@ -85,7 +85,7 @@ def test_sampled_input_passes_the_mesher_gates(name, pairing):
 def test_mesh_in_carries_exactly_the_sample(pairing, tmp_path):
     config = _CONFIG[pairing](dx_mid=0.005, le_ratio=0.02)
     before = config.model_dump()
-    contour = build_study_contour(stored_shape("naca4412"), *pairing)
+    contour = Optim_build_study_contour(stored_shape("naca4412"), *pairing)
     sampled = _sampled(pairing, config=config, contour=contour, tmp_path=tmp_path)
     alone = Geom_sample(contour, config, max_points=CELL_CEILING // config.jmax if pairing[0] is MeshBackend.C2D else None)
     mesh_in = sampled.mesh_in
@@ -100,13 +100,13 @@ def test_mesh_in_carries_exactly_the_sample(pairing, tmp_path):
 
 
 def test_mesh_in_carries_the_reporting_options(tmp_path):
-    contour = build_study_contour(stored_shape("naca4412"), *C2D_O)
+    contour = Optim_build_study_contour(stored_shape("naca4412"), *C2D_O)
     limits = QualityLimits(skew_max=0.4, ortho_min=0.75, jac_min=0.75)
     default = _sampled(C2D_O, contour=contour, tmp_path=tmp_path).mesh_in
-    given = sample_for_mesher(C2D_MeshingConfig(), contour, airfoil_name="naca4412", chord=0.5,
-                              freestream=Freestream(alpha=2.0, Re=5e6, mach=0.5), backend=C2D_O[0],
-                              topology=C2D_O[1], working_dir=str(tmp_path), count_limits=limits,
-                              write_vtk=False).mesh_in
+    given = Optim_sample_for_mesher(C2D_MeshingConfig(), contour, airfoil_name="naca4412", chord=0.5,
+                                    freestream=Freestream(alpha=2.0, Re=5e6, mach=0.5), backend=C2D_O[0],
+                                    topology=C2D_O[1], working_dir=str(tmp_path), count_limits=limits,
+                                    write_vtk=False).mesh_in
 
     assert (default.count_limits, default.write_vtk) == (QualityLimits(), True)
     assert (given.count_limits, given.write_vtk) == (limits, False)
@@ -130,7 +130,7 @@ def test_cell_ceiling_follows_jmax():
 
 
 def test_setup_mismatches_raise():
-    round_ = build_study_contour(stored_shape("naca0012"), *C2D_O)
+    round_ = Optim_build_study_contour(stored_shape("naca0012"), *C2D_O)
 
     with pytest.raises(ValueError, match="not sampled"):
         _sampled(GMSH_C, config=GMSH_CMeshingConfig(), contour=round_)

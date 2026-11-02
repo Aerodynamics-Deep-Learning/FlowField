@@ -22,9 +22,15 @@ Step 3: Ensure NOMAD's mechanics: start points, the stop callback's reset, the s
 Step 4: Ensure an error while a point is evaluated stops the search and is raised
     - test_an_error_stops_the_search_and_is_raised
     - test_a_bug_in_the_outputs_stops_the_search
+Step 5: Ensure the plateau stop, why a search ended, and a search with no budget
+    - test_plateau_reached
+    - test_a_stalled_search_stops_where_its_full_run_says
+    - test_a_pass_from_before_opens_the_first_window
+    - test_why_a_search_ended
+    - test_a_search_without_budget_runs_nothing
 
 The executor is a stand-in whose rows come from a formula of the knobs; NOMAD, the verdict and
-`nomad_outputs` are real. The real executor and c2d are in the integration tier.
+`Optim_nomad_outputs` are real. The real executor and c2d are in the integration tier.
 """
 
 import itertools
@@ -38,10 +44,10 @@ import pytest
 
 from src.datagen.geometry.common.constants import DX_MAX
 from src.datagen.meshing.optimizer.common.constants import SMOOTHING_DEFAULTS
-from src.datagen.meshing.optimizer.common.settings import build_settings
-from src.datagen.meshing.optimizer.common.space import knobs_for
-from src.datagen.meshing.optimizer.evaluate.executor import RunResult, StudySetupError, failed_gates
-from src.datagen.meshing.optimizer.search.mads import run_mads
+from src.datagen.meshing.optimizer.common.settings import Optim_build_settings
+from src.datagen.meshing.optimizer.common.space import Optim_knobs_for
+from src.datagen.meshing.optimizer.evaluate.executor import Optim_failed_gates, RunResult, StudySetupError
+from src.datagen.meshing.optimizer.search.mads import Optim_plateau_reached, Optim_run_mads
 
 GOLDEN = {"dx_mid": DX_MAX, "le_ratio": 0.025, "te_ratio": 1.0, "cluster_width": 0.026, "jmax": 147,
           **SMOOTHING_DEFAULTS}
@@ -95,7 +101,7 @@ class _Executor:
             row.update(outcome)  # an entry flag if it crashed after c2d returned
         elif status == "meshed":
             row.update(num_nodes=nodes, **{**_CLEAN, **outcome})
-            failed = failed_gates(row, self.ctx.settings)
+            failed = Optim_failed_gates(row, self.ctx.settings)
             row.update(passed=int(not failed), failed_gates=failed)
         return row
 
@@ -133,18 +139,19 @@ def settings(tmp_path, monkeypatch):
     exe = tmp_path / "c2d.exe"
     exe.write_bytes(b"not really c2d")
     monkeypatch.setattr("src.datagen.meshing.optimizer.common.settings.find_tool", lambda key: str(exe))
-    return build_settings()
+    return Optim_build_settings()
 
 
 def _smoothing(executor, x0s=(SMOOTHING_DEFAULTS,), budget=5, **kw):
     """A rung-2 search from c2d's smoothing defaults, the rest of the golden config fixed."""
-    return run_mads(executor, SHARED, BASE, knobs_for(2), list(x0s), budget=budget, objective="violation", **kw)
+    return Optim_run_mads(executor, SHARED, BASE, Optim_knobs_for(2), list(x0s), budget=budget, objective="violation",
+                          **kw)
 
 
 def _full(executor, budget=15, dominance=True, **kw):
     """A rung-3 search over every knob from the golden config, fewest nodes first, with dominance."""
-    return run_mads(executor, {**SHARED, "rung": "mads"}, {}, knobs_for(3), [GOLDEN], budget=budget,
-                    objective="nodes", dominance=dominance, **kw)
+    return Optim_run_mads(executor, {**SHARED, "rung": "mads"}, {}, Optim_knobs_for(3), [GOLDEN], budget=budget,
+                          objective="nodes", dominance=dominance, **kw)
 
 
 # region Step 1
@@ -181,7 +188,7 @@ def test_every_point_is_a_whole_config_of_its_rung(settings):
     for call in executor.calls:
         assert {k: call[k] for k in SHARED} == SHARED
         assert {k: call["knobs"][k] for k in BASE} == BASE
-        for k in knobs_for(2):
+        for k in Optim_knobs_for(2):
             value = call["knobs"][k.name]
             assert k.lo <= value <= k.hi and isinstance(value, int) == (k.type == "I")
 # endregion
@@ -286,11 +293,11 @@ def test_the_same_seed_repeats_the_search(settings):
         return [c["knobs"] for c in executor.calls]
 
     assert knobs_tried(settings) == knobs_tried(settings)  # back to back: NOMAD's generator is global
-    assert knobs_tried(settings) != knobs_tried(build_settings(nomad_seed=2))
+    assert knobs_tried(settings) != knobs_tried(Optim_build_settings(nomad_seed=2))
 
 
 def test_the_evaluation_cap_comes_from_the_settings(settings):
-    executor = _Executor(build_settings(max_bb_eval_factor=1), _odd_asmt_rejected)
+    executor = _Executor(Optim_build_settings(max_bb_eval_factor=1), _odd_asmt_rejected)
     result = _smoothing(executor, x0s=(SMOOTHING_DEFAULTS, {**SMOOTHING_DEFAULTS, "asmt": 20}), budget=5)
 
     assert (result.run_flag, result.n_calls, result.start) == (-2, 5, 0)  # 5 calls, not 5 meshes; no next start
@@ -300,7 +307,7 @@ def test_the_evaluation_cap_comes_from_the_settings(settings):
 def test_the_objective_reaches_nomad(settings):
     def knobs_tried(objective):
         executor = _Executor(settings, _smoothing_skew)
-        run_mads(executor, SHARED, BASE, knobs_for(2), [SMOOTHING_DEFAULTS], budget=6, objective=objective)
+        Optim_run_mads(executor, SHARED, BASE, Optim_knobs_for(2), [SMOOTHING_DEFAULTS], budget=6, objective=objective)
         return [c["knobs"] for c in executor.calls]
 
     assert knobs_tried("violation") != knobs_tried("nodes")  # rung 2's nodes are flat, its violation is not
@@ -316,7 +323,7 @@ def test_the_objective_reaches_nomad(settings):
 def test_what_nomad_cannot_take_is_refused_before_it_runs(settings, x0s, objective, match):
     executor = _Executor(settings, _never_passes)
     with pytest.raises(ValueError, match=match):
-        run_mads(executor, SHARED, BASE, knobs_for(2), x0s, budget=3, objective=objective)
+        Optim_run_mads(executor, SHARED, BASE, Optim_knobs_for(2), x0s, budget=3, objective=objective)
     assert executor.calls == []
 # endregion
 
@@ -335,8 +342,82 @@ def test_an_error_stops_the_search_and_is_raised(settings, error):
 
 
 def test_a_bug_in_the_outputs_stops_the_search(settings):
-    executor = _Executor(settings, lambda k: {"q_ar_max": 0.0})  # ln(0) in nomad_outputs
+    executor = _Executor(settings, lambda k: {"q_ar_max": 0.0})  # ln(0) in Optim_nomad_outputs
     with pytest.raises(ValueError, match="math domain error"):
         _smoothing(executor)
     assert len(executor.calls) == 1
+# endregion
+
+
+# region Step 5
+@pytest.mark.parametrize("best_by_run, expected", [
+    ([None] * 25, False),                 # no pass yet
+    ([100] * 20, False),                  # 19 runs: the window isn't full
+    ([100] * 21, True),                   # 20 runs without a gain
+    ([None] + [100] * 20, False),         # the window opens before the first pass
+    ([None] + [100] * 21, True),
+    ([1000] + [996] * 20, True),          # cut by 0.4%, under 0.5%
+    ([1000] + [995] * 20, False),         # cut by exactly 0.5%: enough
+    ([1000] * 10 + [990] * 11, False),    # an early gain inside the window counts
+], ids=["no_pass", "not_full", "stalled", "opens_before_pass", "opens_at_pass", "under", "exactly", "inside"])
+def test_plateau_reached(best_by_run, expected):
+    assert Optim_plateau_reached(best_by_run, 20, 0.005) is expected
+
+
+def _replayed_stop(rows, window, min_gain, start=None):
+    """Where a plateau would have stopped a search whose rows these are, and its best there."""
+    best, curve = start, [start]
+    for row in rows:
+        if row.get("passed") and (best is None or row["num_nodes"] < best):
+            best = row["num_nodes"]
+        if row.get("entry_flag") is not None:
+            curve.append(best)
+            if Optim_plateau_reached(curve, window, min_gain):
+                return len(curve) - 1, best
+    return None
+
+
+def test_a_stalled_search_stops_where_its_full_run_says(settings):
+    # The best stops falling early (near jmax 140 at DX_MAX); what follows mostly fails the size ratio
+    full = _full(_Executor(settings, _nodes), budget=20)
+    stop, best = _replayed_stop(full.rows, 5, 0.001)
+    assert stop < 12 and full.ended == "budget"
+
+    for budget in (20, 12):  # the budget doesn't move the stop: NOMAD's points are the same up to it
+        executor = _Executor(settings, _nodes)
+        live = _full(executor, budget=budget, plateau=(5, 0.001))
+
+        assert live.ended == "plateau" and live.mesher_runs == executor.mesher_runs == stop  # nothing ran after it
+        assert live.best_row["num_nodes"] == best < 399 * GOLDEN["jmax"]
+        assert [{k: r[k] for k in GOLDEN} for r in live.rows] == \
+            [{k: r[k] for k in GOLDEN} for r in full.rows[:len(live.rows)]]
+
+
+def test_a_pass_from_before_opens_the_first_window(settings):
+    executor = _Executor(settings, _nodes)
+    golden = executor.run(knobs=GOLDEN, seq=0, **{**SHARED, "rung": "golden"}).row  # passed
+    result = _full(executor, budget=20, best_so_far=golden, plateau=(3, 0.5))  # a 50% cut in 3 runs: never
+
+    assert result.ended == "plateau" and result.mesher_runs == 3
+
+
+def test_why_a_search_ended(settings):
+    assert _smoothing(_Executor(settings, _never_passes), budget=3).ended == "budget"
+    assert _smoothing(_Executor(settings, _smoothing_skew), budget=30, stop_at_first_pass=True).ended == "first_pass"
+    unevaluated = _smoothing(_Executor(settings, lambda k: {"status": "mesher_failed"}),
+                             x0s=(SMOOTHING_DEFAULTS, {**SMOOTHING_DEFAULTS, "asmt": 20}))
+    assert (unevaluated.run_flag, unevaluated.ended) == (-3, "nomad")  # NOMAD gave up with budget left
+    capped = _smoothing(_Executor(Optim_build_settings(max_bb_eval_factor=1), _odd_asmt_rejected), budget=5)
+    assert (capped.run_flag, capped.ended) == (-2, "nomad")
+
+
+def test_a_search_without_budget_runs_nothing(settings):
+    executor = _Executor(settings, _nodes)
+    golden = executor.run(knobs=GOLDEN, seq=0, **{**SHARED, "rung": "golden"}).row
+    result = _full(executor, budget=0, best_so_far=golden)
+
+    assert len(executor.calls) == 1 and result.rows == [] and result.mesher_runs == result.n_calls == 0
+    assert (result.ended, result.run_flag, result.best_row) == ("budget", None, golden)
+    with pytest.raises(ValueError, match="NOMAD cannot take asmt=4"):  # a start is still checked
+        _smoothing(executor, x0s=({**SMOOTHING_DEFAULTS, "asmt": 4},), budget=0)
 # endregion

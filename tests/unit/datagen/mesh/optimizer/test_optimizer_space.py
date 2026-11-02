@@ -21,7 +21,7 @@ from src.datagen.geometry.common.constants import DX_MAX
 from src.datagen.meshing.c2d.schemas import C2D_MeshingConfig
 from src.datagen.meshing.optimizer.common.constants import GOLDEN_JMAX, RATIO_MIN, SMOOTHING_DEFAULTS
 from src.datagen.meshing.optimizer.common.space import (
-    KNOBS, from_x, input_types, knobs_for, nomad_bounds, space_json, to_x,
+    KNOBS, Optim_from_x, Optim_input_types, Optim_knobs_for, Optim_nomad_bounds, Optim_space_json, Optim_to_x,
 )
 
 _SMOOTHING = ["asmt", "epsi", "funi", "alfa"]
@@ -49,12 +49,12 @@ def test_smoothing_knobs_are_bounded_as_the_config_bounds_them():
 
 
 def test_rungs_move_the_agreed_knobs():
-    assert [k.name for k in knobs_for(2)] == _SMOOTHING
-    assert [k.name for k in knobs_for(3)] == [k.name for k in KNOBS]
+    assert [k.name for k in Optim_knobs_for(2)] == _SMOOTHING
+    assert [k.name for k in Optim_knobs_for(3)] == [k.name for k in KNOBS]
     assert len(KNOBS) == 9 and "epse" not in {k.name for k in KNOBS}  # pinned off
-    assert input_types(knobs_for(2)) == "BB_INPUT_TYPE ( I R R R )"
+    assert Optim_input_types(Optim_knobs_for(2)) == "BB_INPUT_TYPE ( I R R R )"
     with pytest.raises(ValueError, match="not a NOMAD search"):
-        knobs_for(1)  # rung 1 steps jmax without NOMAD
+        Optim_knobs_for(1)  # rung 1 steps jmax without NOMAD
 # endregion
 
 
@@ -63,22 +63,22 @@ def test_values_round_trip():
     # The golden point: n*'s usual landing plus the smoothing defaults
     values = {"dx_mid": DX_MAX, "le_ratio": 0.025, "te_ratio": 1.0, "cluster_width": 0.026,
               "jmax": GOLDEN_JMAX, **SMOOTHING_DEFAULTS}
-    back = from_x(to_x(values, KNOBS), KNOBS)
+    back = Optim_from_x(Optim_to_x(values, KNOBS), KNOBS)
 
     assert back == pytest.approx(values, rel=1e-12)
     assert isinstance(back["jmax"], int) and isinstance(back["asmt"], int)
 
 
 def test_from_x_rounds_integers_and_clamps_into_bounds():
-    knobs = knobs_for(3)
+    knobs = Optim_knobs_for(3)
     at = {k.name: i for i, k in enumerate(knobs)}
-    x = nomad_bounds(knobs)[0]
+    x = Optim_nomad_bounds(knobs)[0]
     x[at["jmax"]] = 146.6
     x[at["asmt"]] = 4.4                            # rounds to 4, below its floor
     x[at["le_ratio"]] = 1e-13                      # 10**x is just past 1
     x[at["epsi"]] = math.log10(40.0) + 1e-13
 
-    values = from_x(x, knobs)
+    values = Optim_from_x(x, knobs)
 
     assert (values["jmax"], values["asmt"]) == (147, 5)
     assert (values["le_ratio"], values["epsi"]) == (1.0, 40.0)
@@ -86,8 +86,8 @@ def test_from_x_rounds_integers_and_clamps_into_bounds():
 
 
 def test_nomad_bounds_are_log10_for_log_knobs():
-    knobs = {k.name: i for i, k in enumerate(knobs_for(3))}
-    lb, ub = nomad_bounds(knobs_for(3))
+    knobs = {k.name: i for i, k in enumerate(Optim_knobs_for(3))}
+    lb, ub = Optim_nomad_bounds(Optim_knobs_for(3))
 
     assert (lb[knobs["le_ratio"]], ub[knobs["le_ratio"]]) == pytest.approx((math.log10(RATIO_MIN), 0.0))
     assert (lb[knobs["dx_mid"]], ub[knobs["dx_mid"]]) == (1e-3, DX_MAX)  # linear, as given
@@ -95,9 +95,9 @@ def test_nomad_bounds_are_log10_for_log_knobs():
 
 
 def test_space_json_is_the_whole_table():
-    table = json.loads(space_json())
+    table = json.loads(Optim_space_json())
 
     assert [row["name"] for row in table] == [k.name for k in KNOBS]
     assert table[0] == {"name": "dx_mid", "type": "R", "lo": 1e-3, "hi": DX_MAX, "scale": "lin", "rungs": [3]}
-    assert space_json() == space_json()
+    assert Optim_space_json() == Optim_space_json()
 # endregion

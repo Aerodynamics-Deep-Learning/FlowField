@@ -2,8 +2,8 @@
 The mesh study's n*: the fewest surface points the sampler accepts for an airfoil, found by sampling
 alone (nothing is meshed). The ladder's golden run meshes at n*'s knobs.
 
-    n_star_search  the grid search
-    NStarResult    n*, its knobs, the samples taken and the time
+    Optim_n_star_search  the grid search
+    NStarResult          n*, its knobs, the samples taken and the time
 
 The grid: le_ratio log-spaced over [RATIO_MIN, 1] x cluster_width over its range, at dx_mid = dx_max and
 te_ratio 1 (the coarsest a round TE's caps allow; the sampler clamps it), each sampled under the golden
@@ -31,12 +31,12 @@ class NStarResult(NamedTuple):
     seconds: float
 
 
-def n_star_search(contour: Contour, settings: dict) -> NStarResult:
+def Optim_n_star_search(contour: Contour, settings: dict) -> NStarResult:
     """
     Samples the grid and keeps the accepted point with the fewest surface points.
 
     Args:
-        contour (Contour): The study's contour, from `sampling.build_study_contour`
+        contour (Contour): The study's contour, from `sampling.Optim_build_study_contour`
         settings (dict): The settings row: the grid sizes (`nstar_json`), `dx_max`, `cell_ceiling` and
             `golden_jmax`
 

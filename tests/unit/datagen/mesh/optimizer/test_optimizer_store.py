@@ -18,6 +18,7 @@ Step 3: Ensure writes take exactly the tables' columns and keep the links whole
     - test_values_are_stored_as_sqlite_types
     - test_foreign_keys_hold
     - test_a_ladder_starts_and_finishes
+    - test_a_ladders_runs_come_back_in_their_order
 Step 4: Ensure `best` only ever points at the right passing run
     - test_triggers_refuse_a_best_that_does_not_pass
     - test_update_best_picks_fewest_nodes_then_cheapest_rung_then_earliest
@@ -47,9 +48,11 @@ import pytest
 
 from src.datagen.geometry.common.schemas import SampleReport
 from src.datagen.meshing.common.schemas import MeshGeoDeviationSummary, MeshQualitySummary, MetricDistribution
-from src.datagen.meshing.optimizer.common.settings import build_settings
+from src.datagen.meshing.optimizer.common.settings import Optim_build_settings
 from src.datagen.meshing.optimizer.manifest import store as store_module
-from src.datagen.meshing.optimizer.manifest.store import RUN_COLUMNS, RunStore, git_state, su2_sha256, utc_now
+from src.datagen.meshing.optimizer.manifest.store import (
+    RUN_COLUMNS, Optim_git_state, Optim_su2_sha256, Optim_utc_now, RunStore,
+)
 
 # SampleReport fields a run does not store, and why
 _REPORT_NOT_STORED = {
@@ -70,7 +73,7 @@ def settings(tmp_path, monkeypatch):
     exe = tmp_path / "c2d.exe"
     exe.write_bytes(b"not really c2d")
     monkeypatch.setattr("src.datagen.meshing.optimizer.common.settings.find_tool", lambda key: str(exe))
-    return build_settings()
+    return Optim_build_settings()
 
 
 @pytest.fixture
@@ -85,13 +88,13 @@ def _run(settings, **fields):
     """A minimal passing golden run, with `fields` on top."""
     row = dict(run_id=str(uuid.uuid4()), settings_id=settings["settings_id"], batch_id="b", geometry_id="g1",
                airfoil_name="foil", rung="golden", seq=0, config_schema_fp="fp", status="meshed", passed=1,
-               num_nodes=60_000, started_at=utc_now())
+               num_nodes=60_000, started_at=Optim_utc_now())
     return {**row, **fields}
 
 
 def _ladder(settings, **fields):
     row = dict(ladder_id=str(uuid.uuid4()), settings_id=settings["settings_id"], batch_id="b", geometry_id="g1",
-               airfoil_name="foil", status="running", started_at=utc_now())
+               airfoil_name="foil", status="running", started_at=Optim_utc_now())
     return {**row, **fields}
 
 
@@ -222,7 +225,7 @@ def test_a_ladder_starts_and_finishes(store, settings):
     store.start_ladder(ladder)
     store.insert_run(_run(settings, ladder_id=ladder["ladder_id"]))
     store.finish_ladder(ladder["ladder_id"], dict(status="passed", final_rung="golden", route=["golden"],
-                                                  finished_at=utc_now()))
+                                                  finished_at=Optim_utc_now()))
 
     row = store.ladder(ladder["ladder_id"])
     assert (row["status"], row["route"]) == ("passed", '["golden"]')
@@ -232,6 +235,20 @@ def test_a_ladder_starts_and_finishes(store, settings):
         store.finish_ladder(ladder["ladder_id"], dict(stauts="failed"))
     with pytest.raises(sqlite3.IntegrityError, match="CHECK"):
         store.finish_ladder(ladder["ladder_id"], dict(status="done"))
+
+
+def test_a_ladders_runs_come_back_in_their_order(store, settings):
+    store.ensure_settings(settings)
+    first, second = _ladder(settings), _ladder(settings)
+    store.start_ladder(first)
+    store.start_ladder(second)
+    for seq, rung in enumerate(["golden", "mads", "jmax_bump"]):  # recorded order, not rung or name order
+        store.insert_run(_run(settings, ladder_id=first["ladder_id"], rung=rung, seq=seq))
+    store.insert_run(_run(settings, ladder_id=second["ladder_id"]))
+
+    runs = store.runs(first["ladder_id"])
+    assert [r["rung"] for r in runs] == ["golden", "mads", "jmax_bump"] and tuple(runs[0]) == tuple(RUN_COLUMNS)
+    assert len(store.runs(second["ladder_id"])) == 1 and store.runs("unknown") == []
 # endregion
 
 
@@ -325,13 +342,13 @@ def test_su2_hash_folds_crlf(tmp_path):
     (tmp_path / "lf.su2").write_bytes(b"NDIME= 2\nNPOIN= 1\n0 0 0\n")
     (tmp_path / "crlf.su2").write_bytes(b"NDIME= 2\r\nNPOIN= 1\r\n0 0 0\r\n")
 
-    lf, crlf = su2_sha256(tmp_path / "lf.su2"), su2_sha256(tmp_path / "crlf.su2")
+    lf, crlf = Optim_su2_sha256(tmp_path / "lf.su2"), Optim_su2_sha256(tmp_path / "crlf.su2")
     assert lf[0] == crlf[0] == hashlib.sha256(b"NDIME= 2\nNPOIN= 1\n0 0 0\n").hexdigest()
     assert (lf[1], crlf[1]) == (24, 27)  # the size as written
 
 
 def test_utc_now_has_milliseconds():
-    assert re.fullmatch(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z", utc_now())
+    assert re.fullmatch(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z", Optim_utc_now())
 
 
 @pytest.mark.skipif(shutil.which("git") is None, reason="git not installed")
@@ -349,12 +366,12 @@ def test_git_state(tmp_path, monkeypatch):
     git("commit", "-q", "-m", "init")
     monkeypatch.setattr(store_module, "REPO_ROOT", tmp_path)
 
-    commit, dirty = git_state()
+    commit, dirty = Optim_git_state()
     assert re.fullmatch(r"[0-9a-f]{40}", commit) and dirty == 0
     (tmp_path / "data" / "meshing.sqlite").write_text("v2")  # writing the store never counts
-    assert git_state()[1] == 0
+    assert Optim_git_state()[1] == 0
     (tmp_path / "src" / "datagen" / "new.py").write_text("")  # uncommitted code does, untracked or not
-    assert git_state() == (commit, 1)
+    assert Optim_git_state() == (commit, 1)
 
 
 def test_git_state_outside_git(monkeypatch):
@@ -362,5 +379,5 @@ def test_git_state_outside_git(monkeypatch):
         raise OSError("git not installed")
     monkeypatch.setattr(subprocess, "run", no_git)
 
-    assert git_state() == ("unknown", None)
+    assert Optim_git_state() == ("unknown", None)
 # endregion

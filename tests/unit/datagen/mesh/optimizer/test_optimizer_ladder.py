@@ -21,6 +21,7 @@ Step 3: Ensure what ends a ladder early is recorded, then handed up
     - test_ctrl_c_is_recorded_then_raised
     - test_the_outcome_and_events_cross_a_process_boundary
     - test_an_unknown_event_is_refused
+    - test_a_ladder_subclass_climbs_its_own_way_and_is_reported_alike
 
 n* is stubbed and the executor is a stand-in whose rows come from a formula of the knobs, judged by the
 real verdict, with the real one's cache and dominance; NOMAD, the contour and the store are real. The
@@ -37,11 +38,11 @@ import pytest
 from src.datagen.geometry.common.constants import DX_MAX
 from src.datagen.geometry.sample.contour import ContourError
 from src.datagen.meshing.optimizer.common.constants import SMOOTHING_DEFAULTS
-from src.datagen.meshing.optimizer.common.settings import build_settings
-from src.datagen.meshing.optimizer.evaluate.executor import RunContext, RunResult, StudySetupError, failed_gates
+from src.datagen.meshing.optimizer.common.settings import Optim_build_settings
+from src.datagen.meshing.optimizer.evaluate.executor import Optim_failed_gates, RunContext, RunResult, StudySetupError
 from src.datagen.meshing.optimizer.manifest.store import RunStore
 from src.datagen.meshing.optimizer.search import ladder
-from src.datagen.meshing.optimizer.search.ladder import LadderOutcome, record, run_ladder
+from src.datagen.meshing.optimizer.search.ladder import LadderOutcome, Optim_record, Optim_run_ladder
 from src.datagen.meshing.optimizer.search.nstar import NStarResult
 from tests.geometry_shapes import stored_shape
 
@@ -102,7 +103,7 @@ class _Executor:
             row.update(entry_flag=outcome.get("entry_flag"), error_text=f"{status}: here is why")
         elif status == "meshed":
             row.update(num_nodes=nodes, **{**_CLEAN, **outcome})
-            failed = failed_gates(row, s)
+            failed = Optim_failed_gates(row, s)
             row.update(passed=int(not failed), failed_gates=failed)
         return row
 
@@ -146,13 +147,13 @@ def settings(tmp_path, monkeypatch):
     exe = tmp_path / "c2d.exe"
     exe.write_bytes(b"not really c2d")
     monkeypatch.setattr("src.datagen.meshing.optimizer.common.settings.find_tool", lambda key: str(exe))
-    return build_settings(rung2_budget=4, rung3_budget=5)  # apart, so neither can stand in for the other
+    return Optim_build_settings(rung2_budget=4, rung3_budget=5)  # apart, so neither can stand in for the other
 
 
 @pytest.fixture
 def climb(settings, tmp_path, monkeypatch):
     """Runs one ladder on naca0012 over `world`; returns what happened."""
-    def go(world, s=None, nstar=NSTAR):
+    def go(world, s=None, nstar=NSTAR, ladder_type=None):
         s = s or settings
         executors, searches, events = [], [], []
 
@@ -165,15 +166,15 @@ def climb(settings, tmp_path, monkeypatch):
             return real_run_mads(*args, **kw)
 
         monkeypatch.setattr(ladder, "RunExecutor", executor)
-        monkeypatch.setattr(ladder, "run_mads", spy)
-        monkeypatch.setattr(ladder, "n_star_search", lambda contour, settings: nstar)
+        monkeypatch.setattr(ladder, "Optim_run_mads", spy)
+        monkeypatch.setattr(ladder, "Optim_n_star_search", lambda contour, settings: nstar)
         ctx = RunContext(settings=s, batch_id="b1", host="h", git_commit="c" * 40, git_dirty=0,
                          config_schema_fp="fp", work_root=str(tmp_path / "work"))
-        outcome = run_ladder("naca0012", stored_shape("naca0012"), ctx, events.append)
+        outcome = Optim_run_ladder("naca0012", stored_shape("naca0012"), ctx, events.append, ladder_type)
         runs = [e[1] for e in events if e[0] == "run"]
         return _Climb(outcome, events, runs, events[-1][2], executors[0].calls if executors else [], searches)
 
-    real_run_mads = ladder.run_mads
+    real_run_mads = ladder.Optim_run_mads
     return go
 
 
@@ -197,7 +198,7 @@ def test_a_golden_pass_ends_the_ladder(climb):
 
 
 def test_the_golden_run_is_n_star_at_the_golden_jmax(climb, settings):
-    c = climb(lambda k: {}, s=build_settings(golden_jmax=139))
+    c = climb(lambda k: {}, s=Optim_build_settings(golden_jmax=139))
     call = c.calls[0]
 
     assert call["knobs"] == {**NSTAR.knobs, "jmax": 139, **SMOOTHING_DEFAULTS}
@@ -219,13 +220,14 @@ def test_size_ratio_alone_bumps_jmax_to_a_pass(climb):
 
 
 def test_bumps_follow_the_settings_then_go_to_rung_3(climb):
-    c = climb(_sr_until(170), s=build_settings(jmax_bump_step=2, jmax_bump_max=3, rung3_budget=4))
+    c = climb(_sr_until(170), s=Optim_build_settings(jmax_bump_step=2, jmax_bump_max=3, rung3_budget=4,
+                                                     rung3_patience=7, rung3_min_gain=0.02))
 
     assert [r["jmax"] for r in c.rung("jmax_bump")] == [149, 151, 153]
-    assert c.outcome.route == ["golden", "jmax_bump", "mads"]  # smoothing can't move the radial spacing
+    assert c.outcome.route == ["golden", "jmax_bump", "mads"]  # bumps spent: rung 3, not rung 2
     (args, kw), = c.searches
     assert [k.name for k in args[3]] == list(GOLDEN) and args[2] == {} and args[4] == [GOLDEN]
-    assert kw == dict(budget=4, objective="nodes", dominance=True, best_so_far=None)
+    assert kw == dict(budget=4, objective="nodes", dominance=True, best_so_far=None, plateau=(7, 0.02))
     assert c.end["nomad_json"]["mads"]["budget"] == 4
     assert args[1]["parent_run_id"] == c.rung("jmax_bump")[-1]["run_id"]  # the run whose verdict sent it there
     assert c.calls[4]["knobs"] == GOLDEN and len(c.rung("golden")) == 1  # its start, the golden run, is cached
@@ -300,7 +302,7 @@ def test_anything_else_goes_to_rung_3(climb, fault, gates, second_start):
 
 # region Step 2
 def test_the_ladder_row_records_the_climb(climb):
-    settings = build_settings(rung2_budget=4, rung3_budget=5, nomad_seed=3)
+    settings = Optim_build_settings(rung2_budget=4, rung3_budget=5, nomad_seed=3)
     resampled = itertools.count(1)
 
     def world(k):
@@ -333,6 +335,7 @@ def test_the_ladder_row_records_the_climb(climb):
         search = end["nomad_json"][rung]
         assert (search["budget"], search["seed"], search["start"]) == (budget, settings["nomad_seed"], 0)
         assert search["mesher_runs"] == end[f"meshes_{rung}"] and search["n_calls"] >= search["mesher_runs"]
+        assert search["ended"] == ("budget" if search["mesher_runs"] == budget else "nomad")
     assert end["best_run_id"] == best["run_id"] and c.outcome.best_row is best
     assert end["error_text"] is None and end["wall_s"] > 0 and end["finished_at"] > start["started_at"]
 
@@ -342,7 +345,7 @@ def test_the_events_write_the_store(climb, settings, tmp_path):
     with RunStore.open(tmp_path / "meshing.sqlite") as store:
         store.ensure_settings(settings)
         for event in c.events:
-            record(store, event)
+            Optim_record(store, event)
         row = store.ladder(c.outcome.ladder_id)
         best = store.best("naca0012", settings["settings_id"])
 
@@ -375,7 +378,7 @@ def test_an_error_aborts_the_ladder_and_is_handed_up(climb, monkeypatch, how):
     error = {"contour": ContourError("no room for the round TE"), "setup": StudySetupError("EXECUTABLE_NOT_FOUND"),
              "bug_in_rung_3": RuntimeError("the writer's queue is gone")}[how]
     if how == "contour":
-        monkeypatch.setattr(ladder, "build_study_contour", _raises(error))
+        monkeypatch.setattr(ladder, "Optim_build_study_contour", _raises(error))
         world = lambda k: {}
     elif how == "setup":
         world = lambda k: {"status": "crashed", "setup": error}
@@ -413,12 +416,12 @@ def test_a_rejected_or_invalid_config_is_a_ladder_bug(climb, status, rung):
 
 def test_ctrl_c_is_recorded_then_raised(climb, settings, tmp_path, monkeypatch):
     events = []
-    monkeypatch.setattr(ladder, "n_star_search", lambda contour, s: NSTAR)
+    monkeypatch.setattr(ladder, "Optim_n_star_search", lambda contour, s: NSTAR)
     monkeypatch.setattr(ladder, "RunExecutor", lambda ctx, emit: _Executor(ctx, emit, _calls({3: KeyboardInterrupt()})))
     ctx = RunContext(settings=settings, batch_id="b1", host="h", git_commit="c" * 40, git_dirty=0,
                      config_schema_fp="fp", work_root=str(tmp_path))
     with pytest.raises(KeyboardInterrupt):
-        run_ladder("naca0012", stored_shape("naca0012"), ctx, events.append)
+        Optim_run_ladder("naca0012", stored_shape("naca0012"), ctx, events.append)
 
     kind, _, end = events[-1]
     assert kind == "ladder_end" and end["status"] == "aborted" and "KeyboardInterrupt" in end["error_text"]
@@ -427,7 +430,7 @@ def test_ctrl_c_is_recorded_then_raised(climb, settings, tmp_path, monkeypatch):
 @pytest.mark.parametrize("how", ["passed", "contour", "setup"])
 def test_the_outcome_and_events_cross_a_process_boundary(climb, monkeypatch, how):
     if how == "contour":
-        monkeypatch.setattr(ladder, "build_study_contour", _raises(ContourError("no room for the round TE")))
+        monkeypatch.setattr(ladder, "Optim_build_study_contour", _raises(ContourError("no room for the round TE")))
     if how == "setup":
         world = lambda k: {"status": "crashed", "setup": StudySetupError("EXECUTABLE_NOT_FOUND")}
     else:
@@ -446,5 +449,31 @@ def test_the_outcome_and_events_cross_a_process_boundary(climb, monkeypatch, how
 def test_an_unknown_event_is_refused(settings, tmp_path):
     with RunStore.open(tmp_path / "meshing.sqlite") as store:
         with pytest.raises(ValueError, match="unknown ladder event 'ladder_pause'"):
-            record(store, ("ladder_pause", {}))
+            Optim_record(store, ("ladder_pause", {}))
+
+
+class _GoldenThenNote(ladder.Ladder):
+    """A climb of its own: n*, the golden run, a note; then whatever `fail` says."""
+    fail = None
+
+    def climb(self):
+        if self._n_star():
+            self._golden()
+            self.notes["golden_nodes"] = self.golden["num_nodes"]
+            if self.fail is not None:
+                raise self.fail
+
+
+def test_a_ladder_subclass_climbs_its_own_way_and_is_reported_alike(climb):
+    c = climb(lambda k: {"q_skew_max": 0.5}, ladder_type=_GoldenThenNote)
+
+    assert c.outcome.route == ["golden"] and c.outcome.status == "failed" and c.searches == []
+    assert c.outcome.notes == {"golden_nodes": 399 * 147} and c.end["golden_failed_gates"] == ["skew"]
+    assert [e[0] for e in c.events] == ["ladder_start", "run", "ladder_end"]
+    assert climb(lambda k: {}).outcome.notes is None  # the ladder's own climb notes nothing
+
+    failing = type("_Failing", (_GoldenThenNote,), {"fail": RuntimeError("a calibration bug")})
+    c = climb(lambda k: {}, ladder_type=failing)
+    assert c.outcome.status == "aborted" and str(c.outcome.error) == "a calibration bug"
+    assert c.outcome.notes == {"golden_nodes": 399 * 147}  # what it measured before the error is kept
 # endregion

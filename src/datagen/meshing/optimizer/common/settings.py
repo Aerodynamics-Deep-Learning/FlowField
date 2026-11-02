@@ -2,10 +2,10 @@
 The study's settings row: every value a run is meshed and judged by, plus the mesher's own hash, under one
 id. Two runs share a settings_id exactly when none of them differs.
 
-    build_settings    the row, with the tunable columns optionally overridden
-    mesher_sha256     the hash of the c2d executable in use
-    pinned            every config field the search leaves alone, with its value
-    config_schema_fp  a fingerprint of C2D_MeshingConfig, recorded on every run
+    Optim_build_settings    the row, with the tunable columns optionally overridden
+    Optim_mesher_sha256     the hash of the c2d executable in use
+    Optim_pinned            every config field the search leaves alone, with its value
+    Optim_config_schema_fp  a fingerprint of C2D_MeshingConfig, recorded on every run
 """
 
 import hashlib
@@ -19,9 +19,9 @@ from src.datagen.meshing.optimizer.common.constants import (
     BACKEND, CELL_CEILING, DESIGN_RE, GATE_AR_MAX, GATE_GEO_DEV_MAX, GATE_JAC_MIN, GATE_ORTHO_MIN,
     GATE_SIZE_RATIO_MAX, GATE_SKEW_MAX, GOLDEN_JMAX, JMAX_BUMP_MAX, JMAX_BUMP_STEP, LADDER_VERSION,
     MAX_BB_EVAL_FACTOR, NOMAD_SEED, NSTAR_CW_GRID, NSTAR_LE_GRID, PINNED, RUNG2_BUDGET, RUNG3_BUDGET,
-    TE_GAP_DEFAULT, TOPOLOGY,
+    RUNG3_MIN_GAIN, RUNG3_PATIENCE, TE_GAP_DEFAULT, TOPOLOGY,
 )
-from src.datagen.meshing.optimizer.common.space import KNOBS, space_json
+from src.datagen.meshing.optimizer.common.space import KNOBS, Optim_space_json
 from src.datagen.utils.tools import find_tool
 
 # What the run code reads from the row; the rest describes the code or the executable, so overriding it
@@ -29,11 +29,11 @@ from src.datagen.utils.tools import find_tool
 OVERRIDABLE = (
     "gate_skew_max", "gate_ortho_min", "gate_jac_min", "gate_ar_max", "gate_size_ratio_max",
     "gate_geo_dev_max", "golden_jmax", "jmax_bump_step", "jmax_bump_max", "rung2_budget", "rung3_budget",
-    "max_bb_eval_factor", "nomad_seed",
+    "rung3_patience", "rung3_min_gain", "max_bb_eval_factor", "nomad_seed",
 )
 
 
-def build_settings(**overrides) -> dict:
+def Optim_build_settings(**overrides) -> dict:
     """
     The settings row, every column but `created_at` and `label` (neither is hashed), `settings_id` last:
     the first 16 hex of the SHA-256 over the rest.
@@ -61,7 +61,7 @@ def build_settings(**overrides) -> dict:
         "design_re": DESIGN_RE,
         "shape_version": SHAPE_VERSION,
         "sampler_version": SAMPLER_VERSION,
-        "mesher_sha256": mesher_sha256(),
+        "mesher_sha256": Optim_mesher_sha256(),
         "dx_max": DX_MAX,
         "theta_max_deg": THETA_MAX_DEG,
         "precheck_margin": PRECHECK_MARGIN,
@@ -78,11 +78,13 @@ def build_settings(**overrides) -> dict:
         "jmax_bump_max": JMAX_BUMP_MAX,
         "rung2_budget": RUNG2_BUDGET,
         "rung3_budget": RUNG3_BUDGET,
+        "rung3_patience": RUNG3_PATIENCE,
+        "rung3_min_gain": RUNG3_MIN_GAIN,
         "max_bb_eval_factor": MAX_BB_EVAL_FACTOR,
         "nomad_seed": NOMAD_SEED,
         "nstar_json": json.dumps({"le_grid": NSTAR_LE_GRID, "cw_grid": NSTAR_CW_GRID}, sort_keys=True),
-        "search_space_json": space_json(),
-        "pinned_json": json.dumps(pinned(), sort_keys=True),
+        "search_space_json": Optim_space_json(),
+        "pinned_json": json.dumps(Optim_pinned(), sort_keys=True),
     }
     for key, value in overrides.items():
         if isinstance(values[key], int):
@@ -95,7 +97,7 @@ def build_settings(**overrides) -> dict:
     return values
 
 
-def mesher_sha256() -> str:
+def Optim_mesher_sha256() -> str:
     """
     The SHA-256 of the c2d executable `find_tool` resolves, so a rebuilt exe makes new settings.
 
@@ -109,7 +111,7 @@ def mesher_sha256() -> str:
         return hashlib.sha256(f.read()).hexdigest()
 
 
-def pinned() -> dict:
+def Optim_pinned() -> dict:
     """Every C2D_MeshingConfig field the search leaves alone: `PINNED`'s value, else the config's default."""
     searched = {k.name for k in KNOBS}
     defaults = C2D_MeshingConfig()
@@ -117,7 +119,7 @@ def pinned() -> dict:
             for name in C2D_MeshingConfig.model_fields if name not in searched}
 
 
-def config_schema_fp() -> str:
+def Optim_config_schema_fp() -> str:
     """The first 16 hex of the SHA-256 of C2D_MeshingConfig's JSON schema: moves with any field, bound or default."""
     schema = json.dumps(C2D_MeshingConfig.model_json_schema(), sort_keys=True)
     return hashlib.sha256(schema.encode()).hexdigest()[:16]

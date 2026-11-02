@@ -2,22 +2,24 @@
 The mesh study's per-airfoil ladder: n*, the golden run, then up the rungs until a config passes or the
 last rung is spent. The campaign runs one ladder at a time per worker.
 
-    run_ladder     one airfoil's study, reported as events
-    LadderOutcome  how it ended, with the error that ended it, for the caller to act on
-    record         one event written to the run store
+    Optim_run_ladder  one airfoil's study, reported as events
+    LadderOutcome     how it ended, with the error that ended it, for the caller to act on
+    Optim_record      one event written to the run store
+    Ladder            the climb and its steps; a subclass climbs differently (the calibration's), reported alike
 
 The golden run meshes n*'s knobs at golden_jmax with c2d's smoothing defaults, and its verdict routes it:
     passed                      done
     size_ratio alone            rung 1 (jmax_bump): jmax up a step at a time, each bump routed the same
-                                way; still size_ratio after the last, rung 3 (smoothing can't move the
-                                radial spacing)
+                                way; still size_ratio after the last, rung 3 (smoothing alone moves the
+                                size ratio only ~1%; rung 3 searches it with jmax)
     shape gates alone           rung 2 (smoothing): NOMAD over the smoothing knobs to the first pass, the
                                 rest of the routed config fixed; no pass, rung 3
-    anything else, or no mesh   rung 3 (mads): NOMAD over every knob for the fewest nodes, with dominance
+    anything else, or no mesh   rung 3 (mads): NOMAD over every knob for the fewest nodes, with dominance,
+                                until its best stalls (the settings' plateau) or its budget is spent
 A rejected or invalid golden or bump config is a bug (n*'s knobs always sample) and aborts the ladder.
 
 A ladder never writes the store. It reports ("ladder_start", row) first, ("run", row) per new run and
-("ladder_end", ladder_id, fields) last, and the campaign's one writer applies each with `record`: the
+("ladder_end", ladder_id, fields) last, and the campaign's one writer applies each with `Optim_record`: the
 ladder's row is inserted at its start and completed at its end, and each run is one row.
 
 An error ends the ladder as aborted, its traceback recorded, and is handed to the caller in the outcome,
@@ -33,12 +35,12 @@ from src.datagen.geometry.common.schemas import ShapeRecord
 from src.datagen.meshing.c2d.schemas import C2D_MeshingConfig
 from src.datagen.meshing.common.schemas import MeshBackend, MeshTopology
 from src.datagen.meshing.optimizer.common.constants import SMOOTHING_DEFAULTS
-from src.datagen.meshing.optimizer.common.space import knobs_for
-from src.datagen.meshing.optimizer.evaluate.executor import RunContext, RunExecutor, nomad_outputs
-from src.datagen.meshing.optimizer.evaluate.sampling import build_study_contour
-from src.datagen.meshing.optimizer.manifest.store import RunStore, utc_now
-from src.datagen.meshing.optimizer.search.mads import RungResult, run_mads
-from src.datagen.meshing.optimizer.search.nstar import NStarResult, n_star_search
+from src.datagen.meshing.optimizer.common.space import Optim_knobs_for
+from src.datagen.meshing.optimizer.evaluate.executor import Optim_nomad_outputs, RunContext, RunExecutor
+from src.datagen.meshing.optimizer.evaluate.sampling import Optim_build_study_contour
+from src.datagen.meshing.optimizer.manifest.store import Optim_utc_now, RunStore
+from src.datagen.meshing.optimizer.search.mads import Optim_run_mads, RungResult
+from src.datagen.meshing.optimizer.search.nstar import NStarResult, Optim_n_star_search
 
 # The gates smoothing can fix; a run failing only these goes to rung 2
 SHAPE_GATES = frozenset({"inverted", "skew", "ortho", "jac"})
@@ -51,9 +53,11 @@ class LadderOutcome(NamedTuple):
     route: list[str]                  # the stages entered, e.g. ['golden', 'jmax_bump']
     best_row: Optional[dict]          # the fewest-node pass
     error: Optional[BaseException]    # what aborted it, for the caller to act on
+    notes: Optional[dict] = None      # what a Ladder subclass measured beyond its rows
 
 
-def run_ladder(name: str, shape: ShapeRecord, ctx: RunContext, emit: Callable[[tuple], None]) -> LadderOutcome:
+def Optim_run_ladder(name: str, shape: ShapeRecord, ctx: RunContext, emit: Callable[[tuple], None],
+                     ladder_type: Optional[type] = None) -> LadderOutcome:
     """
     One airfoil's study: n*, the golden run, and the rungs its verdict routes it up.
 
@@ -62,6 +66,7 @@ def run_ladder(name: str, shape: ShapeRecord, ctx: RunContext, emit: Callable[[t
         shape (ShapeRecord): Its stored shape under the settings' shape version
         ctx (RunContext): The batch's context; the ladder gets its own executor, so its own cache
         emit (Callable[[tuple], None]): Takes each event, in order
+        ladder_type (type | None): A `Ladder` subclass with its own `climb` (the calibration's); `Ladder` if None
 
     Returns:
         LadderOutcome: How it ended; an error that aborted it is in `error`, not raised
@@ -69,7 +74,7 @@ def run_ladder(name: str, shape: ShapeRecord, ctx: RunContext, emit: Callable[[t
     Raises:
         BaseException: KeyboardInterrupt (or another non-Exception), once the aborted ladder is reported
     """
-    ladder = _Ladder(name, shape, ctx, emit)
+    ladder = (ladder_type or Ladder)(name, shape, ctx, emit)
     emit(("ladder_start", ladder.start_row()))
     t0 = time.perf_counter()
     error = None
@@ -78,14 +83,15 @@ def run_ladder(name: str, shape: ShapeRecord, ctx: RunContext, emit: Callable[[t
     except BaseException as e:  # the caller decides what it means
         error = e
     fields = ladder.end_fields(error)
-    fields.update(wall_s=time.perf_counter() - t0, finished_at=utc_now())
+    fields.update(wall_s=time.perf_counter() - t0, finished_at=Optim_utc_now())
     emit(("ladder_end", ladder.ladder_id, fields))
     if error is not None and not isinstance(error, Exception):
         raise error
-    return LadderOutcome(ladder.ladder_id, fields["status"], list(ladder.route), ladder.best, error)
+    return LadderOutcome(ladder.ladder_id, fields["status"], list(ladder.route), ladder.best, error,
+                         ladder.notes or None)
 
 
-def record(store: RunStore, event: tuple) -> None:
+def Optim_record(store: RunStore, event: tuple) -> None:
     """
     Writes one ladder event to the run store: a start inserts the ladder's row, a run its own row, and the
     end completes the ladder's row and repoints the airfoil's best run, together.
@@ -113,8 +119,11 @@ def record(store: RunStore, event: tuple) -> None:
         raise ValueError(f"unknown ladder event {kind!r}")
 
 
-class _Ladder:
-    """One ladder's state as it climbs: its new rows, route, best pass and NOMAD searches."""
+class Ladder:
+    """
+    One ladder's state as it climbs: its new rows, route, best pass and NOMAD searches. `climb` is the
+    ladder's flow; a subclass replaces it, reusing the steps below, and `Optim_run_ladder` reports it the same way.
+    """
 
     def __init__(self, name: str, shape: ShapeRecord, ctx: RunContext, emit: Callable[[tuple], None]):
         self.ladder_id = str(uuid.uuid4())
@@ -128,25 +137,20 @@ class _Ladder:
         self.route: list[str] = []
         self.rows: list[dict] = []
         self.nomad: dict = {}
+        self.notes: dict = {}
 
     def start_row(self) -> dict:
         ctx = self.ctx
         return dict(ladder_id=self.ladder_id, settings_id=self.settings["settings_id"], batch_id=ctx.batch_id,
                     geometry_id=self.shape.geometry_id, airfoil_name=self.name, status="running", host=ctx.host,
-                    git_commit=ctx.git_commit, git_dirty=ctx.git_dirty, started_at=utc_now())
+                    git_commit=ctx.git_commit, git_dirty=ctx.git_dirty, started_at=Optim_utc_now())
 
     def climb(self) -> None:
         s = self.settings
-        self.contour = build_study_contour(self.shape, MeshBackend(s["backend"]), MeshTopology(s["topology"]),
-                                           gap=s["te_gap"])
-        self.nstar = n_star_search(self.contour, s)
-        if self.nstar.n is None:
-            self.route.append("nstar")  # no surface sampling to mesh: the ladder fails
+        if not self._n_star():
             return
-
-        golden_knobs = knobs = {**self.nstar.knobs, "jmax": s["golden_jmax"], **SMOOTHING_DEFAULTS}
-        self.route.append("golden")
-        row = self.golden = self._run(knobs, "golden", 0)
+        golden_knobs = knobs = self._golden()
+        row = self.golden
         step = _route(row)
         if step == "jmax_bump":
             self.route.append(step)
@@ -157,7 +161,7 @@ class _Ladder:
                 if step != "jmax_bump":
                     break
             else:
-                step = "mads"  # still size_ratio: smoothing can't move the radial spacing
+                step = "mads"  # still size_ratio: smoothing alone moves it only ~1%
         if step == "smoothing":
             self.route.append(step)
             fixed = {k: v for k, v in knobs.items() if k not in SMOOTHING_DEFAULTS}
@@ -165,12 +169,35 @@ class _Ladder:
                                   objective="violation", stop_at_first_pass=True)
             step = "done" if result.best_row is not None else "mads"
         if step == "mads":
-            self.route.append(step)
-            x0s = [golden_knobs]
-            if nomad_outputs(self.golden, "nodes", s) is None:  # NOMAD can't evaluate the golden run
-                x0s.append(_config_defaults())
-            self._search(3, {}, x0s, parent=row, budget=s["rung3_budget"], objective="nodes", dominance=True,
-                         best_so_far=self.best)
+            self._full_search(golden_knobs, parent=row, plateau=(s["rung3_patience"], s["rung3_min_gain"]))
+
+    def _n_star(self) -> bool:
+        """The study contour and n*; False when n* accepted nothing, which fails the ladder."""
+        s = self.settings
+        self.contour = Optim_build_study_contour(self.shape, MeshBackend(s["backend"]), MeshTopology(s["topology"]),
+                                                 gap=s["te_gap"])
+        self.nstar = Optim_n_star_search(self.contour, s)
+        if self.nstar.n is None:
+            self.route.append("nstar")  # no surface sampling to mesh
+            return False
+        return True
+
+    def _golden(self) -> dict:
+        """The golden run: n*'s knobs at golden_jmax with the smoothing defaults. Returns its knobs."""
+        knobs = {**self.nstar.knobs, "jmax": self.settings["golden_jmax"], **SMOOTHING_DEFAULTS}
+        self.route.append("golden")
+        self.golden = self._run(knobs, "golden", 0)
+        return knobs
+
+    def _full_search(self, golden_knobs: dict, parent: dict, plateau: Optional[tuple[int, float]]) -> RungResult:
+        """Rung 3 from the golden config, with c2d's defaults as a second start when NOMAD can't evaluate it."""
+        s = self.settings
+        self.route.append("mads")
+        x0s = [golden_knobs]
+        if Optim_nomad_outputs(self.golden, "nodes", s) is None:
+            x0s.append(_config_defaults())
+        return self._search(3, {}, x0s, parent=parent, budget=s["rung3_budget"], objective="nodes", dominance=True,
+                            best_so_far=self.best, plateau=plateau)
 
     def end_fields(self, error: Optional[BaseException]) -> dict:
         """The ladder row's outcome columns, whatever stage it reached."""
@@ -212,8 +239,9 @@ class _Ladder:
     def _search(self, rung: int, fixed: dict, x0s: list[dict], parent: dict, budget: int, **kw) -> RungResult:
         """A NOMAD rung; its runs follow the golden or bump run whose verdict sent the ladder there."""
         name = self.route[-1]
-        result = run_mads(self.executor, self._shared(name, parent), fixed, knobs_for(rung), x0s, budget=budget, **kw)
-        self.nomad[name] = dict(run_flag=result.run_flag, stop_reason=result.stop_reason,
+        result = Optim_run_mads(self.executor, self._shared(name, parent), fixed, Optim_knobs_for(rung), x0s,
+                                budget=budget, **kw)
+        self.nomad[name] = dict(run_flag=result.run_flag, stop_reason=result.stop_reason, ended=result.ended,
                                 seed=self.settings["nomad_seed"], budget=budget, n_calls=result.n_calls,
                                 mesher_runs=result.mesher_runs, x0s=x0s, start=result.start)
         self._keep(result.best_row)
@@ -245,4 +273,4 @@ def _route(row: dict) -> str:
 def _config_defaults() -> dict:
     """C2D_MeshingConfig's own defaults for rung 3's knobs: the second start when NOMAD can't take the golden run."""
     defaults = C2D_MeshingConfig()
-    return {k.name: getattr(defaults, k.name) for k in knobs_for(3)}
+    return {k.name: getattr(defaults, k.name) for k in Optim_knobs_for(3)}

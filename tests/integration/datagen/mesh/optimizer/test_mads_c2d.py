@@ -14,12 +14,12 @@ from src.datagen.geometry.common.constants import DX_MAX
 from src.datagen.meshing.c2d.run import C2D_find_exe
 from src.datagen.meshing.common.schemas import MeshBackend, MeshTopology
 from src.datagen.meshing.optimizer.common.constants import SMOOTHING_DEFAULTS
-from src.datagen.meshing.optimizer.common.settings import build_settings
-from src.datagen.meshing.optimizer.common.space import knobs_for
+from src.datagen.meshing.optimizer.common.settings import Optim_build_settings
+from src.datagen.meshing.optimizer.common.space import Optim_knobs_for
 from src.datagen.meshing.optimizer.evaluate.executor import RunContext, RunExecutor
-from src.datagen.meshing.optimizer.evaluate.sampling import build_study_contour
+from src.datagen.meshing.optimizer.evaluate.sampling import Optim_build_study_contour
 from src.datagen.meshing.optimizer.manifest.store import RunStore
-from src.datagen.meshing.optimizer.search.mads import run_mads
+from src.datagen.meshing.optimizer.search.mads import Optim_run_mads
 from tests.geometry_shapes import stored_shape
 
 _needs_c2d = pytest.mark.skipif(C2D_find_exe() is None, reason="c2d executable not built in this environment")
@@ -30,14 +30,15 @@ BASE = {"dx_mid": DX_MAX, "le_ratio": 0.025, "te_ratio": 1.0, "cluster_width": 0
 # region Step 1
 @_needs_c2d
 def test_a_smoothing_search_spends_its_budget(tmp_path):
-    settings = build_settings(gate_skew_max=0.2)
+    settings = Optim_build_settings(gate_skew_max=0.2)
     rows = []
     executor = RunExecutor(RunContext.create(settings, tmp_path / "work"), rows.append)
-    contour = build_study_contour(stored_shape("naca0012"), MeshBackend.C2D, MeshTopology.OGRD)
+    contour = Optim_build_study_contour(stored_shape("naca0012"), MeshBackend.C2D, MeshTopology.OGRD)
     shared = dict(ladder_id=None, geometry_id="naca0012", airfoil_name="naca0012", contour=contour,
                   rung="smoothing", parent_run_id=None)
-    result = run_mads(executor, shared, BASE, knobs_for(2), [SMOOTHING_DEFAULTS], budget=3, objective="violation",
-                      stop_at_first_pass=True)
+    result = Optim_run_mads(executor, shared, BASE, Optim_knobs_for(2), [SMOOTHING_DEFAULTS], budget=3,
+                            objective="violation",
+                            stop_at_first_pass=True)
 
     assert rows == result.rows  # every new row emitted, in order
     start = rows[0]
