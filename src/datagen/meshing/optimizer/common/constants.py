@@ -111,4 +111,18 @@ PINNED = {"slvr": "HYPR", "topo": "OGRD", "radi": 20.0, "ypls": 0.7, "cfrc": 0.5
 # Pool size on the 6900HS: one serial ladder per worker
 WORKERS = 6
 
+# A worker that sends nothing for this long is killed as hung. Above c2d's own 300 s timeout, with room for
+# the processing after it
+WATCHDOG_S = 600
+
+# Each slot's memory cap [MB], worker and c2d together: measured worst case at CELL_CEILING ~1350 (0.5 GB
+# imports, 0.97 KB per cell, c2d's 66 B per surface point squared)
+SLOT_MEMORY_CAP_MB = 2048
+
+# Aborts in a row that stop a batch: the pool's size, but never fewer than this
+ABORT_STREAK_MIN = 3
+
+# How long a write waits out another program holding the run store (a viewer mid-read)
+DB_LOCK_WAIT_S = 60
+
 #endregion

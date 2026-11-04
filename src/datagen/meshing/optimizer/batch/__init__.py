@@ -1,1 +1,2 @@
-"""Every airfoil at once: a pool running one task per airfoil, and the entry points on it (the calibration)."""
+"""Every airfoil at once: isolated worker slots running one task per airfoil, and the entry points on them (the
+calibration, the campaign)."""

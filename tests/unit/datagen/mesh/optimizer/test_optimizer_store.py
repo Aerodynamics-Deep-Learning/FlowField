@@ -19,6 +19,7 @@ Step 3: Ensure writes take exactly the tables' columns and keep the links whole
     - test_foreign_keys_hold
     - test_a_ladder_starts_and_finishes
     - test_a_ladders_runs_come_back_in_their_order
+    - test_a_batchs_ladders_come_back_in_their_order
 Step 4: Ensure `best` only ever points at the right passing run
     - test_triggers_refuse_a_best_that_does_not_pass
     - test_update_best_picks_fewest_nodes_then_cheapest_rung_then_earliest
@@ -32,15 +33,21 @@ Step 6: Ensure the helpers record what they claim
     - test_utc_now_has_milliseconds
     - test_git_state
     - test_git_state_outside_git
+Step 7: Ensure a write waits out another program holding the file, warning as it starts, and gives up cleanly
+    - test_a_write_waits_out_a_lock_and_warns
+    - test_a_lock_held_past_the_wait_fails_with_nothing_written
 
 No mesher or c2d needed: stores live in `tmp_path`, settings come from a stand-in exe.
 """
 
 import hashlib
+import logging
 import re
 import shutil
 import sqlite3
 import subprocess
+import threading
+import time
 import uuid
 
 import numpy as np
@@ -51,7 +58,7 @@ from src.datagen.meshing.common.schemas import MeshGeoDeviationSummary, MeshQual
 from src.datagen.meshing.optimizer.common.settings import Optim_build_settings
 from src.datagen.meshing.optimizer.manifest import store as store_module
 from src.datagen.meshing.optimizer.manifest.store import (
-    RUN_COLUMNS, Optim_git_state, Optim_su2_sha256, Optim_utc_now, RunStore,
+    RUN_COLUMNS, Optim_git_state, Optim_su2_sha256, Optim_utc_now, RunStore, StoreLocked,
 )
 
 # SampleReport fields a run does not store, and why
@@ -249,6 +256,16 @@ def test_a_ladders_runs_come_back_in_their_order(store, settings):
     runs = store.runs(first["ladder_id"])
     assert [r["rung"] for r in runs] == ["golden", "mads", "jmax_bump"] and tuple(runs[0]) == tuple(RUN_COLUMNS)
     assert len(store.runs(second["ladder_id"])) == 1 and store.runs("unknown") == []
+
+
+def test_a_batchs_ladders_come_back_in_their_order(store, settings):
+    ladders = [_ladder(settings, batch_id="b2", geometry_id=g) for g in ("z", "a", "m")]
+    for ladder in ladders:
+        store.start_ladder(ladder)
+    store.start_ladder(_ladder(settings, batch_id="b3"))
+
+    assert [r["geometry_id"] for r in store.ladders("b2")] == ["z", "a", "m"]  # started order, not name order
+    assert store.ladders("unknown") == []
 # endregion
 
 
@@ -380,4 +397,48 @@ def test_git_state_outside_git(monkeypatch):
     monkeypatch.setattr(subprocess, "run", no_git)
 
     assert Optim_git_state() == ("unknown", None)
+# endregion
+
+
+# region Step 7
+def _holder(store, how: str) -> sqlite3.Connection:
+    """Another program on the file: mid-write (its write lock), or mid-read (a shared lock, which a commit waits on)."""
+    conn = sqlite3.connect(store.path, isolation_level=None, check_same_thread=False)
+    if how == "writer":
+        conn.execute("BEGIN IMMEDIATE")
+    else:
+        conn.execute("BEGIN")
+        conn.execute("SELECT COUNT(*) FROM runs").fetchone()
+    return conn
+
+
+@pytest.mark.parametrize("how", ["writer", "reader"])
+def test_a_write_waits_out_a_lock_and_warns(store, settings, caplog, how):
+    holder = _holder(store, how)
+    release = threading.Timer(2.5, lambda: holder.execute("COMMIT"))
+    release.start()
+    t0 = time.monotonic()
+    with caplog.at_level(logging.WARNING, logger=store_module.__name__):
+        store.insert_run(_run(settings, run_id="waited"))
+    release.join()
+    holder.close()
+    messages = [r.getMessage() for r in caplog.records]
+
+    assert time.monotonic() - t0 >= 2 and store.run("waited") is not None
+    assert "is locked by another program (a viewer?): waiting up to 60 s" in messages[0]
+    assert "written after waiting" in messages[-1]
+
+
+def test_a_lock_held_past_the_wait_fails_with_nothing_written(store, settings, monkeypatch):
+    monkeypatch.setattr(store_module, "DB_LOCK_WAIT_S", 1)
+    holder = _holder(store, "reader")  # lets the write begin, then holds its commit
+
+    with pytest.raises(StoreLocked, match="stayed locked for 1 s"):
+        store.insert_run(_run(settings, run_id="lost"))
+    holder.execute("COMMIT")
+    holder.close()
+
+    assert not store._conn.in_transaction and store.run("lost") is None  # rolled back whole
+    store.insert_run(_run(settings, run_id="later"))  # and the store works on
+    assert store.run("later") is not None
 # endregion

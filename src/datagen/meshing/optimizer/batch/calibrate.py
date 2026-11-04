@@ -28,6 +28,7 @@ import logging
 import math
 import random
 import statistics
+import sys
 import tempfile
 import time
 from functools import partial
@@ -36,6 +37,7 @@ from typing import NamedTuple, Optional, Sequence
 
 from src.datagen.geometry.common.constants import DX_MAX
 from src.datagen.meshing.optimizer.batch.runner import Optim_load_shapes, Optim_run_airfoils
+from src.datagen.meshing.optimizer.batch.slots import Optim_relaunch_for_slots
 from src.datagen.meshing.optimizer.common.constants import (
     CLUSTER_WIDTH_MIN, GOLDEN_JMAX, JMAX_MAX, JMAX_MIN, SMOOTHING_DEFAULTS, WORKERS,
 )
@@ -610,6 +612,8 @@ def _yes(v) -> str:
 
 
 def main(argv=None) -> None:
+    argv = sys.argv[1:] if argv is None else list(argv)
+    Optim_relaunch_for_slots("src.datagen.meshing.optimizer.batch.calibrate", argv)
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--rungs", default="1,2,3", help="rungs to calibrate, of 1,2,3 (default all)")
     parser.add_argument("--airfoils", help="comma-separated names for every rung (default: each rung's own)")
@@ -635,6 +639,7 @@ def main(argv=None) -> None:
     db, report = out / f"{stamp}.sqlite", out / f"{stamp}.txt"
     if db.exists():
         parser.error(f"{db} already holds a calibration; pass another --out")
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s", datefmt="%H:%M:%S")
 
     out.mkdir(parents=True, exist_ok=True)
     with RunStore.open(db) as store:

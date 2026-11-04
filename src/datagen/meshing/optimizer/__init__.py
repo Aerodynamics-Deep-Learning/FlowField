@@ -3,7 +3,11 @@ import importlib
 _EXPORTS = {
     # Every airfoil
     "Optim_load_shapes": "batch.runner",            # the stored shapes to study, by name, from the geometry manifest
-    "Optim_run_airfoils": "batch.runner",           # one task per airfoil over a process pool, one store writer
+    "Optim_run_airfoils": "batch.runner",           # one task per airfoil over isolated worker slots, one store writer
+    "BatchStopped": "batch.runner",           # a batch ended early: a setup error, or aborts in a row
+    "Optim_slot_platform": "batch.slots",           # this machine's slots: job objects on Windows, cgroups on Linux
+    "Optim_run_campaign": "batch.campaign",         # the ladder over every airfoil not finished under the constants
+    "Optim_campaign_summary": "batch.campaign",     # a campaign's outcome, read off the run store
     "Optim_calibrate": "batch.calibrate",           # the ladder's calibration: jmax*, rung 3's plateau, rung 2's budget
     "Optim_format_report": "batch.calibrate",       # the calibration's report, read off its run store
     # One airfoil

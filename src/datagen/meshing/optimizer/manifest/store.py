@@ -10,14 +10,17 @@ No mesh file is kept: a run's `config_json` re-meshes it, and `Optim_su2_sha256`
 
 Schema changes land as numbered migrations in `_MIGRATIONS`, tracked by `PRAGMA user_version`, as in the
 geometry manifest. The file is committed, so it runs in rollback-journal mode. One process writes, and
-every write commits at once, so a crash loses at most the row in flight. Timestamps are ISO-8601 UTC
-with milliseconds (`Optim_utc_now`).
+every write commits at once, so a crash loses at most the row in flight. A write waits out another program
+holding the file for up to `DB_LOCK_WAIT_S`, warning as it starts to. Timestamps are ISO-8601 UTC with
+milliseconds (`Optim_utc_now`).
 """
 
 import hashlib
 import json
+import logging
 import sqlite3
 import subprocess
+import time
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -26,7 +29,14 @@ from typing import Optional
 import numpy as np
 
 from src.datagen.geometry.common.paths import REPO_ROOT
+from src.datagen.meshing.optimizer.common.constants import DB_LOCK_WAIT_S
 from src.datagen.meshing.optimizer.common.paths import MESHING_DB
+
+logger = logging.getLogger(__name__)
+
+# SQLite's own wait on each try, before the store's longer one, with its warning, takes over
+_BUSY_S = 1.0
+_RETRY_S = 0.2
 
 # Never edit a released migration; append a new one
 _MIGRATIONS = [
@@ -169,6 +179,10 @@ _BEST_SQL = """
 
 #region main
 
+class StoreLocked(RuntimeError):
+    """Another program held the run store past `DB_LOCK_WAIT_S`; nothing of the write was kept."""
+
+
 class RunStore:
     """An open run store. Use as a context manager, or `close()` it."""
 
@@ -207,7 +221,7 @@ class RunStore:
                                    f"open it for writing once to migrate it")
             return cls(conn, path)
         path.parent.mkdir(parents=True, exist_ok=True)
-        conn = sqlite3.connect(path, isolation_level=None)  # transactions are explicit
+        conn = sqlite3.connect(path, isolation_level=None, timeout=_BUSY_S)  # transactions are explicit
         conn.execute("PRAGMA foreign_keys = ON")
         conn.execute("PRAGMA journal_mode = DELETE")
         try:
@@ -228,17 +242,45 @@ class RunStore:
 
     @contextmanager
     def transaction(self):
-        """All writes inside commit together or not at all. Nests: an inner block joins the outer one."""
+        """
+        All writes inside commit together or not at all. Nests: an inner block joins the outer one.
+
+        Raises:
+            StoreLocked: If another program holds the file past `DB_LOCK_WAIT_S`, the transaction rolled back
+        """
         if self._conn.in_transaction:
             yield
             return
-        self._conn.execute("BEGIN")
+        self._wait_out("BEGIN IMMEDIATE")  # the write lock now, not at the first write
         try:
             yield
         except BaseException:
             self._conn.execute("ROLLBACK")
             raise
-        self._conn.execute("COMMIT")
+        self._wait_out("COMMIT")
+
+    def _wait_out(self, sql: str) -> None:
+        """Runs `sql`, retrying while another program holds the file, for up to `DB_LOCK_WAIT_S`."""
+        t0 = None
+        while True:
+            try:
+                self._conn.execute(sql)
+            except sqlite3.OperationalError as e:
+                if "locked" not in str(e) and "busy" not in str(e):
+                    raise
+                if t0 is None:
+                    t0 = time.monotonic()
+                    logger.warning("%s is locked by another program (a viewer?): waiting up to %d s",
+                                   self.path, DB_LOCK_WAIT_S)
+                elif time.monotonic() - t0 >= DB_LOCK_WAIT_S:
+                    if self._conn.in_transaction:
+                        self._conn.execute("ROLLBACK")
+                    raise StoreLocked(f"{self.path} stayed locked for {DB_LOCK_WAIT_S} s") from e
+                time.sleep(_RETRY_S)
+                continue
+            if t0 is not None:
+                logger.warning("%s: written after waiting %.0f s", self.path.name, time.monotonic() - t0)
+            return
 
 #endregion
 
@@ -351,9 +393,11 @@ class RunStore:
 
     def runs(self, ladder_id: str) -> list[dict]:
         """A ladder's runs in the order it emitted them, as `run` returns each."""
-        cur = self._conn.execute("SELECT * FROM runs WHERE ladder_id = ? ORDER BY rowid", (ladder_id,))
-        names = [d[0] for d in cur.description]
-        return [dict(zip(names, row)) for row in cur]
+        return self._all("SELECT * FROM runs WHERE ladder_id = ? ORDER BY rowid", ladder_id)
+
+    def ladders(self, batch_id: str) -> list[dict]:
+        """A batch's ladders in the order they started, as `ladder` returns each."""
+        return self._all("SELECT * FROM ladders WHERE batch_id = ? ORDER BY rowid", batch_id)
 
     def best(self, geometry_id: str, settings_id: str) -> Optional[str]:
         """The airfoil's best run_id under these settings, or None."""
@@ -382,6 +426,11 @@ class RunStore:
         cur = self._conn.execute(sql, params)
         row = cur.fetchone()
         return None if row is None else dict(zip((d[0] for d in cur.description), row))
+
+    def _all(self, sql: str, *params) -> list[dict]:
+        cur = self._conn.execute(sql, params)
+        names = [d[0] for d in cur.description]
+        return [dict(zip(names, row)) for row in cur]
 
 
 def _migrate(conn: sqlite3.Connection, path: Path) -> None:
