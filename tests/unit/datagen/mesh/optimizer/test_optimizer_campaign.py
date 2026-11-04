@@ -24,9 +24,9 @@ from src.datagen.geometry.common.paths import Geom_paths
 from src.datagen.meshing.optimizer.batch.campaign import Optim_campaign_summary, Optim_run_campaign, main
 from src.datagen.meshing.optimizer.batch.runner import BatchStopped
 from src.datagen.meshing.optimizer.common.settings import Optim_build_settings
-from src.datagen.meshing.optimizer.evaluate.executor import StudySetupError
+from src.datagen.meshing.optimizer.evaluate.context import StudySetupError
 from src.datagen.meshing.optimizer.manifest.store import Optim_utc_now, RunStore
-from src.datagen.meshing.optimizer.search.ladder import LadderOutcome
+from src.datagen.meshing.optimizer.search.events import LadderOutcome
 
 _NODES = {"naca0012": 58_000, "naca4412": 61_000, "e376": 66_000}
 _ABORTING: set = set()

@@ -26,7 +26,7 @@ from src.datagen.meshing.optimizer.batch.runner import BatchStopped, Optim_load_
 from src.datagen.meshing.optimizer.batch.slots import Optim_relaunch_for_slots
 from src.datagen.meshing.optimizer.common.constants import WORKERS
 from src.datagen.meshing.optimizer.common.settings import Optim_build_settings
-from src.datagen.meshing.optimizer.evaluate.executor import RunContext
+from src.datagen.meshing.optimizer.evaluate.context import RunContext
 from src.datagen.meshing.optimizer.manifest.store import RunStore
 from src.datagen.meshing.optimizer.search.ladder import Optim_run_ladder
 

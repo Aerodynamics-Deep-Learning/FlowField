@@ -59,9 +59,8 @@ from src.datagen.meshing.common.schemas import (
 from src.datagen.meshing.optimizer.common.constants import PINNED, SMOOTHING_DEFAULTS
 from src.datagen.meshing.optimizer.common.settings import Optim_build_settings, Optim_config_schema_fp
 from src.datagen.meshing.optimizer.evaluate import executor as executor_module
-from src.datagen.meshing.optimizer.evaluate.executor import (
-    Optim_failed_gates, Optim_nomad_outputs, RunContext, RunExecutor, StudySetupError,
-)
+from src.datagen.meshing.optimizer.evaluate.context import RunContext, StudySetupError
+from src.datagen.meshing.optimizer.evaluate.executor import Optim_failed_gates, Optim_nomad_outputs, RunExecutor
 from src.datagen.meshing.optimizer.evaluate.sampling import Optim_build_study_contour
 from src.datagen.meshing.optimizer.manifest.store import RUN_COLUMNS, RunStore
 from tests.geometry_shapes import stored_shape

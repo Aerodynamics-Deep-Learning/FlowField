@@ -39,10 +39,12 @@ from src.datagen.geometry.common.constants import DX_MAX
 from src.datagen.geometry.sample.contour import ContourError
 from src.datagen.meshing.optimizer.common.constants import SMOOTHING_DEFAULTS
 from src.datagen.meshing.optimizer.common.settings import Optim_build_settings
-from src.datagen.meshing.optimizer.evaluate.executor import Optim_failed_gates, RunContext, RunResult, StudySetupError
+from src.datagen.meshing.optimizer.evaluate.context import RunContext, StudySetupError
+from src.datagen.meshing.optimizer.evaluate.executor import Optim_failed_gates, RunResult
 from src.datagen.meshing.optimizer.manifest.store import RunStore
 from src.datagen.meshing.optimizer.search import ladder
-from src.datagen.meshing.optimizer.search.ladder import LadderOutcome, Optim_record, Optim_run_ladder
+from src.datagen.meshing.optimizer.search.events import LadderOutcome, Optim_record
+from src.datagen.meshing.optimizer.search.ladder import Optim_run_ladder
 from src.datagen.meshing.optimizer.search.nstar import NStarResult
 from tests.geometry_shapes import stored_shape
 

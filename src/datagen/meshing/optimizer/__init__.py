@@ -12,18 +12,18 @@ _EXPORTS = {
     "Optim_format_report": "batch.calibrate",       # the calibration's report, read off its run store
     # One airfoil
     "Optim_run_ladder": "search.ladder",            # n*, the golden run and the rungs it routes to, reported as events
-    "LadderOutcome": "search.ladder",         # how a ladder ended, its error handed up rather than raised
+    "LadderOutcome": "search.events",         # how a ladder ended, its error handed up rather than raised
     "Ladder": "search.ladder",                # the climb's steps, for a ladder that climbs differently
-    "Optim_record": "search.ladder",                # one ladder event written to the run store
+    "Optim_record": "search.events",                # one ladder event written to the run store
     "Optim_n_star_search": "search.nstar",          # the fewest surface points the sampler accepts
     "NStarResult": "search.nstar",
     "Optim_run_mads": "search.mads",                # one NOMAD search over a rung's knobs, to its budget or plateau
     "RungResult": "search.mads",
     # One config
     "RunExecutor": "evaluate.executor",       # one config sampled, meshed and judged into one run row
-    "RunContext": "evaluate.executor",        # what every run of a batch shares: settings, host, git state
+    "RunContext": "evaluate.context",         # what every run of a batch shares: settings, host, git state
     "RunResult": "evaluate.executor",
-    "StudySetupError": "evaluate.executor",   # c2d missing or the input refused: a setup to fix, not a config
+    "StudySetupError": "evaluate.context",    # c2d missing or the input refused: a setup to fix, not a config
     "Optim_build_study_contour": "evaluate.sampling",  # a stored shape with the TE its mesher needs
     "Optim_sample_for_mesher": "evaluate.sampling",    # one config's surface points as the mesher's input
     # The study's definition and record

@@ -11,7 +11,8 @@ Step 3: Ensure a study-style run writes no .vtk and reports where its worst cell
     - test_c2d_ogrid_reports_distributions_without_a_vtk
 
 c2d in BUFF mode and the gmsh O-mesh keep the input points as their wall nodes, so the wall must be the
-sample: to the 8 decimals c2d's `.dat` carries, and exactly for gmsh.
+sample: to the 8 decimals c2d's `.dat` carries, and exactly for gmsh. Nothing here reads a `.vtk`, so none is
+written.
 """
 
 import numpy as np
@@ -33,11 +34,11 @@ _needs_c2d = pytest.mark.skipif(C2D_find_exe() is None, reason="c2d executable n
 _needs_gmsh = pytest.mark.skipif(find_tool("gmsh") is None, reason="gmsh executable not found (set it in tools.toml)")
 
 
-def _mesh(name, backend, topology, config, workspace, **kwargs):
+def _mesh(name, backend, topology, config, workspace, write_vtk=False, **kwargs):
     contour = Optim_build_study_contour(stored_shape(name), backend, topology)
     sampled = Optim_sample_for_mesher(config, contour, airfoil_name=name, chord=1.0,
                                       freestream=Freestream(alpha=0.0, Re=5e6, mach=0.5), backend=backend,
-                                      topology=topology, working_dir=str(workspace), **kwargs)
+                                      topology=topology, working_dir=str(workspace), write_vtk=write_vtk, **kwargs)
     assert sampled.mesh_in is not None, sampled.report.rejection
     return sampled, Common_GenerateMesh(sampled.mesh_in)
 

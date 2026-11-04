@@ -7,7 +7,8 @@ real mesher runs.
 
 Deviation is measured directly on each backend's output rather than through `Common_GenerateMesh`,
 so a quality verdict cannot mask it: the O-mesh below scores LOW_QUALITY, which would short-circuit
-the deviation pass in the real dispatcher.
+the deviation pass in the real dispatcher. The four sterile meshes are the session's, shared with the
+backends' own integration modules.
 
 `GEO_DEV_LIMIT` was calibrated from these runs, not guessed. Measured maxima at the time it
 was set (chord-normalized, worst of the two directions):
@@ -28,7 +29,7 @@ import numpy as np
 import pytest
 
 from src.datagen.utils.tools import find_tool
-from src.datagen.meshing.c2d.run import C2D_MeshGenerator, C2D_find_exe
+from src.datagen.meshing.c2d.run import C2D_find_exe
 from src.datagen.meshing.gmsh.run import GMSH_MeshGenerator
 from src.datagen.meshing.gmsh.schemas import GMSH_ExitFlag
 from src.datagen.meshing.common.geo_dev import Common_evaluate_mesh_geo_dev, GEO_DEV_LIMIT, _boundary_from_su2
@@ -59,37 +60,37 @@ def _worst_input_point_miss(mesh_path, airfoil) -> float:
 
 
 @_needs_gmsh
-def test_gmsh_cmesh_boundary_reproduces_the_airfoil(sterile_gmsh_input):
-    out = GMSH_MeshGenerator(sterile_gmsh_input)
+def test_gmsh_cmesh_boundary_reproduces_the_airfoil(gmsh_cmesh):
+    data, out = gmsh_cmesh
     assert out.flag == GMSH_ExitFlag.SUCCESS, f"gmsh C-mesh failed with flag {out.flag}"
 
-    s = _assert_within_limit(out.mesh_path, sterile_gmsh_input.airfoil, "gmsh C-mesh")
+    s = _assert_within_limit(out.mesh_path, data.airfoil, "gmsh C-mesh")
 
     # gmsh builds its CAD at Airfoil.chord, so the written boundary carries physical size
-    assert s.chord == pytest.approx(sterile_gmsh_input.airfoil.chord, rel=1e-4)
+    assert s.chord == pytest.approx(data.airfoil.chord, rel=1e-4)
 
 
 @_needs_gmsh
-def test_gmsh_omesh_boundary_reproduces_the_airfoil(sterile_gmsh_omesh_input):
-    out = GMSH_MeshGenerator(sterile_gmsh_omesh_input)
+def test_gmsh_omesh_boundary_reproduces_the_airfoil(gmsh_omesh):
+    data, out = gmsh_omesh
     assert out.flag == GMSH_ExitFlag.SUCCESS, f"gmsh O-mesh failed with flag {out.flag}"
 
-    _assert_within_limit(out.mesh_path, sterile_gmsh_omesh_input.airfoil, "gmsh O-mesh")
+    _assert_within_limit(out.mesh_path, data.airfoil, "gmsh O-mesh")
 
     # Its wall nodes are the input points themselves
-    assert _worst_input_point_miss(out.mesh_path, sterile_gmsh_omesh_input.airfoil) < 1e-9
+    assert _worst_input_point_miss(out.mesh_path, data.airfoil) < 1e-9
 
 
 @pytest.mark.skipif(C2D_find_exe() is None, reason="c2d executable not built in this environment")
-def test_c2d_boundary_reproduces_the_airfoil(sterile_c2d_input):
-    out = C2D_MeshGenerator(sterile_c2d_input)
+def test_c2d_boundary_reproduces_the_airfoil(c2d_ogrid):
+    data, out = c2d_ogrid
     assert out.mesh_path is not None and Path(out.mesh_path).exists(), (
         f"c2d produced no mesh to score, flag {out.flag}")
 
-    s = _assert_within_limit(out.mesh_path, sterile_c2d_input.airfoil, "c2d O-grid")
+    s = _assert_within_limit(out.mesh_path, data.airfoil, "c2d O-grid")
 
     # BUFF meshes the input points as given (to the `.dat`'s 8 decimals), with no c2d resampling or TE fillet
-    assert _worst_input_point_miss(out.mesh_path, sterile_c2d_input.airfoil) < 1e-7
+    assert _worst_input_point_miss(out.mesh_path, data.airfoil) < 1e-7
 
     # c2d re-normalizes whatever geometry it reads back to unit chord, so unlike gmsh its boundary
     # is chord-1 regardless of Airfoil.chord. Pinned here because it is the reason `geo_dev`
@@ -98,14 +99,14 @@ def test_c2d_boundary_reproduces_the_airfoil(sterile_c2d_input):
 
 
 @pytest.mark.skipif(C2D_find_exe() is None, reason="c2d executable not built in this environment")
-def test_c2d_cgrd_boundary_is_the_input(sterile_c2d_cgrd_input):
+def test_c2d_cgrd_boundary_is_the_input(c2d_cgrid):
     # The C-grid goes through the same BUFF path, its wake added behind the closure point
-    out = C2D_MeshGenerator(sterile_c2d_cgrd_input)
+    data, out = c2d_cgrid
     assert out.mesh_path is not None and Path(out.mesh_path).exists(), (
         f"c2d produced no mesh to score, flag {out.flag}")
 
-    _assert_within_limit(out.mesh_path, sterile_c2d_cgrd_input.airfoil, "c2d C-grid")
-    assert _worst_input_point_miss(out.mesh_path, sterile_c2d_cgrd_input.airfoil) < 1e-7
+    _assert_within_limit(out.mesh_path, data.airfoil, "c2d C-grid")
+    assert _worst_input_point_miss(out.mesh_path, data.airfoil) < 1e-7
 
 
 @_needs_gmsh
@@ -121,6 +122,7 @@ def test_input_to_mesh_deviation_falls_with_surface_resolution(sterile_gmsh_inpu
     measured = {}
     for le, mid in ((15, 40), (60, 150)):
         gmsh_in = sterile_gmsh_input.model_copy(deep=True)
+        gmsh_in.write_vtk = False
         gmsh_in.meshing_config = gmsh_in.meshing_config.model_copy(
             update={"nx_le1": le, "nx_le2": le, "nx_upper": mid, "nx_lower": mid})
         out = GMSH_MeshGenerator(gmsh_in)

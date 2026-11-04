@@ -16,7 +16,8 @@ from src.datagen.meshing.common.schemas import MeshBackend, MeshTopology
 from src.datagen.meshing.optimizer.common.constants import SMOOTHING_DEFAULTS
 from src.datagen.meshing.optimizer.common.settings import Optim_build_settings
 from src.datagen.meshing.optimizer.common.space import Optim_knobs_for
-from src.datagen.meshing.optimizer.evaluate.executor import RunContext, RunExecutor
+from src.datagen.meshing.optimizer.evaluate.context import RunContext
+from src.datagen.meshing.optimizer.evaluate.executor import RunExecutor
 from src.datagen.meshing.optimizer.evaluate.sampling import Optim_build_study_contour
 from src.datagen.meshing.optimizer.manifest.store import RunStore
 from src.datagen.meshing.optimizer.search.mads import Optim_run_mads

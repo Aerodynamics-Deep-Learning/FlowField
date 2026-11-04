@@ -15,7 +15,8 @@ from src.datagen.meshing.c2d.run import C2D_find_exe
 from src.datagen.meshing.common.schemas import MeshBackend, MeshTopology
 from src.datagen.meshing.optimizer.common.constants import SMOOTHING_DEFAULTS
 from src.datagen.meshing.optimizer.common.settings import Optim_build_settings
-from src.datagen.meshing.optimizer.evaluate.executor import RunContext, RunExecutor
+from src.datagen.meshing.optimizer.evaluate.context import RunContext
+from src.datagen.meshing.optimizer.evaluate.executor import RunExecutor
 from src.datagen.meshing.optimizer.evaluate.sampling import Optim_build_study_contour
 from src.datagen.meshing.optimizer.manifest.store import RunStore
 from tests.geometry_shapes import stored_shape

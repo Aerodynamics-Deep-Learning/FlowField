@@ -3,9 +3,9 @@ The mesh study's per-airfoil ladder: n*, the golden run, then up the rungs until
 last rung is spent. The campaign runs one ladder at a time per worker.
 
     Optim_run_ladder  one airfoil's study, reported as events
-    LadderOutcome     how it ended, with the error that ended it, for the caller to act on
-    Optim_record      one event written to the run store
     Ladder            the climb and its steps; a subclass climbs differently (the calibration's), reported alike
+
+How it ended comes back as a `LadderOutcome`, and its events are written with `Optim_record`, both in `events`.
 
 The golden run meshes n*'s knobs at golden_jmax with c2d's smoothing defaults, and its verdict routes it:
     passed                      done
@@ -29,31 +29,23 @@ not raised: the caller decides whether it stops anything else. Ctrl-C is recorde
 import time
 import traceback
 import uuid
-from typing import Callable, NamedTuple, Optional
+from typing import Callable, Optional
 
 from src.datagen.geometry.common.schemas import ShapeRecord
 from src.datagen.meshing.c2d.schemas import C2D_MeshingConfig
 from src.datagen.meshing.common.schemas import MeshBackend, MeshTopology
 from src.datagen.meshing.optimizer.common.constants import SMOOTHING_DEFAULTS
 from src.datagen.meshing.optimizer.common.space import Optim_knobs_for
-from src.datagen.meshing.optimizer.evaluate.executor import Optim_nomad_outputs, RunContext, RunExecutor
+from src.datagen.meshing.optimizer.evaluate.context import RunContext
+from src.datagen.meshing.optimizer.evaluate.executor import Optim_nomad_outputs, RunExecutor
 from src.datagen.meshing.optimizer.evaluate.sampling import Optim_build_study_contour
-from src.datagen.meshing.optimizer.manifest.store import Optim_utc_now, RunStore
+from src.datagen.meshing.optimizer.manifest.store import Optim_utc_now
+from src.datagen.meshing.optimizer.search.events import LadderOutcome
 from src.datagen.meshing.optimizer.search.mads import Optim_run_mads, RungResult
 from src.datagen.meshing.optimizer.search.nstar import NStarResult, Optim_n_star_search
 
 # The gates smoothing can fix; a run failing only these goes to rung 2
 SHAPE_GATES = frozenset({"inverted", "skew", "ortho", "jac"})
-
-
-class LadderOutcome(NamedTuple):
-    """How a ladder ended. Picklable, so a pool's worker can return it."""
-    ladder_id: str
-    status: str                       # 'passed', 'failed' or 'aborted'
-    route: list[str]                  # the stages entered, e.g. ['golden', 'jmax_bump']
-    best_row: Optional[dict]          # the fewest-node pass
-    error: Optional[BaseException]    # what aborted it, for the caller to act on
-    notes: Optional[dict] = None      # what a Ladder subclass measured beyond its rows
 
 
 def Optim_run_ladder(name: str, shape: ShapeRecord, ctx: RunContext, emit: Callable[[tuple], None],
@@ -89,34 +81,6 @@ def Optim_run_ladder(name: str, shape: ShapeRecord, ctx: RunContext, emit: Calla
         raise error
     return LadderOutcome(ladder.ladder_id, fields["status"], list(ladder.route), ladder.best, error,
                          ladder.notes or None)
-
-
-def Optim_record(store: RunStore, event: tuple) -> None:
-    """
-    Writes one ladder event to the run store: a start inserts the ladder's row, a run its own row, and the
-    end completes the ladder's row and repoints the airfoil's best run, together.
-
-    Args:
-        store (RunStore): The store, holding the settings row the ladder ran under
-        event (tuple): ("ladder_start", row), ("run", row) or ("ladder_end", ladder_id, fields)
-
-    Raises:
-        ValueError: On an unknown event, or a write the store refuses (an unknown column, a ladder never
-            started)
-    """
-    kind = event[0]
-    if kind == "ladder_start":
-        store.start_ladder(event[1])
-    elif kind == "run":
-        store.insert_run(event[1])
-    elif kind == "ladder_end":
-        _, ladder_id, fields = event
-        with store.transaction():
-            store.finish_ladder(ladder_id, fields)
-            ladder = store.ladder(ladder_id)
-            store.update_best(ladder["geometry_id"], ladder["settings_id"])
-    else:
-        raise ValueError(f"unknown ladder event {kind!r}")
 
 
 class Ladder:

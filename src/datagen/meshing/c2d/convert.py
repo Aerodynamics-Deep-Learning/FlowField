@@ -16,6 +16,7 @@ import numpy as np
 from src.datagen.meshing.common.constants import MARKER_AIRFOIL, MARKER_FARFIELD
 # The SU2 boundary names this writer stamps onto the mesh, shared with gmsh's physical groups and
 # with `solvers/su2/schemas.py`'s marker defaults.
+from src.datagen.meshing.common.quality import _read_su2  # the reader the quality pass scores a .su2 with
 
 def read_plot3d_2d(path):
     """
@@ -240,22 +241,14 @@ def write_vtk(nodes, quads, tris, path):
     tris = np.asarray(tris, int).reshape(-1, 3) if len(tris) else np.zeros((0, 3), int)
     ncell = len(quads) + len(tris)
     size = len(quads) * 5 + len(tris) * 4        # count + indices per cell
+    # one %-format per block over a flat tuple, as `convert` writes the .su2
+    out = ["# vtk DataFile Version 3.0\nC2D mesh\nASCII\n", "DATASET UNSTRUCTURED_GRID\n",
+           "POINTS %d float\n" % len(nodes), ("%.9e %.9e 0.0\n" * len(nodes)) % tuple(nodes.ravel().tolist()),
+           "CELLS %d %d\n" % (ncell, size), ("4 %d %d %d %d\n" * len(quads)) % tuple(quads.ravel().tolist()),
+           ("3 %d %d %d\n" * len(tris)) % tuple(tris.ravel().tolist()),
+           "CELL_TYPES %d\n" % ncell, "9\n" * len(quads), "5\n" * len(tris)]  # VTK_QUAD, VTK_TRIANGLE
     with open(path, "w") as f:
-        f.write("# vtk DataFile Version 3.0\nC2D mesh\nASCII\n")
-        f.write("DATASET UNSTRUCTURED_GRID\n")
-        f.write("POINTS %d float\n" % len(nodes))
-        for x, y in nodes:
-            f.write("%.9e %.9e 0.0\n" % (x, y))
-        f.write("CELLS %d %d\n" % (ncell, size))
-        for q in quads:
-            f.write("4 %d %d %d %d\n" % (q[0], q[1], q[2], q[3]))
-        for t in tris:
-            f.write("3 %d %d %d\n" % (t[0], t[1], t[2]))
-        f.write("CELL_TYPES %d\n" % ncell)
-        for _ in quads:
-            f.write("9\n")     # VTK_QUAD
-        for _ in tris:
-            f.write("5\n")     # VTK_TRIANGLE
+        f.write("".join(out))
     return dict(nodes=len(nodes), cells=ncell)
 
 
@@ -263,27 +256,6 @@ def su2_to_vtk(su2_path, vtk_path):
     """
     Read a 2D .su2 mesh and write it as .vtk.
     """
-    nodes, quads, tris = [], [], []
-    with open(su2_path) as f:
-        lines = [ln.strip() for ln in f if ln.strip() and not ln.startswith("%")]
-    i, n = 0, len(lines)
-    while i < n:
-        t = lines[i].split(); key = t[0].upper()
-        if key == "NELEM=":
-            ne = int(t[1]); i += 1
-            for _ in range(ne):
-                p = lines[i].split(); et = int(p[0])
-                if et == 9:
-                    quads.append([int(p[1]), int(p[2]), int(p[3]), int(p[4])])
-                elif et == 5:
-                    tris.append([int(p[1]), int(p[2]), int(p[3])])
-                i += 1
-            continue
-        if key == "NPOIN=":
-            npn = int(t[1]); i += 1
-            for _ in range(npn):
-                p = lines[i].split(); nodes.append([float(p[0]), float(p[1])]); i += 1
-            continue
-        i += 1
-    return write_vtk(np.array(nodes), quads, tris, vtk_path)
+    nodes, quads, tris, _ = _read_su2(su2_path)
+    return write_vtk(nodes, quads, tris, vtk_path)
 

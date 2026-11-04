@@ -5,6 +5,7 @@ Step 1: Ensure every name it offers is its module's own, and nothing heavy loads
     - test_every_export_is_its_modules_own
     - test_an_unknown_name_is_refused
     - test_a_constant_loads_neither_nomad_nor_the_meshers
+    - test_a_slot_worker_loads_neither_torch_nor_nomad
 """
 
 import importlib
@@ -35,6 +36,16 @@ def test_a_constant_loads_neither_nomad_nor_the_meshers():
     code = ("import sys; import src.datagen.meshing.optimizer.common.constants; "
             "print(sorted(m for m in ('PyNomad', 'src.datagen.meshing.common.entry', "
             "'src.datagen.meshing.optimizer.search.mads') if m in sys.modules))")
+    out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=True).stdout
+    assert out.strip() == "[]"
+
+
+def test_a_slot_worker_loads_neither_torch_nor_nomad():
+    # What every slot's worker imports before its task: the runner, a context and a ladder's outcome
+    code = ("import sys; import src.datagen.meshing.optimizer.batch.runner, "
+            "src.datagen.meshing.optimizer.evaluate.context, src.datagen.meshing.optimizer.search.events; "
+            "print(sorted(m for m in ('torch', 'scipy', 'PyNomad', 'src.datagen.meshing.common.entry') "
+            "if m in sys.modules))")
     out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=True).stdout
     assert out.strip() == "[]"
 # endregion

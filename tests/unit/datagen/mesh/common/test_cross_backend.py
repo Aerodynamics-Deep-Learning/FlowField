@@ -79,6 +79,7 @@ def test_gmsh_backend_produces_scorable_su2(tmp_path):
             upper_anchor_idx=6, lower_anchor_idx=18,
             nx_le1=20, nx_le2=20, nx_upper=60, nx_lower=60, nx_wake=30,
         ),
+        write_vtk=False,  # the c2d half carries the .vtk through the dispatcher
     )
     out = Common_GenerateMesh(data)
 
@@ -108,6 +109,7 @@ def test_c2d_backend_produces_scorable_su2(tmp_path):
     assert out.flag == MeshExitFlag.SUCCESS, out.flag
     assert out.mesh_path is not None
     assert out.quality is not None and out.quality.acceptable
+    # The one real run that carries a .vtk through the dispatcher onto the MeshOut
     assert Path(out.mesh_path).is_file() and Path(out.mesh_path_vtk).is_file()
     # Same marker names as gmsh writes (one SU2 config has to drive either backend's mesh)
     assert _su2_marker_tags(out.mesh_path) == _EXPECTED_MARKERS

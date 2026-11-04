@@ -2,11 +2,16 @@ import pytest
 import numpy as np
 import torch
 from pathlib import Path
+from typing import NamedTuple, Union
 
 from src.datagen.schemas import Airfoil, Freestream
 from src.datagen.meshing.common.quality import _cell_metrics, _orthogonal_quality
-from src.datagen.meshing.gmsh.schemas import GMSH_CMeshingConfig, GMSH_OMeshingConfig, GMSH_In, GMSH_Topology
-from src.datagen.meshing.c2d.schemas import C2D_MeshingConfig, C2D_In, C2D_Topology
+from src.datagen.meshing.gmsh.run import GMSH_MeshGenerator
+from src.datagen.meshing.gmsh.schemas import (
+    GMSH_CMeshingConfig, GMSH_OMeshingConfig, GMSH_In, GMSH_Out, GMSH_Topology,
+)
+from src.datagen.meshing.c2d.run import C2D_MeshGenerator
+from src.datagen.meshing.c2d.schemas import C2D_MeshingConfig, C2D_In, C2D_Out, C2D_Topology
 from tests.closed_airfoils import closed_naca0012
 
 # The reference mesh provided by Emre; both backends' integration tests score their own output
@@ -100,8 +105,7 @@ def integration_mesh_workspace(integration_root: Path) -> Path:
 
     return mesh_workspace
 
-@pytest.fixture(scope="function")
-def sterile_gmsh_input(integration_mesh_workspace: Path):
+def _gmsh_cmesh_input(working_dir: Path, write_vtk: bool = True) -> GMSH_In:
 
     airfoil = _naca0012_airfoil("naca0012_test")
     freestream = _naca0012_freestream()
@@ -135,19 +139,16 @@ def sterile_gmsh_input(integration_mesh_workspace: Path):
     gmsh_in = GMSH_In(
             airfoil=airfoil,
             freestream=freestream,
-            working_dir=str(integration_mesh_workspace),
+            working_dir=str(working_dir),
             topology=GMSH_Topology.CGRD,
-            meshing_config=meshing_config
+            meshing_config=meshing_config,
+            write_vtk=write_vtk
         )
 
     return gmsh_in
 
 
-@pytest.fixture(scope="function")
-def sterile_gmsh_omesh_input(integration_mesh_workspace: Path):
-    """The O-mesh counterpart to `sterile_gmsh_input`; same freestream, but a sharp-TE airfoil
-    (`_naca0012_sharp_airfoil`), since GMSH_generate_omesh requires upper/lower to meet at one
-    point."""
+def _gmsh_omesh_input(working_dir: Path, write_vtk: bool = True) -> GMSH_In:
 
     airfoil = _naca0012_sharp_airfoil("naca0012_omesh_test")
     freestream = _naca0012_freestream()
@@ -155,12 +156,49 @@ def sterile_gmsh_omesh_input(integration_mesh_workspace: Path):
     gmsh_in = GMSH_In(
             airfoil=airfoil,
             freestream=freestream,
-            working_dir=str(integration_mesh_workspace),
+            working_dir=str(working_dir),
             topology=GMSH_Topology.OGRD,
-            meshing_config=GMSH_OMeshingConfig()
+            meshing_config=GMSH_OMeshingConfig(),
+            write_vtk=write_vtk
         )
 
     return gmsh_in
+
+
+def _c2d_ogrid_input(working_dir: Path, write_vtk: bool = True) -> C2D_In:
+    return C2D_In(
+        airfoil=closed_naca0012("naca0012_test_c2d", te="round"),
+        freestream=_naca0012_freestream(),
+        working_dir=str(working_dir),
+        topology=C2D_Topology.OGRD,
+        meshing_config=C2D_MeshingConfig(),
+        write_vtk=write_vtk,
+    )
+
+
+def _c2d_cgrid_input(working_dir: Path, write_vtk: bool = True) -> C2D_In:
+    return C2D_In(
+        airfoil=closed_naca0012("naca0012_test_c2d_cgrd", te="sharp"),
+        freestream=_naca0012_freestream(),
+        working_dir=str(working_dir),
+        topology=C2D_Topology.CGRD,
+        meshing_config=C2D_MeshingConfig(),
+        write_vtk=write_vtk,
+    )
+
+
+@pytest.fixture(scope="function")
+def sterile_gmsh_input(integration_mesh_workspace: Path) -> GMSH_In:
+    """gmsh's C-mesh on the open NACA0012, with a hand-tuned config."""
+    return _gmsh_cmesh_input(integration_mesh_workspace)
+
+
+@pytest.fixture(scope="function")
+def sterile_gmsh_omesh_input(integration_mesh_workspace: Path) -> GMSH_In:
+    """The O-mesh counterpart to `sterile_gmsh_input`; same freestream, but a sharp-TE airfoil
+    (`_naca0012_sharp_airfoil`), since GMSH_generate_omesh requires upper/lower to meet at one
+    point."""
+    return _gmsh_omesh_input(integration_mesh_workspace)
 
 
 @pytest.fixture(scope="function")
@@ -171,13 +209,7 @@ def sterile_c2d_input(integration_mesh_workspace: Path) -> C2D_In:
     mode, which takes the surface points as given and refuses an open contour. See
     `sterile_c2d_cgrd_input` for the CGRD/sharp-TE counterpart. `meshing_config.topo` is left
     unset here -- `C2D_In`'s validator fills it in from `topology` automatically."""
-    return C2D_In(
-        airfoil=closed_naca0012("naca0012_test_c2d", te="round"),
-        freestream=_naca0012_freestream(),
-        working_dir=str(integration_mesh_workspace),
-        topology=C2D_Topology.OGRD,
-        meshing_config=C2D_MeshingConfig(),
-    )
+    return _c2d_ogrid_input(integration_mesh_workspace)
 
 
 @pytest.fixture(scope="function")
@@ -186,13 +218,40 @@ def sterile_c2d_cgrd_input(integration_mesh_workspace: Path) -> C2D_In:
     closed sharp-TE NACA0012, since c2d's C-grid launches its wake from the closure point. Named for
     c2d's own "CGRD" (not "cmesh"/"omesh") deliberately: this isn't equivalent to gmsh's C-mesh or
     O-mesh, it's c2d's own C-grid option."""
-    return C2D_In(
-        airfoil=closed_naca0012("naca0012_test_c2d_cgrd", te="sharp"),
-        freestream=_naca0012_freestream(),
-        working_dir=str(integration_mesh_workspace),
-        topology=C2D_Topology.CGRD,
-        meshing_config=C2D_MeshingConfig(),
-    )
+    return _c2d_cgrid_input(integration_mesh_workspace)
+
+
+class Meshed(NamedTuple):
+    """An input and what its mesher made of it."""
+    data: Union[GMSH_In, C2D_In]
+    out: Union[GMSH_Out, C2D_Out]
+
+
+# Each sterile input meshed once a session, for the tests that only read the result (the meshers are
+# deterministic, so a second run of the same input is the same mesh). Only the two the baseline reads keep
+# their `.vtk`.
+@pytest.fixture(scope="session")
+def gmsh_cmesh(tmp_path_factory) -> Meshed:
+    data = _gmsh_cmesh_input(tmp_path_factory.mktemp("gmsh_cmesh"))
+    return Meshed(data, GMSH_MeshGenerator(data))
+
+
+@pytest.fixture(scope="session")
+def gmsh_omesh(tmp_path_factory) -> Meshed:
+    data = _gmsh_omesh_input(tmp_path_factory.mktemp("gmsh_omesh"), write_vtk=False)
+    return Meshed(data, GMSH_MeshGenerator(data))
+
+
+@pytest.fixture(scope="session")
+def c2d_ogrid(tmp_path_factory) -> Meshed:
+    data = _c2d_ogrid_input(tmp_path_factory.mktemp("c2d_ogrid"))
+    return Meshed(data, C2D_MeshGenerator(data))
+
+
+@pytest.fixture(scope="session")
+def c2d_cgrid(tmp_path_factory) -> Meshed:
+    data = _c2d_cgrid_input(tmp_path_factory.mktemp("c2d_cgrid"), write_vtk=False)
+    return Meshed(data, C2D_MeshGenerator(data))
 
 
 def _mesh_quality_summary(vtk_path) -> dict:

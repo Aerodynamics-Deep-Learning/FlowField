@@ -17,13 +17,11 @@ Step 5 (Windows): Ensure the Linux side passes in a WSL distro with Python 3.11+
     - test_the_linux_side_passes_in_wsl
 
 Workers are real processes started the runner's way (spawn, adopted before their first message); each starts a
-sleeping Python as the stand-in for c2d. On Linux this module needs only the standard library and pytest: it
-loads `slots` without the parent packages' `__init__`s, which import torch and pydantic, as it does in every
-worker it starts. The cgroup cases need the run inside a delegated cgroup (`systemd-run --user --scope -p
-Delegate=yes`), which the WSL step arranges where systemd's user manager runs.
+sleeping Python as the stand-in for c2d. On Linux this module needs only the standard library and pytest, as
+`slots` and its parent packages import nothing else. The cgroup cases need the run inside a delegated cgroup
+(`systemd-run --user --scope -p Delegate=yes`), which the WSL step arranges where systemd's user manager runs.
 """
 
-import importlib
 import multiprocessing as mp
 import os
 import re
@@ -31,37 +29,16 @@ import shutil
 import subprocess
 import sys
 import time
-import types
 from multiprocessing.connection import wait
 from pathlib import Path
 
 import pytest
 
+if __name__ == "__main__":  # the inner main process, run as a script: the repo root is not on its path
+    sys.path.insert(0, str(Path(__file__).resolve().parents[5]))
+from src.datagen.meshing.optimizer.batch import slots
+
 MB = 2 ** 20
-_SLOTS = "src.datagen.meshing.optimizer.batch.slots"
-_PARENTS = ("src", "src.datagen", "src.datagen.meshing", "src.datagen.meshing.optimizer",
-            "src.datagen.meshing.optimizer.batch")
-# Set for every process this module starts: they load `slots` light, inside caps a torch import would not fit
-_LIGHT = "FLOWFIELD_TEST_LIGHT_SLOTS"
-
-
-def _load_slots():
-    """`slots`, skipping the parents' heavy `__init__`s in the processes this module starts or a bare interpreter."""
-    fresh = os.environ.get(_LIGHT) == "1" or __name__ in ("__main__", "__mp_main__")
-    if not fresh:
-        try:
-            return importlib.import_module(_SLOTS)
-        except ImportError:  # no torch or pydantic here
-            pass
-    root = Path(__file__).resolve().parents[5]
-    for name in _PARENTS:
-        package = types.ModuleType(name)
-        package.__path__ = [str(root.joinpath(*name.split(".")))]
-        sys.modules[name] = package
-    return importlib.import_module(_SLOTS)
-
-
-slots = _load_slots()
 WINDOWS, LINUX = sys.platform == "win32", sys.platform.startswith("linux")
 
 
@@ -91,14 +68,7 @@ def _start(platform, mode: str = "plain", cap_mb: int = 400):
     spawn = mp.get_context("spawn")
     mine, theirs = spawn.Pipe()
     process = spawn.Process(target=_worker, args=(theirs, os.getpid(), mode), daemon=True)
-    before, os.environ[_LIGHT] = os.environ.get(_LIGHT), "1"
-    try:
-        process.start()
-    finally:
-        if before is None:
-            os.environ.pop(_LIGHT)
-        else:
-            os.environ[_LIGHT] = before
+    process.start()
     theirs.close()
     slot = platform.adopt(process.pid, cap_mb)
     mine.send("go")
@@ -221,8 +191,7 @@ def test_a_killed_slot_takes_its_worker_and_child(platform, started):
 def test_the_main_process_dying_ends_its_slots(tmp_path):
     if not (WINDOWS or LINUX):
         pytest.skip(f"no slot platform for {sys.platform}")
-    inner = subprocess.Popen([sys.executable, __file__, "inner"], stdout=subprocess.PIPE, text=True,
-                             env={**os.environ, _LIGHT: "1"})
+    inner = subprocess.Popen([sys.executable, __file__, "inner"], stdout=subprocess.PIPE, text=True)
     try:
         worker_pid, child_pid = map(int, inner.stdout.readline().split())
         assert _alive(worker_pid) and _alive(child_pid)

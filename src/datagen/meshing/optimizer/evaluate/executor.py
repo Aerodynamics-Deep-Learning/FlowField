@@ -2,15 +2,14 @@
 The mesh study's executor: one config in, one run row out. Everything that meshes for the study (the
 ladder, NOMAD, the calibration) goes through `RunExecutor.run`.
 
-    RunContext           what every run of a batch shares: settings, ids, provenance, the work root
     RunExecutor          one per ladder: samples, meshes, scores and judges a config, and emits its row
     RunResult            that row, and whether it came from the ladder's cache
     Optim_failed_gates   the study's verdict on a meshed row
     Optim_nomad_outputs  what NOMAD is told about a row
-    StudySetupError      the study's setup is broken (no c2d, a bad input), not the config
 
-The executor never writes the store: `emit` hands each row on, to the campaign's single writer or to a
-list in tests. A row holds only the runs table's columns, and no mesh file outlives its run.
+The batch's `RunContext` and the `StudySetupError` it raises live in `context`. The executor never writes the
+store: `emit` hands each row on, to the campaign's single writer or to a list in tests. A row holds only the
+runs table's columns, and no mesh file outlives its run.
 """
 
 import hashlib
@@ -20,11 +19,9 @@ import math
 import os
 import re
 import shutil
-import socket
 import time
 import traceback
 import uuid
-from dataclasses import dataclass
 from enum import Enum
 from typing import Callable, NamedTuple, Optional
 
@@ -35,9 +32,9 @@ from src.datagen.meshing.c2d.schemas import C2D_MeshingConfig
 from src.datagen.meshing.common.entry import Common_GenerateMesh
 from src.datagen.meshing.common.schemas import MeshBackend, MeshExitFlag, MeshTopology, QualityLimits
 from src.datagen.meshing.optimizer.common.constants import CHORD, PINNED
-from src.datagen.meshing.optimizer.common.settings import Optim_config_schema_fp
+from src.datagen.meshing.optimizer.evaluate.context import RunContext, StudySetupError
 from src.datagen.meshing.optimizer.evaluate.sampling import Optim_sample_for_mesher
-from src.datagen.meshing.optimizer.manifest.store import Optim_git_state, Optim_su2_sha256, Optim_utc_now
+from src.datagen.meshing.optimizer.manifest.store import Optim_su2_sha256, Optim_utc_now
 from src.datagen.schemas import Freestream
 
 # The gates a meshed row can fail, in the order `Optim_failed_gates` lists them
@@ -70,10 +67,6 @@ _GEO_COLUMNS = {"max_dev_mesh_to_input": "g_max_mesh_to_input", "max_dev_input_t
                 "n_boundary_nodes": "g_n_boundary_nodes"}
 
 
-class StudySetupError(RuntimeError):
-    """The study cannot mesh anything as set up (no c2d, an input the gates refuse): abort the ladder."""
-
-
 class _Captured(logging.Handler):
     """The meshing code's warnings and errors, tracebacks included, while one mesh runs."""
 
@@ -90,33 +83,6 @@ class RunResult(NamedTuple):
     """A run's row, and whether it came from the ladder's cache (no new row, no budget spent)."""
     row: dict
     cached: bool
-
-
-@dataclass(frozen=True)
-class RunContext:
-    """What every run of a batch shares. Picklable, so a pool's workers can each take one."""
-    settings: dict
-    batch_id: str
-    host: str
-    git_commit: str
-    git_dirty: Optional[int]
-    config_schema_fp: str
-    work_root: str
-
-    @classmethod
-    def create(cls, settings: dict, work_root, batch_id: Optional[str] = None) -> "RunContext":
-        """
-        A batch's context, with its host, git state and config fingerprint taken now.
-
-        Args:
-            settings (dict): `settings.Optim_build_settings()`'s row
-            work_root (str | Path): The folder each run meshes in a subfolder of
-            batch_id (str | None): The batch's id, a new uuid4 if None
-        """
-        commit, dirty = Optim_git_state()
-        return cls(settings=settings, batch_id=batch_id or str(uuid.uuid4()), host=socket.gethostname(),
-                   git_commit=commit, git_dirty=dirty, config_schema_fp=Optim_config_schema_fp(),
-                   work_root=str(work_root))
 
 
 class RunExecutor:

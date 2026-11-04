@@ -46,7 +46,8 @@ from src.datagen.geometry.common.constants import DX_MAX
 from src.datagen.meshing.optimizer.common.constants import SMOOTHING_DEFAULTS
 from src.datagen.meshing.optimizer.common.settings import Optim_build_settings
 from src.datagen.meshing.optimizer.common.space import Optim_knobs_for
-from src.datagen.meshing.optimizer.evaluate.executor import Optim_failed_gates, RunResult, StudySetupError
+from src.datagen.meshing.optimizer.evaluate.context import StudySetupError
+from src.datagen.meshing.optimizer.evaluate.executor import Optim_failed_gates, RunResult
 from src.datagen.meshing.optimizer.search.mads import Optim_plateau_reached, Optim_run_mads
 
 GOLDEN = {"dx_mid": DX_MAX, "le_ratio": 0.025, "te_ratio": 1.0, "cluster_width": 0.026, "jmax": 147,
