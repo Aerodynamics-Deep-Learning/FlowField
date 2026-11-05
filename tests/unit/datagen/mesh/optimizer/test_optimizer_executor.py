@@ -245,7 +245,7 @@ def test_crashes_are_recorded_not_raised(settings, contour, work, monkeypatch, w
     if where == "sampler":
         def broken(*args, **kwargs):
             raise SamplerAssertionError("a panel past DX_MAX")
-        monkeypatch.setattr(executor_module, "Optim_sample_for_mesher", broken)
+        monkeypatch.setattr(executor_module, "Optim_sample_for_study", broken)
     row = _run(executor, contour).row
 
     assert rows == [row] and row["status"] == "crashed"

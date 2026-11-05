@@ -6,11 +6,15 @@ turned into the mesher's input.
                                or None for a pairing that is not sampled
     Optim_sample_for_mesher    each evaluation: samples the contour with the config's knobs, under the cell
                                ceiling, and builds the MeshIn from the points; a rejected config builds none
+    Optim_sample_for_study     the same, with the rest of the input from the settings row: what the executor
+                               and a re-mesh both call, so the two cannot build different inputs
+    Optim_safe_name            an airfoil name as the mesher's files take it
 
 The MeshIn is only ever built here, from sampled points: there are no placeholder coords to forget to
 replace. Sits above both geometry and meshing, since the mesh configs import the knobs from geometry.
 """
 
+import re
 from typing import Optional
 
 from pydantic import BaseModel
@@ -21,7 +25,7 @@ from src.datagen.geometry.sample.fields import SamplingFields
 from src.datagen.geometry.sample.sample import Geom_sample
 from src.datagen.meshing.c2d.schemas import C2D_MeshingConfig
 from src.datagen.meshing.common.schemas import MeshBackend, MeshIn, MeshingConfig, MeshTopology, QualityLimits
-from src.datagen.meshing.optimizer.common.constants import CELL_CEILING, TE_GAP_DEFAULT
+from src.datagen.meshing.optimizer.common.constants import CELL_CEILING, CHORD, TE_GAP_DEFAULT
 from src.datagen.schemas import Airfoil, Freestream
 
 # The TE each pairing meshes; None: not sampled (the gmsh C-mesh, until its anchor indices become x/c)
@@ -110,3 +114,36 @@ def Optim_sample_for_mesher(config: MeshingConfig, contour: Contour, *, airfoil_
                      topology=topology, mesh_config=config, count_limits=count_limits or QualityLimits(),
                      write_vtk=write_vtk)
     return SampledInput(mesh_in=mesh_in, report=sample.report)
+
+
+def Optim_sample_for_study(settings: dict, config: MeshingConfig, contour: Contour, airfoil_name: str,
+                           working_dir: str, write_vtk: bool = False) -> SampledInput:
+    """
+    `Optim_sample_for_mesher` as the study calls it: the freestream at the settings' design Re, the
+    settings' gates as the count limits, its backend and topology, `CHORD`, and a file-safe name.
+
+    Args:
+        settings (dict): The settings row the run is meshed under
+        config (MeshingConfig): The run's validated mesh config
+        contour (Contour): The study's contour, from `Optim_build_study_contour`
+        airfoil_name (str): The airfoil's name; the mesher's files take `Optim_safe_name`'s copy
+        working_dir (str): The run's own, existing directory
+        write_vtk (bool): Whether the mesher also writes the diagnostic .vtk
+
+    Returns:
+        SampledInput: As `Optim_sample_for_mesher` returns it, raising as it does
+    """
+    s = settings
+    # c2d reads only Re; Freestream requires an alpha and a mach regardless
+    freestream = Freestream(alpha=0.0, Re=s["design_re"], mach=0.5)
+    limits = QualityLimits(skew_max=s["gate_skew_max"], ortho_min=s["gate_ortho_min"], jac_min=s["gate_jac_min"],
+                           size_ratio_max=s["gate_size_ratio_max"])
+    return Optim_sample_for_mesher(config, contour, airfoil_name=Optim_safe_name(airfoil_name), chord=CHORD,
+                                   freestream=freestream, backend=MeshBackend(s["backend"]),
+                                   topology=MeshTopology(s["topology"]), working_dir=working_dir,
+                                   count_limits=limits, write_vtk=write_vtk)
+
+
+def Optim_safe_name(name: str) -> str:
+    """`name` with every character but letters, digits and underscores made an underscore."""
+    return re.sub(r"[^A-Za-z0-9_]", "_", name)

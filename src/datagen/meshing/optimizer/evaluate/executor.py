@@ -17,7 +17,6 @@ import json
 import logging
 import math
 import os
-import re
 import shutil
 import time
 import traceback
@@ -30,12 +29,11 @@ from pydantic import ValidationError
 from src.datagen.geometry.sample.contour import Contour
 from src.datagen.meshing.c2d.schemas import C2D_MeshingConfig
 from src.datagen.meshing.common.entry import Common_GenerateMesh
-from src.datagen.meshing.common.schemas import MeshBackend, MeshExitFlag, MeshTopology, QualityLimits
-from src.datagen.meshing.optimizer.common.constants import CHORD, PINNED
+from src.datagen.meshing.common.schemas import MeshExitFlag
+from src.datagen.meshing.optimizer.common.constants import PINNED
 from src.datagen.meshing.optimizer.evaluate.context import RunContext, StudySetupError
-from src.datagen.meshing.optimizer.evaluate.sampling import Optim_sample_for_mesher
+from src.datagen.meshing.optimizer.evaluate.sampling import Optim_safe_name, Optim_sample_for_study
 from src.datagen.meshing.optimizer.manifest.store import Optim_su2_sha256, Optim_utc_now
-from src.datagen.schemas import Freestream
 
 # The gates a meshed row can fail, in the order `Optim_failed_gates` lists them
 GATE_ORDER = ("conversion", "inverted", "skew", "ortho", "jac", "aspect_ratio", "size_ratio", "geo_dev")
@@ -92,10 +90,6 @@ class RunExecutor:
         self.ctx = ctx
         self.emit = emit
         self._cache: dict[str, dict] = {}
-        s = ctx.settings
-        self._limits = QualityLimits(skew_max=s["gate_skew_max"], ortho_min=s["gate_ortho_min"],
-                                     jac_min=s["gate_jac_min"], size_ratio_max=s["gate_size_ratio_max"])
-        self._backend, self._topology = MeshBackend(s["backend"]), MeshTopology(s["topology"])
 
     def run(self, *, ladder_id: Optional[str], geometry_id: str, airfoil_name: str, contour: Contour, knobs: dict,
             rung: str, seq: int, parent_run_id: Optional[str] = None,
@@ -142,7 +136,7 @@ class RunExecutor:
         if row["cache_key"] in self._cache:
             return RunResult(self._cache[row["cache_key"]], cached=True)
 
-        work_dir = os.path.join(ctx.work_root, f"{_safe(airfoil_name)}_{row['run_id'][:8]}")
+        work_dir = os.path.join(ctx.work_root, f"{Optim_safe_name(airfoil_name)}_{row['run_id'][:8]}")
         setup_error = None
         try:
             os.makedirs(work_dir)
@@ -162,11 +156,7 @@ class RunExecutor:
     def _mesh(self, row: dict, config: C2D_MeshingConfig, contour: Contour, airfoil_name: str, work_dir: str,
               skip_if_nodes_ge: Optional[int]) -> None:
         """Fills the row from sampling on; leaves `status` set unless something raises."""
-        # c2d reads only Re; Freestream requires an alpha and a mach regardless
-        freestream = Freestream(alpha=0.0, Re=self.ctx.settings["design_re"], mach=0.5)
-        sampled = Optim_sample_for_mesher(config, contour, airfoil_name=_safe(airfoil_name), chord=CHORD,
-                                          freestream=freestream, backend=self._backend, topology=self._topology,
-                                          working_dir=work_dir, count_limits=self._limits, write_vtk=False)
+        sampled = Optim_sample_for_study(self.ctx.settings, config, contour, airfoil_name, work_dir)
         report = sampled.report
         for name in _REPORT_FIELDS:
             value = getattr(report, name)
@@ -290,10 +280,6 @@ def _geo_dev(row: dict) -> Optional[float]:
     if row.get("g_max_mesh_to_input") is None:
         return None
     return max(row["g_max_mesh_to_input"], row["g_max_input_to_mesh"])
-
-
-def _safe(name: str) -> str:
-    return re.sub(r"[^A-Za-z0-9_]", "_", name)
 
 
 def _read_verbose(verbose_list: list, index: int) -> Optional[str]:

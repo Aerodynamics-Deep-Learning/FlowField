@@ -10,6 +10,7 @@ _EXPORTS = {
     "Optim_campaign_summary": "batch.campaign",     # a campaign's outcome, read off the run store
     "Optim_calibrate": "batch.calibrate",           # the ladder's calibration: jmax*, rung 3's plateau, rung 2's budget
     "Optim_format_report": "batch.calibrate",       # the calibration's report, read off its run store
+    "Optim_remesh_airfoils": "batch.remesh",        # each airfoil's best run meshed again into its own folder
     # One airfoil
     "Optim_run_ladder": "search.ladder",            # n*, the golden run and the rungs it routes to, reported as events
     "LadderOutcome": "search.events",         # how a ladder ended, its error handed up rather than raised
@@ -26,6 +27,12 @@ _EXPORTS = {
     "StudySetupError": "evaluate.context",    # c2d missing or the input refused: a setup to fix, not a config
     "Optim_build_study_contour": "evaluate.sampling",  # a stored shape with the TE its mesher needs
     "Optim_sample_for_mesher": "evaluate.sampling",    # one config's surface points as the mesher's input
+    "Optim_sample_for_study": "evaluate.sampling",     # the same, the rest of the input from the settings row
+    # One stored run
+    "Optim_remesh": "evaluate.remesh",              # a run meshed again, delivered once it hashes to the stored mesh
+    "Remeshed": "evaluate.remesh",
+    "RemeshRefused": "evaluate.remesh",       # no mesh to rebuild, or something it was meshed by has moved
+    "RemeshMismatch": "evaluate.remesh",      # the rebuilt mesh is not the stored one; nothing delivered
     # The study's definition and record
     "Optim_build_settings": "common.settings",      # the hashed settings row every run is meshed and judged by
     "RunStore": "manifest.store",             # meshing.sqlite: settings, ladders, runs and the best run per airfoil

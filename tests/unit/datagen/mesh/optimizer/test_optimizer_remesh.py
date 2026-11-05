@@ -1,0 +1,211 @@
+"""
+Tests for `meshing.optimizer.evaluate.remesh` and its command line, `meshing.optimizer.batch.remesh`, i.e.:
+
+Step 1: Ensure a stored run is rebuilt from the executor's own input and delivered only once verified
+    - test_the_remesh_builds_the_executors_input
+    - test_a_verified_mesh_is_delivered_alone
+    - test_a_different_mesh_delivers_nothing
+Step 2: Ensure a run this code cannot rebuild is refused before anything meshes
+    - test_a_run_that_cannot_be_rebuilt_is_refused_before_meshing
+Step 3: Ensure the command line picks the right runs and reports what it could not deliver
+    - test_the_cli_delivers_each_best_and_reports_the_rest
+    - test_the_cli_takes_any_meshed_run
+
+The executor records three naca0012 runs (the golden one, marked best; a manual one; a rejected one) into a
+scratch store with the sampler real and `Common_GenerateMesh` a stand-in; the re-mesh then meshes with the same
+stand-in. The geometry manifest is `tests.geometry_shapes`. The real c2d is in the integration tier.
+"""
+
+import os
+from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
+
+from src.datagen.geometry.common.constants import DX_MAX, SHAPE_VERSION
+from src.datagen.meshing.common.schemas import (
+    MeshBackend, MeshExitFlag, MeshGeoDeviationSummary, MeshQualitySummary, MeshTopology,
+)
+from src.datagen.meshing.optimizer.batch import remesh as batch_remesh
+from src.datagen.meshing.optimizer.common.constants import SMOOTHING_DEFAULTS
+from src.datagen.meshing.optimizer.common.settings import Optim_build_settings, Optim_config_schema_fp
+from src.datagen.meshing.optimizer.evaluate import executor as executor_module
+from src.datagen.meshing.optimizer.evaluate import remesh as remesh_module
+from src.datagen.meshing.optimizer.evaluate.context import RunContext
+from src.datagen.meshing.optimizer.evaluate.executor import RunExecutor
+from src.datagen.meshing.optimizer.evaluate.remesh import Optim_remesh, Remeshed, RemeshMismatch, RemeshRefused
+from src.datagen.meshing.optimizer.evaluate.sampling import Optim_build_study_contour
+from src.datagen.meshing.optimizer.manifest.store import RunStore
+from tests.geometry_shapes import SHAPE_NAMES, stored_shape
+
+GOLDEN = {"dx_mid": DX_MAX, "le_ratio": 0.025, "te_ratio": 1.0, "cluster_width": 0.026, "jmax": 147,
+          **SMOOTHING_DEFAULTS}
+_SU2 = b"NDIME= 2\r\nNPOIN= 1\r\n0 0 0\r\n"
+_QUALITY = MeshQualitySummary(ncell=68_328, neg=0, max_skew=0.25, min_ortho=0.91, min_jac=0.91, max_ar=9e3,
+                              max_size_ratio=1.2, acceptable=True)
+_GEO = MeshGeoDeviationSummary(n_boundary_nodes=468, max_dev_mesh_to_input=1e-8, max_dev_input_to_mesh=2e-8,
+                               rms_dev_mesh_to_input=1e-9, rms_dev_input_to_mesh=2e-9, chord=1.0, acceptable=True)
+
+
+class _Mesher:
+    """
+    A stand-in for `Common_GenerateMesh`: writes its `su2` bytes (no file if None) as `<name>.su2`, a `.vtk`
+    when asked and a side file into the run's folder, reporting a mesh that clears every gate. Keeps its inputs.
+    """
+
+    def __init__(self):
+        self.su2, self.calls = _SU2, []
+
+    def __call__(self, mesh_in):
+        self.calls.append(mesh_in)
+        base = os.path.join(mesh_in.working_dir, mesh_in.airfoil.airfoil_name)
+        Path(f"{base}_log.txt").write_text("c2d exited 0")
+        mesh_path = vtk_path = None
+        if self.su2 is not None:
+            mesh_path = f"{base}.su2"
+            Path(mesh_path).write_bytes(self.su2)
+        if mesh_in.write_vtk:
+            vtk_path = f"{base}.vtk"
+            Path(vtk_path).write_text("# vtk DataFile")
+        ok = mesh_path is not None
+        return SimpleNamespace(flag=MeshExitFlag.SUCCESS if ok else MeshExitFlag.SUBPROCESS_FAIL,
+                               quality=_QUALITY if ok else None, geo_dev=_GEO if ok else None, mesh_path=mesh_path,
+                               mesh_path_vtk=vtk_path, num_nodes=68_796 if ok else None, verbose_list=[])
+
+
+def _load_shapes(names=None, db=None):
+    """`Optim_load_shapes` over the test shapes."""
+    names = SHAPE_NAMES if names is None else names
+    unknown = [name for name in names if name not in SHAPE_NAMES]
+    if unknown:
+        raise ValueError(f"no shape under {SHAPE_VERSION} for {', '.join(unknown)}")
+    return [(name, stored_shape(name)) for name in names]
+
+
+@pytest.fixture
+def study(tmp_path, monkeypatch):
+    """A store holding naca0012's golden run (its best), a manual run and a rejected one."""
+    exe = tmp_path / "c2d.exe"
+    exe.write_bytes(b"not really c2d")
+    monkeypatch.setattr("src.datagen.meshing.optimizer.common.settings.find_tool", lambda key: str(exe))
+    monkeypatch.setattr(remesh_module, "_load_shape", lambda geometry_id, version, db: stored_shape(geometry_id))
+    monkeypatch.setattr(batch_remesh, "Optim_load_shapes", _load_shapes)
+    mesher = _Mesher()
+    monkeypatch.setattr(executor_module, "Common_GenerateMesh", mesher)
+    monkeypatch.setattr(remesh_module, "Common_GenerateMesh", mesher)
+
+    settings = Optim_build_settings()
+    ctx = RunContext(settings=settings, batch_id="batch", host="then-host", git_commit="c" * 40, git_dirty=0,
+                     config_schema_fp=Optim_config_schema_fp(), work_root=str(tmp_path / "work"))
+    rows = []
+    executor = RunExecutor(ctx, rows.append)
+    contour = Optim_build_study_contour(stored_shape("naca0012"), MeshBackend.C2D, MeshTopology.OGRD)
+    for rung, knobs in (("golden", GOLDEN), ("manual", {**GOLDEN, "jmax": 148}),
+                        ("manual", {**GOLDEN, "le_ratio": 1.0})):
+        executor.run(ladder_id=None, geometry_id="naca0012", airfoil_name="naca0012", contour=contour, knobs=knobs,
+                     rung=rung, seq=0)
+    db = tmp_path / "meshing.sqlite"
+    with RunStore.open(db) as store:
+        store.ensure_settings(settings)
+        for row in rows:
+            store.insert_run(row)
+        store.update_best("naca0012", settings["settings_id"])
+    best, other, rejected = rows
+    assert [r["status"] for r in rows] == ["meshed", "meshed", "rejected"] and best["passed"] == 1
+    return SimpleNamespace(db=db, exe=exe, mesher=mesher, best=best, other=other, rejected=rejected,
+                           out=tmp_path / "out")
+
+
+def _remesh(study, run_id, **kw):
+    with RunStore.open(study.db, read_only=True) as store:
+        return Optim_remesh(store, run_id, study.out, **kw)
+
+
+# region Step 1
+def test_the_remesh_builds_the_executors_input(study):
+    _remesh(study, study.best["run_id"])
+    recorded, rebuilt = study.mesher.calls[0], study.mesher.calls[-1]
+
+    assert rebuilt.model_dump(mode="json", exclude={"working_dir"}) == \
+        recorded.model_dump(mode="json", exclude={"working_dir"})  # coords, name, freestream, config, limits
+    assert rebuilt.working_dir == str(study.out / f".remesh_{study.best['run_id'][:8]}")
+
+
+@pytest.mark.parametrize("with_vtk", [False, True], ids=["su2", "su2_and_vtk"])
+def test_a_verified_mesh_is_delivered_alone(study, with_vtk):
+    got = _remesh(study, study.best["run_id"], with_vtk=with_vtk)
+
+    files = ["naca0012.su2", "naca0012.vtk"] if with_vtk else ["naca0012.su2"]
+    assert sorted(os.listdir(study.out)) == files  # no temp folder, no side files
+    assert got == Remeshed(study.best["run_id"], "naca0012", str(study.out / "naca0012.su2"),
+                           str(study.out / "naca0012.vtk") if with_vtk else None, 68_796, study.best["su2_sha256"])
+    assert Path(got.su2_path).read_bytes() == _SU2
+
+
+@pytest.mark.parametrize("su2, match", [(b"NDIME= 2\nNPOIN= 2\n", "hashes to"), (None, "no .su2 written")],
+                         ids=["different", "none"])
+def test_a_different_mesh_delivers_nothing(study, su2, match):
+    study.mesher.su2 = su2
+
+    with pytest.raises(RemeshMismatch, match=match) as e:
+        _remesh(study, study.best["run_id"], with_vtk=True)
+    assert os.listdir(study.out) == []
+    assert "meshed on then-host at cccccccccccc" in str(e.value)
+    if su2:
+        assert study.best["su2_sha256"] in str(e.value)
+# endregion
+
+
+# region Step 2
+@pytest.mark.parametrize("case, match", [
+    ("unknown run", "no run nope in"),
+    ("rejected run", r"no mesh to rebuild \(status rejected\)"),
+    ("shape version", r"shape version \S+ then, other now\): re-mesh it at its commit c{40}"),
+    ("sampler version", r"sampler version \S+ then, other now\)"),
+    ("config schema", r"config schema \S+ then, other now\)"),
+    ("c2d executable", r"c2d executable \S+ then, \S+ now\)"),
+    ("no shape", "naca0012 has no stored shape"),
+])
+def test_a_run_that_cannot_be_rebuilt_is_refused_before_meshing(study, monkeypatch, case, match):
+    run_id = {"unknown run": "nope", "rejected run": study.rejected["run_id"]}.get(case, study.best["run_id"])
+    if case == "shape version":
+        monkeypatch.setattr(remesh_module, "SHAPE_VERSION", "other")
+    elif case == "sampler version":
+        monkeypatch.setattr(remesh_module, "SAMPLER_VERSION", "other")
+    elif case == "config schema":
+        monkeypatch.setattr(remesh_module, "Optim_config_schema_fp", lambda: "other")
+    elif case == "c2d executable":
+        study.exe.write_bytes(b"a rebuilt c2d")
+    elif case == "no shape":
+        monkeypatch.setattr(remesh_module, "_load_shape", lambda *args: None)
+    meshed = len(study.mesher.calls)
+
+    with pytest.raises(RemeshRefused, match=match):
+        _remesh(study, run_id)
+    assert len(study.mesher.calls) == meshed and not study.out.exists()
+# endregion
+
+
+# region Step 3
+def test_the_cli_delivers_each_best_and_reports_the_rest(study, capsys):
+    args = ["--out", str(study.out), "--db", str(study.db)]
+
+    assert batch_remesh.main(["--airfoils", "naca0012,naca4412", *args]) == 1
+    printed = capsys.readouterr().out
+    assert "Re-meshed 1 of 2" in printed and "naca4412: no best run under settings" in printed
+    assert os.listdir(study.out) == ["naca0012"] and os.listdir(study.out / "naca0012") == ["naca0012.su2"]
+    assert batch_remesh.main(["--all", *args]) == 1
+    assert "Re-meshed 1 of 3" in capsys.readouterr().out
+    with pytest.raises(SystemExit):
+        batch_remesh.main(["--airfoils", "naca9999", *args])  # an unknown name is a usage error
+
+
+def test_the_cli_takes_any_meshed_run(study):
+    args = ["--vtk", "--out", str(study.out), "--db", str(study.db)]
+
+    assert batch_remesh.main(["--run", study.other["run_id"], *args]) == 0
+    assert sorted(os.listdir(study.out / "naca0012")) == ["naca0012.su2", "naca0012.vtk"]
+    assert study.mesher.calls[-1].mesh_config.jmax == 148  # the manual run's, not the best's
+    with pytest.raises(SystemExit):
+        batch_remesh.main(["--run", "nope", *args])
+# endregion
