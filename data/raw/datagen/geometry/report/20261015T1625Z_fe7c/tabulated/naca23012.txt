@@ -1,0 +1,7 @@
+naca23012: duplicate (geometry_id)
+source   tabulated/naca23012.dat
+ingest   20261015T1625Z_fe7c, shape version cst8-r1, code 254a0bd
+
+the same airfoil is stored as 'naca23012'
+
+geometry_id  50bf5675b270cacf1aff938cac1519d891b7f0c6e0c31880136b6c21c1beede2

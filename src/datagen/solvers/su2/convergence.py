@@ -34,6 +34,12 @@ def SU2_CheckConvergence(convergence_flag_temp: SU2_ConvergenceFlag, stdout: str
     stderr_path = working_dir / "stderr.txt"
     stderr_path.write_text(stderr, encoding="utf-8")
 
+    # A first things first check on if the temporary flag is received, if not, then some upstream conv checks have happened
+    # in that case, just return the flag without doing any of the downstream checks, but still save the logs and history for debugging purposes
+    if convergence_flag_temp is not SU2_ConvergenceFlag.TEMP:
+        logger.warning(f"Received non-TEMP convergence flag: {convergence_flag_temp}. This means some upstream checks have flagged this run as {convergence_flag_temp} without even checking the logs or history. Partial logs saved to {working_dir}")
+        return convergence_flag_temp
+
     # Combine logs for application-level checks to catch C++/MPI errors
     full_log = stdout + "\n" + stderr
 

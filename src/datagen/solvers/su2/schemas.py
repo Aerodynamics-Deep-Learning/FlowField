@@ -4,6 +4,8 @@ from typing import Optional, Union
 from pathlib import Path
 
 from ...schemas import Airfoil, Freestream
+from ...meshing.common.constants import MARKER_AIRFOIL, MARKER_FARFIELD
+# The boundary tags both meshing backends stamp onto the `.su2` they write
 
 class SU2_ConvergenceFlag(IntEnum):
     """
@@ -11,6 +13,7 @@ class SU2_ConvergenceFlag(IntEnum):
     """
     TEMP = -10 # Placeholder flag within the pipeline
     UNKNOWN = -9 # For flags that are completely unknown/somehow avoided all the flagging checks
+    EXECUTABLE_NOT_FOUND = -3 # SU2_CFD not found (tools.toml), the solver never launched
     TIMEOUT = -2 # Self explanatory
     FATAL = -1 # A fatal error occured, e.g. missing file, no solution given at all
     DIVERGED = 0 # A complete/partial divergence of the solution
@@ -34,20 +37,46 @@ class SU2_SolverConfig(BaseModel):
     will be chosen.
     """
     # Markers
-    marker_farfield: str = Field("MARKER_FARFIELD", description="Marker returned by GMSH to identify the farfield")
-    marker_airfoil: str = Field("MARKER_AIRFOIL", description="Marker returned by GMSH to identify the airfoil")
-    # CFL related
-    cfl_number: float = Field(0.1, description="The CFL number to be used for the run, if applicable to the strategy chosen")
-    cfl_adapt_1: float = Field(0.1, description="The first CFL number to be used for the adaptive CFL strategy, if applicable to the strategy chosen")
-    cfl_adapt_2: float = Field(2.0, description="The second CFL number to be used for the adaptive CFL strategy, if applicable to the strategy chosen")
-    cfl_adapt_3: float = Field(10.0, description="The third CFL number to be used for the adaptive CFL strategy, if applicable to the strategy chosen")
-    # Convergence related
+    marker_farfield: str = Field(MARKER_FARFIELD, description="Marker returned by the meshing backend to identify the farfield")
+    marker_airfoil: str = Field(MARKER_AIRFOIL, description="Marker returned by the meshing backend to identify the airfoil")
+    
+    # Convergence related, applies to cold start, and restart phase of warm start
     conv_residual_minval: float = Field(-8, description="The minimum value for the residuals in log10 scale to be considered converged, if applicable to the strategy chosen")
     cauchy_eps: float = Field(1e-5, description="The epsilon value to be used for the Cauchy convergence criteria, if applicable to the strategy chosen")
     cauchy_elems: float = Field(100, description="The number of elements to be used for the Cauchy convergence criteria, if applicable to the strategy chosen")
     max_iterations: int = Field(2500, gt=0, description="The maximum number of iterations to run the solver for, if reached without convergence, will be flagged as not converged")
     # Other
     timeout_sec: int = Field(300, gt=0, description="The maximum time to wait for the SU2 run to finish before terminating and flagging as timeout")
+    # Euler specific convergence
+    max_iterations_euler: int = Field(1000, gt=0, description="The maximum number of iterations to run the Euler phase of the warm_euler strategy")
+    conv_residual_minval_euler: float = Field(-6, description="The minimum value for the residuals in log10 scale to be considered converged for the Euler phase of the warm_euler strategy")
+    cauchy_eps_euler: float = Field(1e-4, description="The epsilon value to be used for the Cauchy convergence criteria for the Euler phase of the warm_euler strategy")
+    cauchy_elems_euler: float = Field(50, description="The number of elements to be used for the Cauchy convergence criteria for the Euler phase of the warm_euler strategy")
+
+    # CFL related
+    # Cold started
+    cfl_number_cold: float = Field(0.1, description="Starting CFL number")
+    cfl_factordown_cold: float = Field(0.5, description="The factor down ratio for the CFL number to be used for the adaptive CFL strategy, for cold")
+    cfl_factorup_cold: float = Field(1.15, description="The factor up ratio for the CFL number to be used for the adaptive CFL strategy, for cold")
+    cfl_min_cold: float = Field(0.05, description="The minimum CFL number to be used for the adaptive CFL strategy, for cold")
+    cfl_max_cold: float = Field(20.0, description="The maximum CFL number to be used for the adaptive CFL strategy, for cold")
+    cfl_turbreduction_cold: float = Field(0.5, description="Static scalar multiplier applied to the primary flow CFL to decouple and restrict the turbulence transport pseudo-timestep, for cold")
+    cfl_maxupdate_cold: float = Field(0.2, description="The maximum CFL number update allowed per iteration, for cold")
+    # Euler warm started specific
+    cfl_number_euler: float = Field(5.0, description="Initial CFL number for the inviscid initialization phase")
+    cfl_factordown_euler: float = Field(0.5, description="Adaptive CFL factor down ratio, euler")
+    cfl_factorup_euler: float = Field(1.25, description="Adaptive CFL factor up ratio, euler")
+    cfl_min_euler: float = Field(0.1, description="Minimum allowable CFL number, euler")
+    cfl_max_euler: float = Field(100.0, description="Maximum allowable CFL number; safely elevated due to lack of viscous stiffness, euler")
+    cfl_maxupdate_euler: float = Field(0.5, description="Maximum fractional update of conservative variables per iteration, euler")
+    # Warm started specific
+    cfl_number_warm: float = Field(1.0, description="The CFL number to be used for the warmstart strategy, for warm start")
+    cfl_factordown_warm: float = Field(0.5, description="The factor down ratio for the CFL number to be used for the warmstart strategy, warm")
+    cfl_factorup_warm: float = Field(1.20, description="The factor up ratio for the CFL number to be used for the warmstart strategy, warm")
+    cfl_min_warm: float = Field(0.1, description="The minimum CFL number to be used for the warmstart strategy, warm")
+    cfl_max_warm: float = Field(30.0, description="The maximum CFL number to be used for the warmstart strategy, warm")
+    cfl_turbreduction_warm: float = Field(0.75, description="Static scalar multiplier applied to the primary flow CFL to decouple and restrict the turbulence transport pseudo-timestep, for warm")
+    cfl_maxupdate_warm: float = Field(0.3, description="The maximum CFL number update allowed per iteration for the warmstart strategy, warm")
 
 class SU2_In(BaseModel):
     """

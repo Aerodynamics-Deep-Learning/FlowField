@@ -1,0 +1,30 @@
+fx63137: rejected (fit_tolerance)
+source   tabulated/fx63137.dat
+ingest   20261015T1625Z_fe7c, shape version cst8-r1, code 254a0bd
+
+fit misses a point by 1.09e-03c at x=0.0046 (limit 0.001)
+
+identity
+  geometry_id  e63758c223d11a55cc9fd210c7771730358cbb882f0c58e1821c05386554175a
+  raw_hash     e63758c223d11a55cc9fd210c7771730358cbb882f0c58e1821c05386554175a, 97 points
+  family       none (tabulated)
+
+normalization (of the file)
+  LE           point 48, interpolated between two input points, at (-0.000317, 0.002431)
+  rotation     +0.1393 deg, scale 0.999680, x stretch upper 1.000000 lower 1.000000
+
+TE
+  closure      none, source gap 0.000e+00 c
+
+CST (order 8, n1 0.5, n2 1)
+  upper        +0.186176 -0.027302 +0.619256 -0.067089 +0.732282 -0.024042 +0.615638 +0.113116 +0.521250
+  lower        -0.186176 -0.386554 +0.276667 -0.500470 +0.469812 -0.355195 +0.381404 +0.013025 +0.422514
+  LE term      +0.807743
+  fit          max 1.09e-03 c at x=0.0046 (limit 0.001), rms 2.33e-04 c, over 98 points
+  source       the file's points before closing are within 1.09e-03 c
+  TE wedge     4.63 deg
+
+files
+  raw          raw/datagen/geometry/rejected/e63758c2/fx63137.dat
+  normalised   raw/datagen/geometry/normalised/cst8-r1/rejected/e63758c2/fx63137.dat
+  norm_hash    926179e856d32b7630c98e84c59f10d4c94d68d84f595199b04de702fd07b600

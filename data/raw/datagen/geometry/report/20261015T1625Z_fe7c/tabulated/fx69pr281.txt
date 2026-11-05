@@ -1,0 +1,28 @@
+fx69pr281: added
+source   tabulated/fx69pr281.dat
+ingest   20261015T1625Z_fe7c, shape version cst8-r1, code 254a0bd
+
+identity
+  geometry_id  91d4020f30eb190d3b00cf7c443644dad08ce430fbd5835ae3919ed8ab68af27
+  raw_hash     91d4020f30eb190d3b00cf7c443644dad08ce430fbd5835ae3919ed8ab68af27, 97 points
+  family       none (tabulated)
+
+normalization (of the file)
+  LE           point 48, interpolated between two input points, at (-0.000004, 0.001430)
+  rotation     +0.0819 deg, scale 0.999995, x stretch upper 1.000000 lower 1.000000
+
+TE
+  closure      none, source gap 0.000e+00 c
+
+CST (order 8, n1 0.5, n2 1)
+  upper        +0.516459 +0.156567 +1.006055 -0.329612 +1.380784 -0.405723 +1.003207 +0.089379 +0.610526
+  lower        -0.516459 -0.455539 -0.247838 -0.126433 -0.175701 -0.123230 +0.077863 -0.108069 +0.253091
+  LE term      +0.654157
+  fit          max 7.07e-04 c at x=0.0379 (limit 0.001), rms 2.63e-04 c, over 98 points
+  source       the file's points before closing are within 7.07e-04 c
+  TE wedge     17.20 deg
+
+files
+  raw          raw/datagen/geometry/raw/fx69pr281.dat
+  normalised   raw/datagen/geometry/normalised/cst8-r1/fx69pr281.dat
+  norm_hash    4201fb2b5d950e0f5295e2c1b9a4437d5b345d6efe9a9920bb54263881ac2b4c

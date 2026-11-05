@@ -1,0 +1,28 @@
+ah93w257: added
+source   tabulated/ah93w257.dat
+ingest   20261015T1625Z_fe7c, shape version cst8-r1, code 254a0bd
+
+identity
+  geometry_id  a7a528ef3e370a1b5f951ddee61b05847899c1bf412624053a77792d61873c1a
+  raw_hash     a7a528ef3e370a1b5f951ddee61b05847899c1bf412624053a77792d61873c1a, 97 points
+  family       none (tabulated)
+
+normalization (of the file)
+  LE           point 49, interpolated between two input points, at (-0.000001, -0.000191)
+  rotation     +0.1939 deg, scale 0.999993, x stretch upper 1.000013 lower 0.999987
+
+TE
+  closure      pried, source gap 7.730e-03 c
+
+CST (order 8, n1 0.5, n2 1)
+  upper        +0.281707 +0.556199 +0.082963 +0.647017 +0.186565 +0.313255 +0.316375 +0.149486 +0.309762
+  lower        -0.281707 -0.094766 -0.638938 +0.095098 -0.792470 +0.157843 -0.345771 +0.219671 +0.078344
+  LE term      -0.492973
+  fit          max 4.24e-04 c at x=0.9904 (limit 0.001), rms 1.17e-04 c, over 98 points
+  source       the file's points before closing are within 4.24e-03 c
+  TE wedge     12.73 deg
+
+files
+  raw          raw/datagen/geometry/raw/ah93w257.dat
+  normalised   raw/datagen/geometry/normalised/cst8-r1/ah93w257.dat
+  norm_hash    50fc1d5e15f59c34dfa3e42bdd7f6333900f503c1fcee74ded26e1268376d1db

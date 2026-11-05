@@ -1,0 +1,28 @@
+glennmartin3: added
+source   tabulated/glennmartin3.dat
+ingest   20261015T1625Z_fe7c, shape version cst8-r1, code 254a0bd
+
+identity
+  geometry_id  cee7c583ba8397025fecf13ac817df9e1454a068f864cac654d8b77be44e5b19
+  raw_hash     cee7c583ba8397025fecf13ac817df9e1454a068f864cac654d8b77be44e5b19, 33 points
+  family       none (tabulated)
+
+normalization (of the file)
+  LE           point 16, interpolated between two input points, at (-0.001211, 0.030283)
+  rotation     +0.6400 deg, scale 0.998728, x stretch upper 1.000000 lower 1.000000
+
+TE
+  closure      none, source gap 0.000e+00 c
+
+CST (order 8, n1 0.5, n2 1)
+  upper        +0.178352 +0.361995 +0.090943 +0.526568 +0.055941 +0.417241 +0.410897 +0.187013 +0.742050
+  lower        -0.178352 -0.160104 -0.047905 +0.022714 -0.334435 +0.389230 -0.605130 +0.337373 -0.549190
+  LE term      +0.373718
+  fit          max 5.37e-04 c at x=0.1014 (limit 0.001), rms 2.06e-04 c, over 34 points
+  source       the file's points before closing are within 5.37e-04 c
+  TE wedge     65.35 deg
+
+files
+  raw          raw/datagen/geometry/raw/glennmartin3.dat
+  normalised   raw/datagen/geometry/normalised/cst8-r1/glennmartin3.dat
+  norm_hash    3fff247df02df1353d3a9f6bb40860bb9ece30c3583ce9d8851332c49944cfc2

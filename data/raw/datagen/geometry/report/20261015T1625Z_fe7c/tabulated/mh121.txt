@@ -1,0 +1,28 @@
+mh121: added
+source   tabulated/mh121.dat
+ingest   20261015T1625Z_fe7c, shape version cst8-r1, code 254a0bd
+
+identity
+  geometry_id  0625f1df2b678927a89f643412299659356142ed2558d10d503c08ac2e52a7cd
+  raw_hash     0625f1df2b678927a89f643412299659356142ed2558d10d503c08ac2e52a7cd, 68 points
+  family       none (tabulated)
+
+normalization (of the file)
+  LE           point 35, interpolated between two input points, at (-0.000027, -0.000024)
+  rotation     -0.0014 deg, scale 0.999973, x stretch upper 1.000000 lower 1.000000
+
+TE
+  closure      none, source gap 0.000e+00 c
+
+CST (order 8, n1 0.5, n2 1)
+  upper        +0.077868 +0.094826 +0.147466 +0.225608 +0.110116 +0.261758 +0.267185 +0.181471 +0.321228
+  lower        -0.077868 -0.208272 +0.145809 -0.389788 +0.310939 -0.299785 +0.193452 -0.048943 +0.155020
+  LE term      +0.238118
+  fit          max 4.57e-04 c at x=0.0024 (limit 0.001), rms 1.43e-04 c, over 69 points
+  source       the file's points before closing are within 4.57e-04 c
+  TE wedge     9.00 deg
+
+files
+  raw          raw/datagen/geometry/raw/mh121.dat
+  normalised   raw/datagen/geometry/normalised/cst8-r1/mh121.dat
+  norm_hash    b65d7a24c1049a25a7d0fad0fc5fe66a2dec51eb4ba35689f1af38efa3c4d02f

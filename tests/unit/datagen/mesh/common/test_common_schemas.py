@@ -1,0 +1,180 @@
+"""
+Tests for `common.schemas.MeshIn`'s single `mesh_config` field, i.e.:
+
+Step 1: Ensure the (backend, topology) pairing resolves the config class
+    - test_mesh_config_defaults_per_pairing
+    - test_mesh_config_dict_is_coerced_to_the_pairings_class
+    - test_mesh_config_instance_passes_through
+Step 2: Ensure a config that doesn't belong to the pairing is rejected
+    - test_mesh_config_wrong_class_rejected
+Step 3: Ensure the resolution holds when the model is validated from a raw payload
+    - test_mesh_config_resolved_when_validated_from_payload
+    - test_payload_is_left_untouched_for_reuse
+Step 4: Ensure a mistyped keyword can't silently fall back to the default config
+    - test_unknown_keyword_rejected
+    - test_config_unknown_key_rejected_per_pairing
+Step 5: Ensure the sampled pairings' configs carry the same sampling knobs, and only those
+    - test_sampled_configs_share_the_sampling_fields
+    - test_sampling_fields_stay_out_of_c2d_options
+Step 6: Ensure MeshIn's reporting options default to what the pipeline did before they existed
+    - test_reporting_options_default_to_the_gates_and_a_vtk
+"""
+
+import tempfile
+
+import pytest
+from pydantic import ValidationError
+
+from src.datagen.geometry.sample.fields import SamplingFields
+from src.datagen.schemas import Airfoil, Freestream
+from src.datagen.meshing.gmsh.schemas import GMSH_CMeshingConfig, GMSH_OMeshingConfig
+from src.datagen.meshing.c2d.run import _write_grid_options
+from src.datagen.meshing.c2d.schemas import C2D_MeshingConfig
+from src.datagen.meshing.common.schemas import MeshIn, MeshBackend, MeshTopology, QualityLimits
+from src.datagen.meshing.common.constants import SKEWNESS_LIMIT, ORTHO_MIN, JACOBIAN_LIMIT, SIZE_RATIO_LIMIT
+
+
+_COORDS = [[1.0, 0.0063], [0.5, 0.06], [0.0, 0.0], [0.5, -0.06], [1.0, -0.0063]]
+
+
+def _mesh_in(backend, topology, **kwargs) -> MeshIn:
+    return MeshIn(
+        airfoil=Airfoil(airfoil_name="naca0012", coords=_COORDS, chord=1.0, le_idx=2),
+        freestream=Freestream(alpha=0.0, Re=5e6, mach=0.3, altitude_m=1.0),
+        working_dir=tempfile.gettempdir(),
+        backend=backend,
+        topology=topology,
+        **kwargs,
+    )
+
+
+# region Step 1
+@pytest.mark.parametrize("backend, topology, expected", [
+    (MeshBackend.GMSH, MeshTopology.CGRD, GMSH_CMeshingConfig),
+    (MeshBackend.GMSH, MeshTopology.OGRD, GMSH_OMeshingConfig),
+    (MeshBackend.C2D, MeshTopology.CGRD, C2D_MeshingConfig),
+    (MeshBackend.C2D, MeshTopology.OGRD, C2D_MeshingConfig),
+])
+def test_mesh_config_defaults_per_pairing(backend, topology, expected):
+    # Omitting mesh_config entirely has to yield the class *this* pairing meshes with; gmsh's two
+    # topologies take structurally different configs, so a wrong default is a wrong mesh.
+    data = _mesh_in(backend, topology)
+
+    assert isinstance(data.mesh_config, expected)
+
+
+def test_mesh_config_dict_is_coerced_to_the_pairings_class():
+    # Every config class is all-defaults, so a bare union would resolve {} by first match. The
+    # pairing is what disambiguates it.
+    data = _mesh_in(MeshBackend.GMSH, MeshTopology.OGRD, mesh_config={"farfield_center_offset": 0.55})
+
+    assert isinstance(data.mesh_config, GMSH_OMeshingConfig)
+    assert data.mesh_config.farfield_center_offset == 0.55
+
+
+def test_mesh_config_instance_passes_through():
+    config = GMSH_OMeshingConfig(farfield_center_offset=0.2)
+    data = _mesh_in(MeshBackend.GMSH, MeshTopology.OGRD, mesh_config=config)
+
+    assert isinstance(data.mesh_config, GMSH_OMeshingConfig)
+    assert data.mesh_config.farfield_center_offset == 0.2
+# endregion
+
+
+# region Step 2
+def test_mesh_config_wrong_class_rejected():
+    with pytest.raises(ValidationError, match="requires GMSH_OMeshingConfig, got GMSH_CMeshingConfig"):
+        _mesh_in(MeshBackend.GMSH, MeshTopology.OGRD, mesh_config=GMSH_CMeshingConfig())
+# endregion
+
+
+# region Step 3
+def test_mesh_config_resolved_when_validated_from_payload():
+    # A raw payload's config arrives as a plain dict. Without the pairing-aware resolver it lands on
+    # the union's first member, silently turning a stored O-mesh config into a C-mesh one.
+    restored = MeshIn.model_validate({
+        "airfoil": Airfoil(airfoil_name="naca0012", coords=_COORDS, chord=1.0, le_idx=2),
+        "freestream": Freestream(alpha=0.0, Re=5e6, mach=0.3, altitude_m=1.0),
+        "working_dir": tempfile.gettempdir(),
+        "backend": "gmsh",
+        "topology": "OGRID",
+        "mesh_config": {"farfield_center_offset": 0.77},
+    })
+
+    assert isinstance(restored.mesh_config, GMSH_OMeshingConfig)
+    assert restored.mesh_config.farfield_center_offset == 0.77
+
+
+def test_payload_is_left_untouched_for_reuse():
+    # model_validate hands the resolver the caller's own dict; writing the resolved config into it
+    # used to leave a C-mesh config behind, which the same payload then failed on as an O-mesh
+    payload = {
+        "airfoil": Airfoil(airfoil_name="naca0012", coords=_COORDS, chord=1.0, le_idx=2),
+        "freestream": Freestream(alpha=0.0, Re=5e6, mach=0.3, altitude_m=1.0),
+        "working_dir": tempfile.gettempdir(),
+        "backend": "gmsh",
+        "topology": "CGRID",
+    }
+    assert isinstance(MeshIn.model_validate(payload).mesh_config, GMSH_CMeshingConfig)
+    assert "mesh_config" not in payload
+
+    payload["topology"] = "OGRID"
+    assert isinstance(MeshIn.model_validate(payload).mesh_config, GMSH_OMeshingConfig)
+# endregion
+
+
+# region Step 4
+def test_unknown_keyword_rejected():
+    # mesh_config defaults when omitted, so without extra="forbid" a stale or mistyped keyword is
+    # dropped silently and the mesh is built from defaults instead of the config that was passed.
+    with pytest.raises(ValidationError, match="gmsh_cmesh_config"):
+        _mesh_in(MeshBackend.GMSH, MeshTopology.CGRD, gmsh_cmesh_config=GMSH_CMeshingConfig())
+
+
+@pytest.mark.parametrize("backend, topology, typo", [
+    (MeshBackend.GMSH, MeshTopology.CGRD, "nx_uppper"),
+    (MeshBackend.GMSH, MeshTopology.OGRD, "farfield_center_offsett"),
+    (MeshBackend.C2D, MeshTopology.CGRD, "nsrff"),
+    (MeshBackend.C2D, MeshTopology.OGRD, "jmaxx"),
+])
+def test_config_unknown_key_rejected_per_pairing(backend, topology, typo):
+    # `MeshIn`'s own forbid covers its own fields only; it stops at the `mesh_config` boundary, so
+    # each config class has to carry one too or `_resolve_mesh_config`'s `expected(**config)` drops
+    # the key and meshes at that field's default. Parametrized over every pairing rather than
+    # spot-checked, so a config class added to `_CONFIG_FOR_PAIRING` without a forbid is caught.
+    with pytest.raises(ValidationError, match=typo):
+        _mesh_in(backend, topology, mesh_config={typo: 42})
+# endregion
+
+
+# region Step 5
+def test_sampled_configs_share_the_sampling_fields():
+    # The sampler reads the same knobs off whichever config it gets; the gmsh C-mesh is not sampled
+    sampling = SamplingFields.model_fields
+
+    for config in (C2D_MeshingConfig, GMSH_OMeshingConfig):
+        assert issubclass(config, SamplingFields)
+        assert {k: repr(config.model_fields[k]) for k in sampling} == {k: repr(v) for k, v in sampling.items()}
+    assert not set(sampling) & set(GMSH_CMeshingConfig.model_fields)
+    with pytest.raises(ValidationError, match="dx_mid"):
+        _mesh_in(MeshBackend.C2D, MeshTopology.OGRD, mesh_config={"dx_mid": 1.0})  # bounds kept: above DX_MAX
+
+
+def test_sampling_fields_stay_out_of_c2d_options(tmp_path):
+    config = C2D_MeshingConfig(dx_mid=0.004, le_ratio=0.5)
+    path = tmp_path / "grid_options.in"
+    _write_grid_options(str(path), config.to_params(), "foil", "OGRD", config.slvr, Re=2e6)
+
+    assert not any(k in path.read_text() for k in SamplingFields.model_fields)  # c2d never sees them
+# endregion
+
+
+# region Step 6
+def test_reporting_options_default_to_the_gates_and_a_vtk():
+    data = _mesh_in(MeshBackend.C2D, MeshTopology.OGRD)
+
+    assert data.count_limits == QualityLimits()
+    assert QualityLimits().model_dump() == dict(skew_max=SKEWNESS_LIMIT, ortho_min=ORTHO_MIN,
+                                                jac_min=JACOBIAN_LIMIT, size_ratio_max=SIZE_RATIO_LIMIT)
+    assert data.write_vtk is True
+# endregion

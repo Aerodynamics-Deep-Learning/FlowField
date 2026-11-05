@@ -23,7 +23,17 @@ runs/*
 # Weights and Biases files
 wandb/
 
+# Agents
+.claude/
+.claude_audits/
+CLAUDE.md
+
 # Parquet files
 *.parquet
 
 /tests/datagen/meshing/gmsh/test_sicn/old
+
+# External tools are user-installed, never committed: local paths live in tools.toml
+# (see tools.example.toml)
+tools.toml
+*.exe

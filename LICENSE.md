@@ -1,6 +1,6 @@
 COPYRIGHT NOTICE
 
-Copyright (c) 2025 Ege Artan, Davut Karataş, Kaan Öktem, and Contributors
+Copyright (c) 2026 Ege Artan, Davut Karataş, Kaan Öktem, and Contributors
 
 All rights reserved.
 

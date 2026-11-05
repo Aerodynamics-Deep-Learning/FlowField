@@ -1,0 +1,28 @@
+e864: added
+source   tabulated/e864.dat
+ingest   20261015T1625Z_fe7c, shape version cst8-r1, code 254a0bd
+
+identity
+  geometry_id  02b516a9741f0ef7065f1a8c560238edda8b6b092597ad7a697fbb2caa739395
+  raw_hash     02b516a9741f0ef7065f1a8c560238edda8b6b092597ad7a697fbb2caa739395, 61 points
+  family       none (tabulated)
+
+normalization (of the file)
+  LE           point 30, interpolated between two input points, at (-0.000000, 0.000000)
+  rotation     +0.0000 deg, scale 1.000000, x stretch upper 1.000000 lower 1.000000
+
+TE
+  closure      pried, source gap 1.600e-02 c
+
+CST (order 8, n1 0.5, n2 1)
+  upper        +0.409803 +0.627712 +0.244419 +0.988086 -0.047439 +0.725764 +0.203775 +0.404687 +0.311633
+  lower        -0.409803 -0.605935 -0.270814 -0.964419 +0.036087 -0.727215 -0.197207 -0.409244 -0.310682
+  LE term      -0.014085
+  fit          max 5.51e-04 c at x=0.1079 (limit 0.001), rms 1.23e-04 c, over 62 points
+  source       the file's points before closing are within 7.64e-03 c
+  TE wedge     34.57 deg
+
+files
+  raw          raw/datagen/geometry/raw/e864.dat
+  normalised   raw/datagen/geometry/normalised/cst8-r1/e864.dat
+  norm_hash    654404e3d2d786313ddaa8a1e978a93889eabe4607c4106612368d0c3e66b9ff
