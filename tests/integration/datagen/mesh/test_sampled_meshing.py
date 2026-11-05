@@ -22,8 +22,9 @@ from src.datagen.meshing.c2d.run import C2D_find_exe
 from src.datagen.meshing.c2d.schemas import C2D_MeshingConfig
 from src.datagen.meshing.common.entry import Common_GenerateMesh
 from src.datagen.meshing.common.geo_dev import _boundary_from_su2
-from src.datagen.meshing.common.quality import _cell_metrics, _read_su2
+from src.datagen.meshing.common.quality import _cell_metrics
 from src.datagen.meshing.common.schemas import MeshBackend, MeshExitFlag, MeshTopology, QualityLimits
+from src.datagen.meshing.common.su2io import Common_read_su2
 from src.datagen.meshing.gmsh.schemas import GMSH_OMeshingConfig
 from src.datagen.meshing.optimizer.evaluate.sampling import Optim_build_study_contour, Optim_sample_for_mesher
 from src.datagen.schemas import Freestream
@@ -100,7 +101,7 @@ def test_c2d_ogrid_reports_distributions_without_a_vtk(integration_mesh_workspac
     assert q.skew_dist.n_bad == q.ortho_dist.n_bad == q.jac_dist.n_bad == q.size_ratio_dist.n_bad == 0
 
     # The reported location is the worst cell's centroid, on a real mesh
-    nodes, quads, _, _ = _read_su2(out.mesh_path)
+    nodes, quads, _, _ = Common_read_su2(out.mesh_path)
     worst = int(np.argmax(_cell_metrics(nodes[quads])[1]))
     assert (q.skew_dist.x, q.skew_dist.y) == pytest.approx(tuple(nodes[quads[worst]].mean(axis=0)))
     assert 0.0 < q.skew_dist.dwall < 0.1  # near the wall, not out in the far field

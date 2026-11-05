@@ -9,8 +9,9 @@ from src.datagen.meshing.gmsh.schemas import GMSH_ExitFlag
 from src.datagen.meshing.gmsh.utils import GMSH_get_mesh_height
 from src.datagen.meshing.common.constants import MARKER_AIRFOIL
 from src.datagen.meshing.common.entry import Common_GenerateMesh
-from src.datagen.meshing.common.quality import Common_evaluate_mesh_quality, _read_su2, _cell_metrics
+from src.datagen.meshing.common.quality import Common_evaluate_mesh_quality, _cell_metrics
 from src.datagen.meshing.common.schemas import MeshIn, MeshBackend, MeshTopology, MeshExitFlag
+from src.datagen.meshing.common.su2io import Common_read_su2
 
 pytestmark = pytest.mark.skipif(find_tool("gmsh") is None, reason="gmsh executable not found (set it in tools.toml)")
 
@@ -93,7 +94,7 @@ def test_gmsh_omesh_first_cell_follows_target_yplus(gmsh_omesh):
     assert out.flag == GMSH_ExitFlag.SUCCESS, f"GMSH O-mesh failed with flag {out.flag}"
 
     h_first = GMSH_get_mesh_height(data.freestream.Re, data.airfoil.chord, data.meshing_config.target_yplus)
-    nodes, quads, _tris, markers = _read_su2(out.mesh_path)
+    nodes, quads, _tris, markers = Common_read_su2(out.mesh_path)
     wall_edges = {frozenset(e) for e in markers[MARKER_AIRFOIL]}
     area = np.abs(_cell_metrics(nodes[quads])[0])
 

@@ -1,12 +1,7 @@
 """
 Tests for `common.quality`, the single `.su2` verdict both backends converge on, i.e.:
 
-Step 1: Ensure `_read_su2` parses the format both backends write
-    - test_read_su2_parses_nodes_elements_and_markers
-    - test_read_su2_empty_element_blocks_keep_their_rank
-    - test_read_su2_skips_comments_and_blank_lines
-    - test_read_su2_raises_on_a_block_cut_short
-Step 2: Ensure the metric helpers score known geometry correctly -- `_cell_metrics` for the
+Step 1: Ensure the metric helpers score known geometry correctly -- `_cell_metrics` for the
         cell-local area/skewness/aspect ratio/scaled Jacobian, `_orthogonal_quality` for the
         face-based one that also reads a cell's neighbours
     - test_cell_metrics_on_known_cells
@@ -21,7 +16,7 @@ Step 2: Ensure the metric helpers score known geometry correctly -- `_cell_metri
     - test_size_ratio_reads_a_geometric_progression
     - test_size_ratio_pairs_cells_across_blocks
     - test_size_ratio_single_cell_has_no_interior_face
-Step 3: Ensure `_analyze_su2` reduces a mesh to the right metrics
+Step 2: Ensure `_analyze_su2` reduces a mesh to the right metrics
     - test_analyze_su2_on_a_clean_mesh
     - test_analyze_su2_empty_mesh_is_not_acceptable
     - test_analyze_su2_flags_inverted_cells
@@ -29,7 +24,7 @@ Step 3: Ensure `_analyze_su2` reduces a mesh to the right metrics
     - test_analyze_su2_collapsed_edge_fails_the_aspect_ratio_gate
     - test_analyze_su2_counts_unmarked_boundary_edges
     - test_analyze_su2_size_jump_fails_the_size_ratio_gate
-Step 4: Ensure `Common_evaluate_mesh_quality` maps those metrics onto the right MeshExitFlag
+Step 3: Ensure `Common_evaluate_mesh_quality` maps those metrics onto the right MeshExitFlag
     - test_quality_missing_or_absent_path
     - test_quality_clean_mesh_succeeds
     - test_quality_empty_mesh_is_conversion_fail
@@ -42,15 +37,16 @@ Step 4: Ensure `Common_evaluate_mesh_quality` maps those metrics onto the right 
     - test_quality_unmarked_boundary_is_conversion_fail
     - test_quality_fully_marked_boundary_succeeds
     - test_quality_unparseable_su2_is_conversion_fail
-Step 5: Ensure the summary helpers narrow/format the analysis correctly
+Step 4: Ensure the summary helpers narrow/format the analysis correctly
     - test_summary_from_analysis_matches_the_schema
-Step 6: Ensure each metric's distribution says how much of the mesh is bad and where the worst sits
+Step 5: Ensure each metric's distribution says how much of the mesh is bad and where the worst sits
     - test_cell_distributions_on_known_cells
     - test_size_ratio_distribution_sits_on_its_face
     - test_count_limits_change_the_counts_not_the_verdict
     - test_distributions_absent_without_cells_faces_or_wall
 
-Scope: the helpers directly. `entry.py`'s use of the verdict is covered in test_common_entry.py.
+Scope: the helpers directly. The `.su2` reader is covered in test_common_su2io.py, `entry.py`'s use of
+the verdict in test_common_entry.py.
 """
 
 import numpy as np
@@ -58,7 +54,7 @@ import pytest
 
 from src.datagen.meshing.common.schemas import MeshExitFlag, MeshQualitySummary, MetricDistribution, QualityLimits
 from src.datagen.meshing.common.quality import (
-    Common_evaluate_mesh_quality, _read_su2, _cell_metrics, _orthogonal_quality, _size_ratio,
+    Common_evaluate_mesh_quality, _cell_metrics, _orthogonal_quality, _size_ratio,
     _analyze_su2, _summary_from_analysis,
 )
 from src.datagen.meshing.common.constants import (
@@ -143,68 +139,6 @@ def _size_ratio_of(nodes, *blocks):
 
 
 # region Step 1
-def test_read_su2_parses_nodes_elements_and_markers(tmp_path):
-    path = _write_su2(
-        tmp_path / "mixed.su2",
-        nodes=_SQUARE + [[0.5, 2.0]],
-        quads=[[0, 1, 2, 3]],
-        tris=[[3, 2, 4]],
-        markers={"MARKER_AIRFOIL": [(0, 1), (1, 2)], "MARKER_FARFIELD": [(2, 3)]},
-    )
-    nodes, quads, tris, markers = _read_su2(path)
-
-    assert nodes.shape == (5, 2)
-    np.testing.assert_allclose(nodes[1], [1.0, 0.0])
-    np.testing.assert_array_equal(quads, [[0, 1, 2, 3]])
-    np.testing.assert_array_equal(tris, [[3, 2, 4]])
-    # Markers keep their edge lists, which is what the marker-parity checks count
-    assert markers == {"MARKER_AIRFOIL": [(0, 1), (1, 2)], "MARKER_FARFIELD": [(2, 3)]}
-
-
-def test_read_su2_empty_element_blocks_keep_their_rank(tmp_path):
-    # `_analyze_su2` indexes `nodes[conn]` expecting (M,k), so an empty block still has to be
-    # (0,4)/(0,3) rather than a bare (0,) (otherwise a quad-only mesh breaks on the tri branch).
-    path = _write_su2(tmp_path / "quads_only.su2", nodes=_SQUARE, quads=[[0, 1, 2, 3]])
-    _, quads, tris, markers = _read_su2(path)
-
-    assert quads.shape == (1, 4)
-    assert tris.shape == (0, 3)
-    assert markers == {}
-
-
-def test_read_su2_skips_comments_and_blank_lines(tmp_path):
-    path = tmp_path / "commented.su2"
-    path.write_text(
-        "% SU2 mesh written by a backend\n"
-        "NDIME= 2\n"
-        "\n"
-        "NPOIN= 4\n"
-        "0.0 0.0 0\n1.0 0.0 1\n1.0 1.0 2\n0.0 1.0 3\n"
-        "\n"
-        "% elements follow\n"
-        "NELEM= 1\n"
-        "9 0 1 2 3 0\n"
-    )
-    nodes, quads, _, _ = _read_su2(str(path))
-
-    assert nodes.shape == (4, 2)
-    np.testing.assert_array_equal(quads, [[0, 1, 2, 3]])
-
-
-@pytest.mark.parametrize("text", [
-    "NDIME= 2\nNPOIN= 4\n0.0 0.0 0\n1.0 0.0 1\n",   # declares 4 nodes, holds 2
-    "NDIME= 2\nNELEM= 2\n9 0 1 2 3 0\n",            # declares 2 cells, holds 1
-])
-def test_read_su2_raises_on_a_block_cut_short(tmp_path, text):
-    # A truncated file must not parse as a smaller mesh; `C2D_count_su2_nodes` trusts NPOIN= and leans on this
-    path = tmp_path / "truncated.su2"
-    path.write_text(text)
-    with pytest.raises(IndexError):
-        _read_su2(str(path))
-# endregion
-
-
-# region Step 2
 @pytest.mark.parametrize("corners, area, skew, ar, jac", [
     (_SQUARE, 1.0, 0.0, 1.0, 1.0),
     (_SQUARE_CW, -1.0, 0.0, 1.0, -1.0),   # winding flips the sign of both area and Jacobian
@@ -349,7 +283,7 @@ def test_size_ratio_single_cell_has_no_interior_face():
 # endregion
 
 
-# region Step 3
+# region Step 2
 def test_analyze_su2_on_a_clean_mesh(tmp_path):
     path = _one_quad(tmp_path, _SQUARE, markers={"MARKER_AIRFOIL": [(0, 1), (1, 2)]})
     a = _analyze_su2(path)
@@ -431,7 +365,7 @@ def test_analyze_su2_size_jump_fails_the_size_ratio_gate(tmp_path):
 # endregion
 
 
-# region Step 4
+# region Step 3
 @pytest.mark.parametrize("path", [None, "", "no_such_mesh.su2"])
 def test_quality_missing_or_absent_path(path):
     assert Common_evaluate_mesh_quality(path) == (MeshExitFlag.CONVERSION_FAIL, None, None)
@@ -544,7 +478,7 @@ def test_quality_unparseable_su2_is_conversion_fail(tmp_path, body, reason):
 # endregion
 
 
-# region Step 5
+# region Step 4
 def test_summary_from_analysis_matches_the_schema(tmp_path):
     a = _analyze_su2(_one_quad(tmp_path, _SLANTED))
     narrowed = _summary_from_analysis(a)
@@ -557,7 +491,7 @@ def test_summary_from_analysis_matches_the_schema(tmp_path):
 # endregion
 
 
-# region Step 6
+# region Step 5
 # Three disjoint cells, square / slanted / thin, 3 apart in x: no shared face, so each scores alone.
 # The wall is the square's bottom edge.
 _TRIO_NODES = ([[x, y] for x, y in _SQUARE] + [[x + 3.0, y] for x, y in _SLANTED]

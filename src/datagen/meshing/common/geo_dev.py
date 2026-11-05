@@ -19,7 +19,7 @@ import numpy as np
 
 from src.datagen.schemas import Airfoil
 from .schemas import MeshGeoDeviationSummary, MeshExitFlag
-from .quality import _read_su2  # shared .su2 parser; both verdict passes read the same file
+from .su2io import Common_read_su2  # both verdict passes read the same file with the same parser
 from .constants import MARKER_AIRFOIL, GEO_DEV_LIMIT
 # The SU2 tag of the no-slip wall, the boundary this pass scores (matched exactly, never
 # case-folded).
@@ -107,7 +107,7 @@ def _boundary_from_su2(mesh_path: str | None):
     Returns `(None, None)` when the marker is missing or empty. Node indices are remapped to the
     boundary's own numbering, so `nodes` holds only wall nodes.
     """
-    nodes, _quads, _tris, markers = _read_su2(mesh_path)
+    nodes, _quads, _tris, markers = Common_read_su2(mesh_path)
     segments = markers.get(MARKER_AIRFOIL)
     if not segments:
         logger.error("No %s marker in %s; tags present: %s",

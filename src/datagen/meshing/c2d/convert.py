@@ -16,7 +16,7 @@ import numpy as np
 from src.datagen.meshing.common.constants import MARKER_AIRFOIL, MARKER_FARFIELD
 # The SU2 boundary names this writer stamps onto the mesh, shared with gmsh's physical groups and
 # with `solvers/su2/schemas.py`'s marker defaults.
-from src.datagen.meshing.common.quality import _read_su2  # the reader the quality pass scores a .su2 with
+from src.datagen.meshing.common.su2io import Common_read_su2  # numpy-only, the parser the quality pass uses
 
 def read_plot3d_2d(path):
     """
@@ -256,6 +256,6 @@ def su2_to_vtk(su2_path, vtk_path):
     """
     Read a 2D .su2 mesh and write it as .vtk.
     """
-    nodes, quads, tris, _ = _read_su2(su2_path)
+    nodes, quads, tris, _ = Common_read_su2(su2_path)
     return write_vtk(nodes, quads, tris, vtk_path)
 

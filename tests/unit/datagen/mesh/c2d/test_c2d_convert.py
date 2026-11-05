@@ -53,7 +53,7 @@ Scope: a defect here is expensive: `convert` writes a file SU2 will happily run 
 cell is wrong physics rather than a crash. Grids come from the local `_write_p3d`/`_write_nmf`
 helpers rather than fixtures on disk, so every case states its own geometry, and they are small
 enough (3x2 = 6 nodes, 2 quads) that every node id, edge and cell area is computable by hand. The
-written `.su2` is read back with `common.quality._read_su2` (the same parser the quality and
+written `.su2` is read back with `common.su2io.Common_read_su2` (the same parser the quality and
 geo_dev passes use) so these assert the output is readable by what actually consumes it, rather
 than by a test-local reader that could agree with a shared bug.
 """
@@ -63,7 +63,7 @@ import pytest
 from src.datagen.meshing.c2d.convert import (
     convert, face_edges, read_nmf, read_plot3d_2d, _pj, MARKER_AIRFOIL, MARKER_FARFIELD,
 )
-from src.datagen.meshing.common.quality import _read_su2
+from src.datagen.meshing.common.su2io import Common_read_su2
 
 # 3x2 grid, stored order: node id = p + j0*imax, so ids 0,1,2 are the j=0 row and 3,4,5 the j=1 row.
 # Each quad is (p,j0), (p+1,j0), (p+1,j0+1), (p,j0+1), which for this layout is already CCW.
@@ -100,7 +100,7 @@ def _convert(tmp_path, xs=None, ys=None, rows=(_WALL, _FAR), imax=_IMAX, jmax=_J
     nmf = _write_nmf(tmp_path / "g.nmf", rows)
     su2 = str(tmp_path / "g.su2")
     stats = convert(p3d, nmf, su2, **kw)
-    return stats, _read_su2(su2), su2
+    return stats, Common_read_su2(su2), su2
 
 
 def _areas(nodes, quads):
@@ -404,7 +404,7 @@ def test_marker_edge_collapsed_to_a_point_is_not_emitted(tmp_path):
 
 
 def test_boundary_elements_are_written_as_line_elements(tmp_path):
-    # SU2 wants VTK type 3 (line) for a 2D boundary element. `_read_su2` ignores the leading code,
+    # SU2 wants VTK type 3 (line) for a 2D boundary element. `Common_read_su2` ignores the leading code,
     # so nothing else in-tree would notice this being wrong (but SU2 would).
     _stats, _parsed, su2 = _convert(tmp_path)
     lines = [ln.strip() for ln in open(su2) if ln.strip()]
