@@ -40,6 +40,10 @@ FAMILY_MATCH_TOL = 1e-2
 # points zig-zag there, as a mistyped coordinate does (3 of 180 on for_cst: bambino6, hs1430, ah79100a)
 SUSPECT_ISOLATION = 4.0
 
+# How far a shared nose's lower A_0 may sit from -upper A_0 and still be snapped to it (`schemas.CSTParams`):
+# rounding error only, anything further is refused. Every stored cst8-r1 shape is off by exactly 0
+NOSE_ATOL = 1e-10
+
 #endregion
 
 #region Sampling

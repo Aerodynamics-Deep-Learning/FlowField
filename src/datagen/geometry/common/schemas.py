@@ -23,6 +23,8 @@ from typing import Optional
 import numpy as np
 from pydantic import BaseModel, model_validator
 
+from src.datagen.geometry.common.constants import NOSE_ATOL
+
 
 class Family(str, Enum):
     """Airfoil families built from their name instead of their file's points."""
@@ -112,20 +114,37 @@ class Transform(BaseModel):
 
 class CSTParams(BaseModel):
     """
-    Class-function exponents, the Bernstein coefficients of each surface (LE first), and the weight of
-    the leading-edge modification term both surfaces share (see `parametrization.py`).
+    Class-function exponents, the Bernstein coefficients of each surface (LE first), the weight of the
+    leading-edge modification term both surfaces share (see `parametrization.py`), and how the nose is
+    represented.
+
+    Under a shared nose (LEM, SHARED) the surfaces have one radius, so the lower A_0 is -upper A_0: leave
+    it out of `lower` to derive it, a value off by rounding only (NOSE_ATOL) is snapped to it, any other is
+    refused. SEPARATE (two radii) is for the nose calibration only: generated designs and the run log are
+    LEM, and are built through the constructor or `model_validate`, never `model_copy(update=...)`, which
+    skips this.
     """
     n1: float
     n2: float
     upper: list[float]
     lower: list[float]
     le_weight: float = 0.0
+    nose: Nose = Nose.LEM
 
     @model_validator(mode="after")
-    def _same_order(self):
+    def _nose_and_order(self):
+        if self.nose is not Nose.SEPARATE and self.upper:
+            if len(self.lower) == len(self.upper) - 1:  # the lower A_0 left out
+                self.lower = [-self.upper[0]] + self.lower
+            elif len(self.lower) == len(self.upper):
+                if not np.isclose(self.lower[0], -self.upper[0], rtol=0.0, atol=NOSE_ATOL):
+                    raise ValueError(f"shared nose (nose={self.nose.value}): lower[0] must equal -upper[0] (one nose "
+                                     f"radius), got upper[0]={self.upper[0]}, lower[0]={self.lower[0]}; leave "
+                                     f"lower[0] out to derive it, or use nose='separate'")
+                self.lower = [-self.upper[0]] + self.lower[1:]
         if not self.upper or len(self.upper) != len(self.lower):
-            raise ValueError(f"upper and lower need the same, nonzero number of coefficients, "
-                             f"got {len(self.upper)} and {len(self.lower)}")
+            raise ValueError(f"upper and lower need the same, nonzero number of coefficients (under a shared nose "
+                             f"lower may leave out A_0), got {len(self.upper)} and {len(self.lower)}")
         return self
 
     @property

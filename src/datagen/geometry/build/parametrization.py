@@ -135,9 +135,10 @@ def Geom_cst_fit(coords: np.ndarray, le_index: int, order: int = CST_ORDER, nose
     sol = lsq_linear(m, np.concatenate([yu, yl]), bounds=(floor, np.inf), method="bvls").x
 
     upper = sol[:order + 1]
-    lower = ([-upper[0]] if shared else []) + list(sol[order + 1:d]) + [upper[order] - sol[d]]
+    lower = list(sol[order + 1:d]) + [upper[order] - sol[d]]  # a shared nose's lower A_0 is derived by CSTParams
     le_weight = float(sol[d + 1]) if nose is Nose.LEM else 0.0
-    return CSTParams(n1=CST_N1, n2=CST_N2, upper=upper.tolist(), lower=[float(v) for v in lower], le_weight=le_weight)
+    return CSTParams(n1=CST_N1, n2=CST_N2, upper=upper.tolist(), lower=[float(v) for v in lower],
+                     le_weight=le_weight, nose=nose)
 
 
 def Geom_cst_contour(cst: CSTParams, n_points: int) -> np.ndarray:

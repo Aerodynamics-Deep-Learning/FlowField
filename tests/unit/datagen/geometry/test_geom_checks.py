@@ -50,26 +50,26 @@ def test_check_fit():
 
 # region Step 2
 def test_check_thickness_passes_an_airfoil():
-    ok, value, reason = Geom_check_thickness(_cst([0.17] * 5, [-0.12] * 5))
+    ok, value, reason = Geom_check_thickness(_cst([0.17] * 5, [-0.17] + [-0.12] * 4))
 
     assert ok and value > 0 and reason == ""
 
 
 def test_check_thickness_passes_a_cusp():
-    ok, value, reason = Geom_check_thickness(_cst([0.17, 0.2, 0.2, 0.2, 0.1], [-0.12, -0.1, -0.1, -0.1, 0.1]))
+    ok, value, reason = Geom_check_thickness(_cst([0.17, 0.2, 0.2, 0.2, 0.1], [-0.17, -0.1, -0.1, -0.1, 0.1]))
 
     assert ok and value == 0.0 and reason == ""  # zero wedge: the surfaces arrive at one slope
 
 
 def test_check_thickness_crossing_inside():
-    ok, value, reason = Geom_check_thickness(_cst([0.17, 0.1, -0.8, 0.1, 0.1], [-0.12] * 5))
+    ok, value, reason = Geom_check_thickness(_cst([0.17, 0.1, -0.8, 0.1, 0.1], [-0.17] + [-0.12] * 4))
 
     assert not ok and value < 0
     assert "cross at x=0.5" in reason
 
 
 def test_check_thickness_crossed_te():
-    ok, _, reason = Geom_check_thickness(_cst([0.17, 0.2, 0.2, 0.2, 0.05], [-0.12, -0.1, -0.1, -0.1, 0.1]))
+    ok, _, reason = Geom_check_thickness(_cst([0.17, 0.2, 0.2, 0.2, 0.05], [-0.17, -0.1, -0.1, -0.1, 0.1]))
 
     assert not ok
     assert "crossed" in reason and "wedge angle -" in reason

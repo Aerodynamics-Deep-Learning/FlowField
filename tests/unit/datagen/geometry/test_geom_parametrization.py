@@ -36,7 +36,8 @@ _UPPER = [0.17, 0.15, 0.20, 0.18, 0.16, 0.20, 0.19]
 
 def _cst(nose: Nose = Nose.SEPARATE) -> CSTParams:
     lower = [-0.12 if nose is Nose.SEPARATE else -0.17, -0.10, -0.08, -0.05, -0.06, -0.02, 0.01]
-    return CSTParams(n1=CST_N1, n2=CST_N2, upper=_UPPER, lower=lower, le_weight=0.05 if nose is Nose.LEM else 0.0)
+    return CSTParams(n1=CST_N1, n2=CST_N2, upper=_UPPER, lower=lower, le_weight=0.05 if nose is Nose.LEM else 0.0,
+                     nose=nose)
 
 
 # region Step 1
