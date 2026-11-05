@@ -1,6 +1,5 @@
 import pytest
 import numpy as np
-import torch
 from pathlib import Path
 from typing import NamedTuple, Union
 
@@ -62,9 +61,9 @@ _NACA0012_LOWER = [[x, -y] for x, y in zip(_NACA0012_LOWER_X, _naca0012_thicknes
 
 
 def _naca0012_airfoil(name: str) -> Airfoil:
-    coords_tensor = torch.tensor(_NACA0012_UPPER + _NACA0012_LOWER, dtype=torch.float32)
-    le_idx = int(torch.argmin(coords_tensor[:, 0]).item())
-    return Airfoil(airfoil_name=name, coords_tensor=coords_tensor, chord=1.0, le_idx=le_idx)
+    coords = np.array(_NACA0012_UPPER + _NACA0012_LOWER, dtype=np.float32)
+    le_idx = int(np.argmin(coords[:, 0]))
+    return Airfoil(airfoil_name=name, coords=coords, chord=1.0, le_idx=le_idx)
 
 
 def _naca0012_sharp_thickness(x, t=0.12):
@@ -81,10 +80,10 @@ _NACA0012_SHARP_LOWER = [[x, -y] for x, y in zip(_NACA0012_LOWER_X, _naca0012_sh
 
 
 def _naca0012_sharp_airfoil(name: str) -> Airfoil:
-    coords_tensor = torch.tensor(_NACA0012_SHARP_UPPER + _NACA0012_SHARP_LOWER, dtype=torch.float32)
-    coords_tensor[-1] = coords_tensor[0]  # the formula leaves the TE at +-1.7e-17, not exactly closed
-    le_idx = int(torch.argmin(coords_tensor[:, 0]).item())
-    return Airfoil(airfoil_name=name, coords_tensor=coords_tensor, chord=1.0, le_idx=le_idx)
+    coords = np.array(_NACA0012_SHARP_UPPER + _NACA0012_SHARP_LOWER, dtype=np.float32)
+    coords[-1] = coords[0]  # the formula leaves the TE at +-1.7e-17, not exactly closed
+    le_idx = int(np.argmin(coords[:, 0]))
+    return Airfoil(airfoil_name=name, coords=coords, chord=1.0, le_idx=le_idx)
 
 
 def _naca0012_freestream() -> Freestream:

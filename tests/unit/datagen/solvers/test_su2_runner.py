@@ -10,8 +10,6 @@ Scope: the not-found path only. The lookup itself is test_tools.py.
 import os
 from unittest.mock import patch
 
-import torch
-
 from src.datagen.schemas import Airfoil, Freestream
 from src.datagen.solvers.su2.schemas import SU2_In, SU2_SolverConfig, SU2_ConvergenceFlag
 from src.datagen.solvers.su2.run import SU2_Runner
@@ -20,11 +18,9 @@ RUNNER = "src.datagen.solvers.su2.run"
 
 
 def _su2_in(working_dir: str) -> SU2_In:
-    coords = torch.tensor([
-        [1.0, 0.001], [0.5, 0.05], [0.0, 0.0], [0.5, -0.05], [1.0, -0.001],
-    ])
+    coords = [[1.0, 0.001], [0.5, 0.05], [0.0, 0.0], [0.5, -0.05], [1.0, -0.001]]
     return SU2_In(
-        airfoil=Airfoil(airfoil_name="naca_test", coords_tensor=coords, chord=1.0, le_idx=2),
+        airfoil=Airfoil(airfoil_name="naca_test", coords=coords, chord=1.0, le_idx=2),
         freestream=Freestream(alpha=0.0, Re=2e6, mach=0.3),
         manifest_path=os.path.join(working_dir, "manifest.db"),
         working_dir=working_dir, solver_cfg=SU2_SolverConfig(), sim_id=0,

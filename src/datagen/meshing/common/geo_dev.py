@@ -34,7 +34,7 @@ def Common_evaluate_mesh_geo_dev(mesh_path: str | None,
 
     Args:
         mesh_path (str | None): Path to the written `.su2` mesh
-        airfoil (Airfoil): The airfoil the mesh was built from; `coords_tensor` is chord-normalized
+        airfoil (Airfoil): The airfoil the mesh was built from; `coords` is chord-normalized
             and `chord` carries the physical size the mesh was built at
 
     Returns:
@@ -96,7 +96,7 @@ def _reference_polyline(airfoil: Airfoil) -> np.ndarray:
     segment. On an open contour that segment is the TE line gmsh's C-mesh puts in MARKER_AIRFOIL;
     on a closed one it is degenerate and behaves as a point.
     """
-    ref = airfoil.coords_tensor.detach().cpu().numpy()[:, :2].astype(float)
+    ref = airfoil.coords[:, :2].astype(float)
     return np.vstack([ref, ref[:1]])
 
 

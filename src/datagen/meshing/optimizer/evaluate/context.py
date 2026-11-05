@@ -1,6 +1,6 @@
 """
 What a batch hands each of its runs, and the error that stops it, kept apart from the executor so that a slot's
-worker can take them without loading the meshing stack (torch, the meshers, the sampler).
+worker can take them without loading the meshing stack (the meshers, the sampler).
 
     RunContext       what every run of a batch shares: settings, ids, provenance, the work root
     StudySetupError  the study's setup is broken (no c2d, a bad input), not the config

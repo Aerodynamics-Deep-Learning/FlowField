@@ -15,8 +15,8 @@ Each half is skipped when its executable isn't found (see tools.toml).
 
 from pathlib import Path
 
+import numpy as np
 import pytest
-import torch
 
 from src.datagen.utils.tools import find_tool
 from src.datagen.schemas import Airfoil, Freestream
@@ -57,9 +57,9 @@ _NACA0012_LOWER = [
 
 
 def _airfoil():
-    coords = torch.tensor(_NACA0012_UPPER + _NACA0012_LOWER, dtype=torch.float32)
-    le_idx = int(torch.argmin(coords[:, 0]).item())
-    return Airfoil(airfoil_name="naca0012_xcheck", coords_tensor=coords, chord=1.0, le_idx=le_idx)
+    coords = np.array(_NACA0012_UPPER + _NACA0012_LOWER, dtype=np.float32)
+    le_idx = int(np.argmin(coords[:, 0]))
+    return Airfoil(airfoil_name="naca0012_xcheck", coords=coords, chord=1.0, le_idx=le_idx)
 
 
 def _freestream():

@@ -207,9 +207,9 @@ def GMSH_generate_omesh(geo: GeoScript, meshing_config: GMSH_OMeshingConfig, air
 
     # Unpack the coords: [te -> upper -> le -> lower -> te], the last point duplicating the first.
     # Scaled to physical size, same as the config lengths above
-    # the tensor is chord-normalized by contract, so this is what puts both in one space. float64,
-    # since float32 circle points miss the radius by enough for OCC to reject the arcs
-    coords = airfoil.coords_tensor.detach().cpu().double().numpy() * airfoil.chord
+    # the coords are chord-normalized by contract, so this is what puts both in one space. float64 (the
+    # schema's), since float32 circle points miss the radius by enough for OCC to reject the arcs
+    coords = airfoil.coords * airfoil.chord
     n_pts = coords.shape[0]
     le_idx = airfoil.le_idx
     le_x, le_y = coords[le_idx, 0], coords[le_idx, 1]
@@ -335,20 +335,20 @@ def GMSH_generate_cmesh(geo: GeoScript, meshing_config: GMSH_CMeshingConfig, air
     ff_growth_ratio_inv = 1.0 / ff_growth_ratio
 
     # 1b- Unpack the coords #
-    # Scaled to physical size, same as the config lengths above, the tensor is chord-normalized by
+    # Scaled to physical size, same as the config lengths above, the coords are chord-normalized by
     # contract, so this is what puts the geometry and the domain in one coordinate space
-    coords_tensor = airfoil.coords_tensor * airfoil.chord # This is [te_upper -> ... upper_anchor ... -> le -> ... lower_anhor ... -> te_lower]
+    coords = airfoil.coords * airfoil.chord # This is [te_upper -> ... upper_anchor ... -> le -> ... lower_anhor ... -> te_lower]
     # Unpack indices
     le_idx = airfoil.le_idx
     upper_anchor_idx = meshing_config.upper_anchor_idx
     lower_anchor_idx = meshing_config.lower_anchor_idx
     # Unpack coords of LE
-    le_x = coords_tensor[le_idx, 0].item()
-    le_y = coords_tensor[le_idx, 1].item()
-    te_upper_x = coords_tensor[0, 0].item()
-    te_upper_y = coords_tensor[0, 1].item()
-    te_lower_x = coords_tensor[-1, 0].item()
-    te_lower_y = coords_tensor[-1, 1].item()
+    le_x = coords[le_idx, 0].item()
+    le_y = coords[le_idx, 1].item()
+    te_upper_x = coords[0, 0].item()
+    te_upper_y = coords[0, 1].item()
+    te_lower_x = coords[-1, 0].item()
+    te_lower_y = coords[-1, 1].item()
 
     # 1c- Dynamic n_by/te/farfield calculation #
     # Boundary layer
@@ -368,7 +368,7 @@ def GMSH_generate_cmesh(geo: GeoScript, meshing_config: GMSH_CMeshingConfig, air
     ## 2- AIRFOIL RELATED CURVES ##
     # All airfoil points, in CCW direction [te_upper -> ... upper_anchor ... -> le -> ... lower_anhor ... -> te_lower]
     all_airfoil_points = []
-    for pt in coords_tensor.numpy():
+    for pt in coords:
         all_airfoil_points.append(geo.addPoint(pt[0], pt[1], 0.0))
     # Anchor/LE/TE points
     le_point = all_airfoil_points[le_idx]

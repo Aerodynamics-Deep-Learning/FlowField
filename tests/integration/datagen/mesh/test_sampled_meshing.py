@@ -46,7 +46,7 @@ def _mesh(name, backend, topology, config, workspace, write_vtk=False, **kwargs)
 
 def _worst_sample_point_off_the_wall(out, sampled) -> float:
     wall, _ = _boundary_from_su2(out.mesh_path)
-    pts = sampled.mesh_in.airfoil.coords_tensor.numpy()
+    pts = sampled.mesh_in.airfoil.coords
     return float(np.linalg.norm(pts[:, None, :] - wall[None, :, :], axis=-1).min(axis=1).max())
 
 

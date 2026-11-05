@@ -15,8 +15,8 @@ _SCHEMAS = (
     "MeshGeoDeviationSummary",
 )
 
-# Both imported lazily: `entry` pulls in both runners, and `schemas` torch, neither of which anyone who only
-# wanted a constant should have to load.
+# Both imported lazily: `entry` pulls in both runners, and `schemas` both backends' schemas, neither of which
+# anyone who only wanted a constant should have to load.
 def __getattr__(name):
     if name == "Common_GenerateMesh":
         from .entry import Common_GenerateMesh

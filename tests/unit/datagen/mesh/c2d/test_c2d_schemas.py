@@ -13,7 +13,6 @@ Step 5: Ensure the sync leaves the caller's config untouched
     - test_one_config_serves_both_topologies
 """
 
-import torch
 import pytest
 from pydantic import ValidationError
 
@@ -22,8 +21,8 @@ from src.datagen.meshing.c2d.schemas import C2D_In, C2D_MeshingConfig, C2D_Topol
 
 
 def _airfoil() -> Airfoil:
-    coords = torch.tensor([[1.0, 0.001], [0.5, 0.05], [0.0, 0.0], [0.5, -0.05], [1.0, -0.001]], dtype=torch.float32)
-    return Airfoil(airfoil_name="stub", coords_tensor=coords, chord=1.0, le_idx=2)
+    coords = [[1.0, 0.001], [0.5, 0.05], [0.0, 0.0], [0.5, -0.05], [1.0, -0.001]]
+    return Airfoil(airfoil_name="stub", coords=coords, chord=1.0, le_idx=2)
 
 
 def _freestream() -> Freestream:

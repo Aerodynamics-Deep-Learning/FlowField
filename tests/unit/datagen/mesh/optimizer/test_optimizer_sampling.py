@@ -16,7 +16,6 @@ Step 3: Ensure rejections build nothing, and setup mistakes raise
 
 import numpy as np
 import pytest
-import torch
 
 from src.datagen.geometry.common.schemas import Rejection, TETreatment
 from src.datagen.geometry.sample.sample import Geom_sample
@@ -75,8 +74,8 @@ def test_build_study_contour():
 def test_sampled_input_passes_the_mesher_gates(name, pairing):
     mesh_in = _sampled(pairing, name=name).mesh_in
 
-    assert Common_validate_te_closure(mesh_in.airfoil.coords_tensor, *pairing) == (True, "")
-    assert Common_te_shape_warnings(mesh_in.airfoil.coords_tensor, *pairing) == []  # no shape or corner warning
+    assert Common_validate_te_closure(mesh_in.airfoil.coords, *pairing) == (True, "")
+    assert Common_te_shape_warnings(mesh_in.airfoil.coords, *pairing) == []  # no shape or corner warning
 # endregion
 
 
@@ -90,8 +89,8 @@ def test_mesh_in_carries_exactly_the_sample(pairing, tmp_path):
     alone = Geom_sample(contour, config, max_points=CELL_CEILING // config.jmax if pairing[0] is MeshBackend.C2D else None)
     mesh_in = sampled.mesh_in
 
-    assert mesh_in.airfoil.coords_tensor.dtype == torch.float64
-    assert np.array_equal(mesh_in.airfoil.coords_tensor.numpy(), alone.points)  # the sample, unaltered
+    assert mesh_in.airfoil.coords.dtype == np.float64
+    assert np.array_equal(mesh_in.airfoil.coords, alone.points)  # the sample, unaltered
     assert mesh_in.airfoil.le_idx == alone.le_idx == sampled.report.le_idx
     assert (mesh_in.airfoil.airfoil_name, mesh_in.airfoil.chord) == ("naca4412", 0.5)
     assert (mesh_in.backend, mesh_in.topology, mesh_in.working_dir) == (*pairing, str(tmp_path))

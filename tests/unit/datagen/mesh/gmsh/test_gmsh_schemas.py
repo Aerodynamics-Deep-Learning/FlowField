@@ -14,7 +14,6 @@ Step 4: Ensure a mistyped keyword can't silently fall back to the default config
     - test_unknown_keyword_rejected
 """
 
-import torch
 import pytest
 from pydantic import ValidationError
 
@@ -25,8 +24,8 @@ from src.datagen.meshing.gmsh.schemas import (
 
 
 def _airfoil() -> Airfoil:
-    coords = torch.tensor([[1.0, 0.0], [0.5, 0.05], [0.0, 0.0], [0.5, -0.05], [1.0, 0.0]], dtype=torch.float32)
-    return Airfoil(airfoil_name="stub", coords_tensor=coords, chord=1.0, le_idx=2)
+    coords = [[1.0, 0.0], [0.5, 0.05], [0.0, 0.0], [0.5, -0.05], [1.0, 0.0]]
+    return Airfoil(airfoil_name="stub", coords=coords, chord=1.0, le_idx=2)
 
 
 def _freestream() -> Freestream:

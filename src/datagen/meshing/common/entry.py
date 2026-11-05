@@ -15,7 +15,7 @@ from .quality import Common_evaluate_mesh_quality
 from .geo_dev import Common_evaluate_mesh_geo_dev
 from src.datagen.meshing.common.utils import (
     Common_validate_freestream_physicality, Common_validate_te_closure, Common_te_shape_warnings,
-    Common_validate_tensor_numeric,
+    Common_validate_coords_numeric,
 )
 from src.datagen.meshing.gmsh.schemas import GMSH_In, GMSH_ExitFlag, GMSH_Topology
 from src.datagen.meshing.gmsh.run import GMSH_MeshGenerator
@@ -174,8 +174,8 @@ def Common_GenerateMesh(data: MeshIn) -> MeshOut:
     Returns:
         MeshOut: The data in the data agreement of mesh pipeline output
     """
-    # Make sure the tensor is resolved without any problems
-    is_valid, msg = Common_validate_tensor_numeric(coords_tensor=data.airfoil.coords_tensor)
+    # Make sure the coords are resolved without any problems
+    is_valid, msg = Common_validate_coords_numeric(coords=data.airfoil.coords)
     if not is_valid:
         logger.warning(msg)
         return _flagged_out(data, MeshExitFlag.INPUT_TENSOR_FAIL)
@@ -191,14 +191,14 @@ def Common_GenerateMesh(data: MeshIn) -> MeshOut:
 
     # Hard gate: the contour's closure against what the pairing requires
     is_valid, msg = Common_validate_te_closure(
-        coords_tensor=data.airfoil.coords_tensor, backend=data.backend, topology=data.topology)
+        coords=data.airfoil.coords, backend=data.backend, topology=data.topology)
     if not is_valid:
         logger.warning(msg)
         return _flagged_out(data, MeshExitFlag.INPUT_CLOSURE_FAIL)
 
     # Advisory only: a TE shape or corners the pairing meshes poorly
     for msg in Common_te_shape_warnings(
-            coords_tensor=data.airfoil.coords_tensor, backend=data.backend, topology=data.topology):
+            coords=data.airfoil.coords, backend=data.backend, topology=data.topology):
         logger.warning(msg)
 
     # Backstop for the any other failure that may happen. Both backends already catch broadly and

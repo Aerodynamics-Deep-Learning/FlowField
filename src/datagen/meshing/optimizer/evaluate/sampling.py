@@ -7,13 +7,12 @@ turned into the mesher's input.
     Optim_sample_for_mesher    each evaluation: samples the contour with the config's knobs, under the cell
                                ceiling, and builds the MeshIn from the points; a rejected config builds none
 
-The MeshIn is only ever built here, from sampled points: there is no placeholder tensor to forget to
+The MeshIn is only ever built here, from sampled points: there are no placeholder coords to forget to
 replace. Sits above both geometry and meshing, since the mesh configs import the knobs from geometry.
 """
 
 from typing import Optional
 
-import torch
 from pydantic import BaseModel
 
 from src.datagen.geometry.common.schemas import SampleReport, ShapeRecord, TETreatment
@@ -106,8 +105,7 @@ def Optim_sample_for_mesher(config: MeshingConfig, contour: Contour, *, airfoil_
     sample = Geom_sample(contour, config, max_points=max_points)
     if not sample.accepted:
         return SampledInput(report=sample.report)
-    airfoil = Airfoil(airfoil_name=airfoil_name, coords_tensor=torch.tensor(sample.points, dtype=torch.float64),
-                      chord=chord, le_idx=sample.le_idx)
+    airfoil = Airfoil(airfoil_name=airfoil_name, coords=sample.points, chord=chord, le_idx=sample.le_idx)
     mesh_in = MeshIn(airfoil=airfoil, freestream=freestream, working_dir=working_dir, backend=backend,
                      topology=topology, mesh_config=config, count_limits=count_limits or QualityLimits(),
                      write_vtk=write_vtk)

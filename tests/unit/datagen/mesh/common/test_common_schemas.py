@@ -23,7 +23,6 @@ Step 6: Ensure MeshIn's reporting options default to what the pipeline did befor
 import tempfile
 
 import pytest
-import torch
 from pydantic import ValidationError
 
 from src.datagen.geometry.sample.fields import SamplingFields
@@ -35,11 +34,12 @@ from src.datagen.meshing.common.schemas import MeshIn, MeshBackend, MeshTopology
 from src.datagen.meshing.common.constants import SKEWNESS_LIMIT, ORTHO_MIN, JACOBIAN_LIMIT, SIZE_RATIO_LIMIT
 
 
+_COORDS = [[1.0, 0.0063], [0.5, 0.06], [0.0, 0.0], [0.5, -0.06], [1.0, -0.0063]]
+
+
 def _mesh_in(backend, topology, **kwargs) -> MeshIn:
-    coords = torch.tensor([[1.0, 0.0063], [0.5, 0.06], [0.0, 0.0], [0.5, -0.06], [1.0, -0.0063]],
-                          dtype=torch.float32)
     return MeshIn(
-        airfoil=Airfoil(airfoil_name="naca0012", coords_tensor=coords, chord=1.0, le_idx=2),
+        airfoil=Airfoil(airfoil_name="naca0012", coords=_COORDS, chord=1.0, le_idx=2),
         freestream=Freestream(alpha=0.0, Re=5e6, mach=0.3, altitude_m=1.0),
         working_dir=tempfile.gettempdir(),
         backend=backend,
@@ -90,14 +90,10 @@ def test_mesh_config_wrong_class_rejected():
 
 # region Step 3
 def test_mesh_config_resolved_when_validated_from_payload():
-    # `MeshIn` can't round-trip through JSON (Airfoil.coords_tensor is a torch.Tensor, hence the
-    # model's arbitrary_types_allowed), but it is still validated from raw payloads whose configs
-    # arrive as plain dicts. Without the pairing-aware resolver those land on the union's first
-    # member, silently turning a stored O-mesh config into a C-mesh one.
-    coords = torch.tensor([[1.0, 0.0063], [0.5, 0.06], [0.0, 0.0], [0.5, -0.06], [1.0, -0.0063]],
-                          dtype=torch.float32)
+    # A raw payload's config arrives as a plain dict. Without the pairing-aware resolver it lands on
+    # the union's first member, silently turning a stored O-mesh config into a C-mesh one.
     restored = MeshIn.model_validate({
-        "airfoil": Airfoil(airfoil_name="naca0012", coords_tensor=coords, chord=1.0, le_idx=2),
+        "airfoil": Airfoil(airfoil_name="naca0012", coords=_COORDS, chord=1.0, le_idx=2),
         "freestream": Freestream(alpha=0.0, Re=5e6, mach=0.3, altitude_m=1.0),
         "working_dir": tempfile.gettempdir(),
         "backend": "gmsh",
@@ -112,10 +108,8 @@ def test_mesh_config_resolved_when_validated_from_payload():
 def test_payload_is_left_untouched_for_reuse():
     # model_validate hands the resolver the caller's own dict; writing the resolved config into it
     # used to leave a C-mesh config behind, which the same payload then failed on as an O-mesh
-    coords = torch.tensor([[1.0, 0.0063], [0.5, 0.06], [0.0, 0.0], [0.5, -0.06], [1.0, -0.0063]],
-                          dtype=torch.float32)
     payload = {
-        "airfoil": Airfoil(airfoil_name="naca0012", coords_tensor=coords, chord=1.0, le_idx=2),
+        "airfoil": Airfoil(airfoil_name="naca0012", coords=_COORDS, chord=1.0, le_idx=2),
         "freestream": Freestream(alpha=0.0, Re=5e6, mach=0.3, altitude_m=1.0),
         "working_dir": tempfile.gettempdir(),
         "backend": "gmsh",

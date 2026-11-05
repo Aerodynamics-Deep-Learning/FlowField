@@ -9,7 +9,6 @@ panels jump 3:1 and BUFF meshes that jump straight into a size-ratio failure.
 from typing import Literal
 
 import numpy as np
-import torch
 
 from src.datagen.schemas import Airfoil
 
@@ -58,7 +57,7 @@ def closed_naca0012(name: str, te: Literal["round", "sharp"] = "round", h_max: f
     """A closed NACA0012 with graded spacing: a rounded TE (open section capped by a semicircle) or a
     sharp one. Last point identical to the first."""
     pts = _resample(_dense_contour(te), h_max, h_le, h_te, width)
-    coords = torch.tensor(pts, dtype=torch.float64)
+    coords = np.array(pts, dtype=np.float64)
     coords[-1] = coords[0]
-    le_idx = int(torch.argmin(coords[:, 0]).item())
-    return Airfoil(airfoil_name=name, coords_tensor=coords, chord=1.0, le_idx=le_idx)
+    le_idx = int(np.argmin(coords[:, 0]))
+    return Airfoil(airfoil_name=name, coords=coords, chord=1.0, le_idx=le_idx)

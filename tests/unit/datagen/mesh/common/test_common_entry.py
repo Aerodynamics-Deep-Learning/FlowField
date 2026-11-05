@@ -2,7 +2,7 @@
 Tests for the shared `common.entry.Common_GenerateMesh` dispatcher, i.e.:
 
 Step 1: Ensure the shared input-validation short-circuits route to the unified MeshExitFlag
-    - test_entry_tensor_fail_routing
+    - test_entry_coords_fail_routing
     - test_entry_te_closure_fail_routing
     - test_entry_freestream_fail_routing
 Step 2: Ensure each backend's own exit flag maps onto the equivalent MeshExitFlag
@@ -18,7 +18,7 @@ Step 5: Ensure nothing escapes as an exception -- every failure leaves as a Mesh
     - test_entry_gmsh_input_validation_error_becomes_flag
     - test_entry_c2d_input_validation_error_becomes_flag
     - test_entry_backend_exception_becomes_flag
-    - test_entry_malformed_tensor_becomes_flag
+    - test_entry_malformed_coords_becomes_flag
     - test_entry_unparseable_mesh_keeps_its_paths
     - test_entry_quality_exception_becomes_flag
     - test_entry_geo_dev_exception_becomes_flag
@@ -40,8 +40,8 @@ import logging
 import tempfile
 from unittest.mock import patch, MagicMock
 
+import numpy as np
 import pytest
-import torch
 from pydantic import BaseModel, ValidationError
 
 from src.datagen.schemas import Airfoil, Freestream
@@ -58,7 +58,7 @@ from src.datagen.meshing.common.entry import Common_GenerateMesh
 
 def _mock_mesh_in(backend=MeshBackend.GMSH, topology=MeshTopology.CGRD):
     return MeshIn.model_construct(
-        airfoil=Airfoil.model_construct(airfoil_name="naca0012", coords_tensor=MagicMock(), chord=1.0),
+        airfoil=Airfoil.model_construct(airfoil_name="naca0012", coords=MagicMock(), chord=1.0),
         freestream=Freestream.model_construct(Re=1e6, mach=0.1, alpha=0.0),
         working_dir=tempfile.gettempdir(),
         backend=backend,
@@ -68,14 +68,14 @@ def _mock_mesh_in(backend=MeshBackend.GMSH, topology=MeshTopology.CGRD):
 
 
 # region Step 1
-@patch("src.datagen.meshing.common.entry.Common_validate_tensor_numeric")
-def test_entry_tensor_fail_routing(mock_numeric):
+@patch("src.datagen.meshing.common.entry.Common_validate_coords_numeric")
+def test_entry_coords_fail_routing(mock_numeric):
     mock_numeric.return_value = (False, "Mock numeric error")
     out = Common_GenerateMesh(_mock_mesh_in())
     assert out.flag == MeshExitFlag.INPUT_TENSOR_FAIL
 
 
-@patch("src.datagen.meshing.common.entry.Common_validate_tensor_numeric", return_value=(True, ""))
+@patch("src.datagen.meshing.common.entry.Common_validate_coords_numeric", return_value=(True, ""))
 @patch("src.datagen.meshing.common.entry.Common_validate_freestream_physicality", return_value=(True, ""))
 @patch("src.datagen.meshing.common.entry.Common_validate_te_closure")
 def test_entry_te_closure_fail_routing(mock_te, *args):
@@ -84,7 +84,7 @@ def test_entry_te_closure_fail_routing(mock_te, *args):
     assert out.flag == MeshExitFlag.INPUT_CLOSURE_FAIL
 
 
-@patch("src.datagen.meshing.common.entry.Common_validate_tensor_numeric", return_value=(True, ""))
+@patch("src.datagen.meshing.common.entry.Common_validate_coords_numeric", return_value=(True, ""))
 @patch("src.datagen.meshing.common.entry.Common_validate_te_closure", return_value=(True, ""))
 @patch("src.datagen.meshing.common.entry.Common_validate_freestream_physicality")
 def test_entry_freestream_fail_routing(mock_freestream, mock_closure, mock_numeric):
@@ -100,7 +100,7 @@ def test_entry_freestream_fail_routing(mock_freestream, mock_closure, mock_numer
     (GMSH_ExitFlag.FATAL_ERROR, MeshExitFlag.FATAL_ERROR),
     (GMSH_ExitFlag.EXTRUSION_FAIL, MeshExitFlag.CONVERSION_FAIL),
 ])
-@patch("src.datagen.meshing.common.entry.Common_validate_tensor_numeric", return_value=(True, ""))
+@patch("src.datagen.meshing.common.entry.Common_validate_coords_numeric", return_value=(True, ""))
 @patch("src.datagen.meshing.common.entry.Common_validate_te_closure", return_value=(True, ""))
 @patch("src.datagen.meshing.common.entry.Common_validate_freestream_physicality", return_value=(True, ""))
 @patch("src.datagen.meshing.common.entry.GMSH_MeshGenerator")
@@ -166,7 +166,7 @@ def _mesh_in(backend, topology, coords=None, **configs):
         is_cmesh = (backend, topology) == (MeshBackend.GMSH, MeshTopology.CGRD)
         coords = _OPEN_TE_COORDS if is_cmesh else _CLOSED_TE_COORDS
     return MeshIn(
-        airfoil=Airfoil(airfoil_name="naca0012_coarse", coords_tensor=torch.tensor(coords, dtype=torch.float32),
+        airfoil=Airfoil(airfoil_name="naca0012_coarse", coords=np.array(coords, dtype=np.float32),
                         chord=1.0, le_idx=2),
         freestream=Freestream(alpha=0.0, Re=5e6, mach=0.3, altitude_m=1.0),
         working_dir=tempfile.gettempdir(),
@@ -295,15 +295,15 @@ def test_entry_backend_exception_becomes_flag(mock_generator):
 
 
 @pytest.mark.parametrize("bad_coords", [
-    torch.tensor([1.0, 0.5, 0.0, 0.5, 1.0]),
-    torch.tensor(1.0),
-    torch.empty((0, 2)),
+    np.array([1.0, 0.5, 0.0, 0.5, 1.0]),
+    np.array(1.0),
+    np.empty((0, 2)),
 ], ids=["1d", "0d", "empty"])
 @patch("src.datagen.meshing.common.entry.GMSH_MeshGenerator")
-def test_entry_malformed_tensor_becomes_flag(mock_generator, bad_coords):
+def test_entry_malformed_coords_becomes_flag(mock_generator, bad_coords):
     # The real validator, unpatched: it runs ahead of the dispatch `try`, so a raise from it escapes
     data = _mesh_in(MeshBackend.GMSH, MeshTopology.CGRD)
-    data.airfoil.coords_tensor = bad_coords
+    data.airfoil.coords = bad_coords
 
     out = Common_GenerateMesh(data)
 

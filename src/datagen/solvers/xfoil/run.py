@@ -31,10 +31,10 @@ def XFoil_Runner(XFoil_In: XFoil_WarmStartIn) -> XFoil_WarmStartOut:
             verbose_list=[None, None, None]
         )
 
-    # Writes the geometry given the airfoil tensor, if it doesn't exist
+    # Writes the geometry given the airfoil coords, if it doesn't exist
     if XFoil_In.airfoil.coords_path is None:
         coords_path = XFoil_Geometry_Write(
-            coords_tensor=XFoil_In.airfoil.coords_tensor, 
+            coords=XFoil_In.airfoil.coords,
             working_dir=XFoil_In.working_dir, 
             airfoil_name=XFoil_In.airfoil.airfoil_name
         )
@@ -63,14 +63,14 @@ def XFoil_Runner(XFoil_In: XFoil_WarmStartIn) -> XFoil_WarmStartOut:
         slope_thresh=XFoil_In.conv_config.slope_thresh
     )
 
-    Cp_tensor = None
-    conservative_tensor = None
+    Cp = None
+    conservative_state = None
     if flag == XFoil_ConvergenceFlag.CONVERGED.value: # parse and convert iff it converged, if not, it is not useful for further analysis
         # Parses the written Cp.dat file, and converts it into proper conservative values
-        Cp_tensor = XFoil_Parse_Cp(cp_file_path=cp_file_path)
-        conservative_tensor = XFoil_Cp_To_Conservative_State(
-            Cp_tensor=Cp_tensor,
-            coords_tensor=XFoil_In.airfoil.coords_tensor,
+        Cp = XFoil_Parse_Cp(cp_file_path=cp_file_path)
+        conservative_state = XFoil_Cp_To_Conservative_State(
+            Cp=Cp,
+            coords=XFoil_In.airfoil.coords,
             M_inf=XFoil_In.freestream.mach,
             altitude_m=XFoil_In.freestream.altitude_m,
             alpha=XFoil_In.freestream.alpha
@@ -84,8 +84,8 @@ def XFoil_Runner(XFoil_In: XFoil_WarmStartIn) -> XFoil_WarmStartOut:
         airfoil=XFoil_In.airfoil,
         freestream=XFoil_In.freestream,
         flag=flag,
-        Cp_tensor=Cp_tensor,
-        conservative_tensor=conservative_tensor,
+        Cp=Cp,
+        conservative_state=conservative_state,
         verbose_list=verbose_list
     )
 

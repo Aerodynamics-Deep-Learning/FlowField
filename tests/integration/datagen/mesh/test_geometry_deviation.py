@@ -55,7 +55,7 @@ def _worst_input_point_miss(mesh_path, airfoil) -> float:
     """Distance from the worst input point to its nearest meshed wall node, in mesh units: ~0 when
     the mesher takes the input points as its wall nodes. Unlike `geo_dev`, nothing is rescaled."""
     wall, _ = _boundary_from_su2(mesh_path)
-    pts = airfoil.coords_tensor.detach().cpu().double().numpy()[:, :2] * airfoil.chord
+    pts = airfoil.coords[:, :2] * airfoil.chord
     return float(np.linalg.norm(pts[:, None, :] - wall[None, :, :], axis=-1).min(axis=1).max())
 
 

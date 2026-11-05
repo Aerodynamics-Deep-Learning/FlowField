@@ -3,8 +3,7 @@ The data generation pipeline for AirfoilLearner.
 Enforces strict multi-fidelity physics solving, and active learning routing.
 """
 
-# Lazy, since `schemas` loads torch: a subpackage that never builds an Airfoil (the geometry, a slot's worker)
-# should not have to
+# Lazy: a subpackage that never builds an Airfoil (the geometry, a slot's worker) does not load these schemas
 def __getattr__(name):
     if name in __all__:
         from . import schemas

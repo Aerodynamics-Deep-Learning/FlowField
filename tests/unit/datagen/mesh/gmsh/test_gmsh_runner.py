@@ -22,8 +22,8 @@ import subprocess
 from pathlib import Path
 from unittest.mock import patch
 
+import numpy as np
 import pytest
-import torch
 
 from src.datagen.schemas import Airfoil, Freestream
 from src.datagen.meshing.gmsh.geo import GeoScript
@@ -43,9 +43,9 @@ _NACA0012 = [
 
 
 def _gmsh_in(working_dir: str, **kwargs) -> GMSH_In:
-    coords = torch.tensor(_NACA0012, dtype=torch.float32)
+    coords = np.array(_NACA0012, dtype=np.float32)
     return GMSH_In(
-        airfoil=Airfoil(airfoil_name="naca_test", coords_tensor=coords, chord=1.0, le_idx=12),
+        airfoil=Airfoil(airfoil_name="naca_test", coords=coords, chord=1.0, le_idx=12),
         freestream=Freestream(alpha=0.0, Re=2e6, mach=0.3), topology=GMSH_Topology.CGRD,
         meshing_config=GMSH_CMeshingConfig(upper_anchor_idx=6, lower_anchor_idx=18), working_dir=working_dir,
         **kwargs,

@@ -39,7 +39,6 @@ values instead of bounds. Real airfoil behaviour is the integration tier's job.
 
 import numpy as np
 import pytest
-import torch
 
 from src.datagen.schemas import Airfoil
 from src.datagen.meshing.common.schemas import MeshExitFlag
@@ -55,8 +54,7 @@ _RECT = [[1.0, 0.05], [0.0, 0.05], [0.0, -0.05], [1.0, -0.05]]
 
 def _airfoil(coords=None, chord=1.0) -> Airfoil:
     coords = _RECT if coords is None else coords
-    return Airfoil(airfoil_name="rect", coords_tensor=torch.tensor(coords, dtype=torch.float64),
-                   chord=chord, le_idx=1)
+    return Airfoil(airfoil_name="rect", coords=coords, chord=chord, le_idx=1)
 
 
 def _write_su2(path, nodes, edges, tag=MARKER_AIRFOIL):
@@ -133,7 +131,7 @@ def test_reference_polyline_closes_the_loop():
 
 
 def test_reference_polyline_drops_a_third_column():
-    # `Common_validate_tensor_numeric` admits (N,3) tensors, so the contour builder has to narrow
+    # `Common_validate_coords_numeric` admits (N,3) coords, so the contour builder has to narrow
     coords = [[x, y, 0.0] for x, y in _RECT]
     assert _reference_polyline(_airfoil(coords)).shape == (len(_RECT) + 1, 2)
 # endregion

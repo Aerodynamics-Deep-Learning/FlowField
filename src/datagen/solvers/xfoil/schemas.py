@@ -1,6 +1,6 @@
 from pydantic import BaseModel, Field
 from enum import IntEnum
-import torch
+import numpy as np
 from typing import Optional
 
 from ...schemas import Airfoil, Freestream
@@ -53,7 +53,7 @@ class XFoil_WarmStartOut(BaseModel):
     airfoil: Airfoil
     freestream: Freestream
     flag: XFoil_ConvergenceFlag
-    Cp_tensor: Optional[torch.Tensor] = Field(None, description="The dimensionless Cp distribution over the airfoil, with form (N, [x, Cp])")
-    conservative_tensor: Optional[torch.Tensor] = Field(None, description="The conservative tensor of form [rho, rho*u, rh*v, rho*E] to be used in the warmstart of SU2")
+    Cp: Optional[np.ndarray] = Field(None, description="The dimensionless Cp distribution over the airfoil, with form (N, [x, Cp])")
+    conservative_state: Optional[np.ndarray] = Field(None, description="The conservative state of form [rho, rho*u, rh*v, rho*E] to be used in the warmstart of SU2")
     verbose_list: list[Optional[str]] = Field(..., description="A list to produce the verbose output. [input_script_path (.txt), cp_file_path (.dat), stdout_path (.txt)]")
 

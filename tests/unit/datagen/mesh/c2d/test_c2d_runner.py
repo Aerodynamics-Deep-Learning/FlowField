@@ -30,7 +30,6 @@ import tempfile
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 
-import torch
 import pytest
 from pydantic import ValidationError
 
@@ -41,17 +40,13 @@ from src.datagen.meshing.c2d.utils import C2D_count_su2_nodes
 
 
 def _airfoil():
-    coords = torch.tensor([
-        [1.0, 0.001], [0.5, 0.05], [0.0, 0.0], [0.5, -0.05], [1.0, -0.001],
-    ])
-    return Airfoil(airfoil_name="naca_test", coords_tensor=coords, chord=1.0, le_idx=2)
+    coords = [[1.0, 0.001], [0.5, 0.05], [0.0, 0.0], [0.5, -0.05], [1.0, -0.001]]
+    return Airfoil(airfoil_name="naca_test", coords=coords, chord=1.0, le_idx=2)
 
 
 def _closed_airfoil():
-    coords = torch.tensor([
-        [1.0, 0.0], [0.5, 0.05], [0.0, 0.0], [0.5, -0.05], [1.0, 0.0],
-    ])
-    return Airfoil(airfoil_name="naca_closed", coords_tensor=coords, chord=1.0, le_idx=2)
+    coords = [[1.0, 0.0], [0.5, 0.05], [0.0, 0.0], [0.5, -0.05], [1.0, 0.0]]
+    return Airfoil(airfoil_name="naca_closed", coords=coords, chord=1.0, le_idx=2)
 
 
 def _freestream():

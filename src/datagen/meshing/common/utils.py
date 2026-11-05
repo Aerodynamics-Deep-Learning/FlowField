@@ -2,7 +2,6 @@ from enum import Enum
 from typing import Tuple
 
 import numpy as np
-import torch
 
 from src.datagen.schemas import Freestream
 from .schemas import MeshBackend, MeshTopology
@@ -55,48 +54,48 @@ def Common_validate_freestream_physicality(freestream: Freestream) -> Tuple[bool
     else:
         return True, ""
 
-def Common_measure_te_gap(coords_tensor: torch.Tensor) -> float:
+def Common_measure_te_gap(coords: np.ndarray) -> float:
     """
-    Measures the trailing edge gap of an airfoil coordinate tensor, i.e. the distance between the
-    first and last points of the selig-ordered contour.
+    Measures the trailing edge gap of an airfoil contour, i.e. the distance between the first and last
+    points of the selig-ordered contour.
 
     Args:
-        coords_tensor (torch.Tensor): The tensor of the airfoil coords, in selig format
+        coords (np.ndarray): The airfoil coords, in selig format
 
     Returns:
         float: The trailing edge gap
     """
-    return torch.linalg.norm(coords_tensor[0, :2] - coords_tensor[-1, :2]).item()
+    return float(np.linalg.norm(coords[0, :2] - coords[-1, :2]))
 
 
-def Common_classify_te_closure(coords_tensor: torch.Tensor) -> TEClosure:
+def Common_classify_te_closure(coords: np.ndarray) -> TEClosure:
     """
     Classifies the contour's closure. Closed means bit-identical end points, since c2d compares them
     exactly; anything short of that below `TE_GAP_MIN` is rounding noise.
 
     Args:
-        coords_tensor (torch.Tensor): The tensor of the airfoil coords, in selig format
+        coords (np.ndarray): The airfoil coords, in selig format
 
     Returns:
         TEClosure: CLOSED, NEAR_CLOSED or OPEN
     """
-    if torch.equal(coords_tensor[0, :2], coords_tensor[-1, :2]):
+    if np.array_equal(coords[0, :2], coords[-1, :2]):
         return TEClosure.CLOSED
-    return TEClosure.NEAR_CLOSED if Common_measure_te_gap(coords_tensor) < TE_GAP_MIN else TEClosure.OPEN
+    return TEClosure.NEAR_CLOSED if Common_measure_te_gap(coords) < TE_GAP_MIN else TEClosure.OPEN
 
 
-def Common_te_closure_angle(coords_tensor: torch.Tensor) -> float:
+def Common_te_closure_angle(coords: np.ndarray) -> float:
     """
     Interior angle at a closed contour's closure point, between its first and last panels: ~180 through
     a round tip or a flat base, the wedge angle at a sharp TE.
 
     Args:
-        coords_tensor (torch.Tensor): The tensor of a closed airfoil contour, in selig format
+        coords (np.ndarray): The coords of a closed airfoil contour, in selig format
 
     Returns:
         float: The angle in degrees, NaN if a panel at the closure point has zero length
     """
-    pts = coords_tensor[:, :2].detach().cpu().double().numpy()
+    pts = np.asarray(coords[:, :2], dtype=np.float64)
     u, v = pts[1] - pts[0], pts[-2] - pts[0]
     norms = np.linalg.norm(u) * np.linalg.norm(v)
     if norms == 0.0:
@@ -104,32 +103,32 @@ def Common_te_closure_angle(coords_tensor: torch.Tensor) -> float:
     return float(np.degrees(np.arccos(np.clip(np.dot(u, v) / norms, -1.0, 1.0))))
 
 
-def Common_sharpest_corner(coords_tensor: torch.Tensor) -> Tuple[float, int]:
+def Common_sharpest_corner(coords: np.ndarray) -> Tuple[float, int]:
     """
     The largest direction change between consecutive panels, over interior vertices only (the closure
     point is `Common_te_closure_angle`'s). Zero-length panels read as straight.
 
     Args:
-        coords_tensor (torch.Tensor): The tensor of the airfoil coords, in selig format
+        coords (np.ndarray): The airfoil coords, in selig format
 
     Returns:
         tuple: (turn in degrees, index of the vertex it is at)
     """
-    panels = np.diff(coords_tensor[:, :2].detach().cpu().double().numpy(), axis=0)
+    panels = np.diff(np.asarray(coords[:, :2], dtype=np.float64), axis=0)
     a, b = panels[:-1], panels[1:]
     turn = np.degrees(np.abs(np.arctan2(a[:, 0] * b[:, 1] - a[:, 1] * b[:, 0], np.sum(a * b, axis=1))))
     i = int(np.argmax(turn))
     return float(turn[i]), i + 1
 
 
-def Common_validate_te_closure(coords_tensor: torch.Tensor, backend: MeshBackend,
+def Common_validate_te_closure(coords: np.ndarray, backend: MeshBackend,
                                topology: MeshTopology) -> Tuple[bool, str]:
     """
     The hard TE gate: the contour's closure against what the (backend, topology) pairing requires
     (see `_TE_REQUIREMENTS`). Near-closed fails every pairing.
 
     Args:
-        coords_tensor (torch.Tensor): The tensor of the airfoil coords, in selig format
+        coords (np.ndarray): The airfoil coords, in selig format
         backend (MeshBackend): The backend the mesh is being dispatched to
         topology (MeshTopology): The grid topology requested for that backend
 
@@ -141,12 +140,12 @@ def Common_validate_te_closure(coords_tensor: torch.Tensor, backend: MeshBackend
         return False, f"No trailing-edge requirement is known for backend={backend}/topology={topology}."
 
     required = requirement[0]
-    closure = Common_classify_te_closure(coords_tensor)
+    closure = Common_classify_te_closure(coords)
     if closure == required:
         return True, ""
 
     pairing = f"backend={backend.value}/topology={topology.value}"
-    gap = Common_measure_te_gap(coords_tensor)
+    gap = Common_measure_te_gap(coords)
     if required == TEClosure.CLOSED and closure == TEClosure.NEAR_CLOSED:
         return False, (f"{pairing} requires a closed TE, but the first and last points differ by "
                        f"{gap:.3e} (rounding noise); set the last point equal to the first upstream.")
@@ -158,7 +157,7 @@ def Common_validate_te_closure(coords_tensor: torch.Tensor, backend: MeshBackend
     return False, f"{pairing} requires an open TE to build its TE line on, but the contour is closed."
 
 
-def Common_te_shape_warnings(coords_tensor: torch.Tensor, backend: MeshBackend,
+def Common_te_shape_warnings(coords: np.ndarray, backend: MeshBackend,
                              topology: MeshTopology) -> list[str]:
     """
     The advisory TE checks, for pairings that require a closed contour: a TE shape the pairing meshes
@@ -166,7 +165,7 @@ def Common_te_shape_warnings(coords_tensor: torch.Tensor, backend: MeshBackend,
     see (a flat base closed mid-base reads ~180 there, like a round tip).
 
     Args:
-        coords_tensor (torch.Tensor): The tensor of a closed airfoil contour, in selig format
+        coords (np.ndarray): The coords of a closed airfoil contour, in selig format
         backend (MeshBackend): The backend the mesh is being dispatched to
         topology (MeshTopology): The grid topology requested for that backend
 
@@ -175,12 +174,12 @@ def Common_te_shape_warnings(coords_tensor: torch.Tensor, backend: MeshBackend,
     """
     requirement = _TE_REQUIREMENTS.get((backend, topology))
     # Under 3 points there is no panel pair to read a shape off
-    if requirement is None or requirement[0] != TEClosure.CLOSED or coords_tensor.shape[0] < 3:
+    if requirement is None or requirement[0] != TEClosure.CLOSED or coords.shape[0] < 3:
         return []
 
     pairing = f"backend={backend.value}/topology={topology.value}"
     warnings = []
-    angle = Common_te_closure_angle(coords_tensor)
+    angle = Common_te_closure_angle(coords)
     if np.isnan(angle):
         warnings.append(f"{pairing}: cannot read the TE angle, a panel at the closure point has zero length.")
     else:
@@ -189,46 +188,45 @@ def Common_te_shape_warnings(coords_tensor: torch.Tensor, backend: MeshBackend,
             warnings.append(f"{pairing} is not built for a {shape.value} TE (closure angle {angle:.1f} deg); "
                             f"expect a lower-quality mesh.")
 
-    turn, i = Common_sharpest_corner(coords_tensor)
+    turn, i = Common_sharpest_corner(coords)
     if turn > CORNER_TURN_LIMIT:
-        x, y = coords_tensor[i, 0].item(), coords_tensor[i, 1].item()
+        x, y = float(coords[i, 0]), float(coords[i, 1])
         warnings.append(f"Contour turns {turn:.0f} deg at point {i} ({x:.5f}, {y:.5f}); corners mesh poorly.")
     return warnings
 
 
-def Common_validate_tensor_numeric(coords_tensor: torch.Tensor, chord_tol: float = 1e-3) -> Tuple[bool, str]:
+def Common_validate_coords_numeric(coords: np.ndarray, chord_tol: float = 1e-3) -> Tuple[bool, str]:
     """
-    Validates the numeric validity of the airfoil coordinate tensor, including the pipeline-wide
-    invariant that it is chord-normalized: x runs from 0 (LE) to 1 (TE).
+    Validates the numeric validity of the airfoil coords, including the pipeline-wide invariant that
+    they are chord-normalized: x runs from 0 (LE) to 1 (TE).
 
-    `Airfoil.chord` carries the real physical size separately and scales mesh lengths by it, so a
-    tensor that is not unit-chord would be scaled twice. TThe tolerance is sized for scale errors,
-    which are order-of-magnitude, not for float precision.
+    `Airfoil.chord` carries the real physical size separately and scales mesh lengths by it, so coords
+    that are not unit-chord would be scaled twice. The tolerance is sized for scale errors, which are
+    order-of-magnitude, not for float precision.
 
     Args:
-        coords_tensor (torch.Tensor): The tensor of the airfoil coords, in selig format
+        coords (np.ndarray): The airfoil coords, in selig format
         chord_tol (float): Allowed deviation of min(x) from 0 and max(x) from 1
 
     Returns:
-        tuple: (is_valid_tensor, warning_message)
+        tuple: (is_valid_coords, warning_message)
     """
-    if not isinstance(coords_tensor, torch.Tensor):
-        return False, f"Airfoil input is not a torch.Tensor, it is: {type(coords_tensor)}"
+    if not isinstance(coords, np.ndarray):
+        return False, f"Airfoil coords are not a numpy array, they are: {type(coords)}"
     # Empty is rejected here too, before min/max below raise on it
-    elif coords_tensor.ndim != 2 or coords_tensor.shape[0] == 0 or coords_tensor.shape[1] not in (2, 3):
-        return False, (f"Airfoil input tensor has unexpected shape: {tuple(coords_tensor.shape)}, "
+    elif coords.ndim != 2 or coords.shape[0] == 0 or coords.shape[1] not in (2, 3):
+        return False, (f"Airfoil coords have unexpected shape: {tuple(coords.shape)}, "
                        f"expected (N, 2) or (N, 3) with N > 0")
-    elif torch.isnan(coords_tensor).any().item():
-        return False, f"Airfoil input tensor has NaN values"
-    elif torch.isinf(coords_tensor).any().item():
-        return False, f"Airfoil input tensor has Inf values"
+    elif np.isnan(coords).any():
+        return False, f"Airfoil coords have NaN values"
+    elif np.isinf(coords).any():
+        return False, f"Airfoil coords have Inf values"
 
     # Checked after NaN/Inf: min/max are meaningless until those are ruled out
-    x_min = coords_tensor[:, 0].min().item()
-    x_max = coords_tensor[:, 0].max().item()
+    x_min = float(coords[:, 0].min())
+    x_max = float(coords[:, 0].max())
     if abs(x_min) > chord_tol or abs(x_max - 1.0) > chord_tol:
-        return False, (f"Airfoil input tensor is not chord-normalized: x spans [{x_min}, {x_max}], "
+        return False, (f"Airfoil coords are not chord-normalized: x spans [{x_min}, {x_max}], "
                        f"expected [0, 1] within {chord_tol}. Physical size belongs in Airfoil.chord.")
 
     return True, ""
-
