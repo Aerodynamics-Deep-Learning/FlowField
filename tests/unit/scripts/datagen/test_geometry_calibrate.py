@@ -1,13 +1,15 @@
 """
 Tests for `scripts.datagen.geometry_calibrate`, the CST calibration's command line, i.e.:
 
-Step 1: Ensure the options reach the calibration and its report is printed
+Step 1: Ensure the options reach the calibration, its report the scratchpad's when left out, and it is printed
     - test_the_options_reach_the_calibration
 Step 2: Ensure a mistake in what was asked stops it before the calibration runs
     - test_a_mistake_is_a_usage_error
 
 The calibration itself is a stand-in; it is tested in the geometry tier.
 """
+
+import datetime
 
 import pytest
 
@@ -22,12 +24,14 @@ def calibrate(monkeypatch):
 
 
 # region Step 1
-def test_the_options_reach_the_calibration(calibrate, tmp_path, capsys):
-    out = tmp_path / "cst.txt"
+def test_the_options_reach_the_calibration(calibrate, tmp_path, data_root, capsys):
+    here, out = tmp_path.resolve(), tmp_path.resolve() / "cst.txt"
 
     assert geometry_calibrate.main([str(tmp_path), "--out", str(out), "--orders", "4-6", "--workers", "2"]) == 0
-    assert geometry_calibrate.main([str(tmp_path), "--out", str(out)]) == 0
-    assert calibrate == [(tmp_path, out, range(4, 7), 2), (tmp_path, out, range(4, 13), None)]
+    assert geometry_calibrate.main([str(tmp_path)]) == 0
+    [scratch] = (data_root / "scratchpad").iterdir()
+    report = scratch / "geometry_calibrate" / f"{datetime.date.today().isoformat()}.txt"
+    assert calibrate == [(here, out, range(4, 7), 2), (here, report, range(4, 13), None)]
     printed = capsys.readouterr().out
     assert "the report" in printed and f"Written to {out}" in printed
 # endregion
@@ -35,14 +39,12 @@ def test_the_options_reach_the_calibration(calibrate, tmp_path, capsys):
 
 # region Step 2
 @pytest.mark.parametrize("args, says", [
-    (["nope", "--out", "r.txt"], "nope is not a folder"),
-    ([".", "--out", "r.txt", "--orders", "6-4"], "orders are 'lo-hi' from 1 up, not '6-4'"),
-    ([".", "--out", "r.txt", "--orders", "x"], "orders are 'lo-hi' from 1 up, not 'x'"),
-    (["."], "required: --out"),
-], ids=["no folder", "orders reversed", "orders unreadable", "no out"])
+    (["nope"], "folder: no .dat folder at"),
+    ([".", "--orders", "6-4"], "orders are 'lo-hi' from 1 up, not '6-4'"),
+    ([".", "--orders", "x"], "orders are 'lo-hi' from 1 up, not 'x'"),
+], ids=["no folder", "orders reversed", "orders unreadable"])
 def test_a_mistake_is_a_usage_error(calibrate, capsys, args, says):
-    with pytest.raises(SystemExit) as stopped:
-        geometry_calibrate.main(args)
+    assert geometry_calibrate.main(args) == 2
 
-    assert stopped.value.code == 2 and says in capsys.readouterr().err and calibrate == []
+    assert says in capsys.readouterr().out and calibrate == []
 # endregion

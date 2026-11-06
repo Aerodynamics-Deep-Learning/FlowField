@@ -1,12 +1,13 @@
 """
 Tests for `scripts.datagen.mesh_campaign`, the campaign's command line, i.e.:
 
-Step 1: Ensure the options reach the campaign, its summary is printed and how it ended is the exit code
+Step 1: Ensure the options reach the campaign, its store the scratchpad's when left out, its summary printed and
+how it ended the exit code
     - test_the_options_reach_the_campaign
     - test_how_the_campaign_ended_is_the_exit_code
 Step 2: Ensure it takes no setting, and a mistake in what was asked stops it before anything is recorded
     - test_the_command_line_takes_no_setting
-    - test_a_mistake_is_a_usage_error
+    - test_an_unknown_airfoil_is_a_usage_error
 
 The campaign and the manifest are stand-ins; the campaign is tested in the optimizer tiers.
 """
@@ -14,6 +15,7 @@ The campaign and the manifest are stand-ins; the campaign is tested in the optim
 import pytest
 
 from scripts.datagen import mesh_campaign
+from src.datagen.geometry.common.paths import Geom_paths
 from src.datagen.meshing.optimizer.batch.campaign import CampaignResult
 from src.datagen.meshing.optimizer.batch.runner import BatchStopped
 from src.datagen.meshing.optimizer.common.constants import WORKERS
@@ -41,16 +43,20 @@ def campaign(monkeypatch):
 
 
 # region Step 1
-def test_the_options_reach_the_campaign(campaign, tmp_path, capsys):
+def test_the_options_reach_the_campaign(campaign, tmp_path, data_root, capsys):
     calls, _ = campaign
-    db, manifest, work = tmp_path / "meshing.sqlite", tmp_path / "geometry.sqlite", tmp_path / "work"
+    here = tmp_path.resolve()
+    db, manifest, work = here / "meshing.sqlite", here / "geometry.sqlite", tmp_path / "work"
+    manifest.touch()
 
     assert mesh_campaign.main(["--db", str(db), "--airfoils", "naca0012,naca4412", "--workers", "2",
                                "--settings-label", "trial 3", "--geometry-db", str(manifest),
                                "--work-root", str(work)]) == 0
-    assert mesh_campaign.main(["--db", str(db)]) == 0
+    assert mesh_campaign.main([]) == 0
+    [scratch] = (data_root / "scratchpad").iterdir()
     assert calls == [(db, ["naca0012", "naca4412"], 2, work, "trial 3", {"geometry_db": manifest}),
-                     (db, None, WORKERS, None, None, {"geometry_db": None})]
+                     (scratch / "campaign" / "meshing.sqlite", None, WORKERS, None, None,
+                      {"geometry_db": Geom_paths().db})]
     assert "the summary" in capsys.readouterr().out
 
 
@@ -66,19 +72,16 @@ def test_how_the_campaign_ended_is_the_exit_code(campaign, tmp_path, stopped, co
 # region Step 2
 @pytest.mark.parametrize("setting", ["--golden-jmax", "--rung3-budget", "--gate-skew-max"])
 def test_the_command_line_takes_no_setting(campaign, tmp_path, capsys, setting):
-    with pytest.raises(SystemExit) as stopped:
-        mesh_campaign.main(["--db", str(tmp_path / "meshing.sqlite"), setting, "150"])
+    assert mesh_campaign.main(["--db", str(tmp_path / "meshing.sqlite"), setting, "150"]) == 2
 
-    assert stopped.value.code == 2 and "unrecognized arguments" in capsys.readouterr().err
+    assert "unrecognized arguments" in capsys.readouterr().out and campaign[0] == []
 
 
-@pytest.mark.parametrize("args, says", [(["--airfoils", "naca9999"], "naca9999"), ([], "required: --db")],
-                         ids=["unknown airfoil", "no db"])
-def test_a_mistake_is_a_usage_error(campaign, tmp_path, capsys, args, says):
+def test_an_unknown_airfoil_is_a_usage_error(campaign, tmp_path, capsys):
     db = tmp_path / "meshing.sqlite"
-    with pytest.raises(SystemExit) as stopped:
-        mesh_campaign.main(["--db", str(db), *args] if args else args)
 
-    assert stopped.value.code == 2 and says in capsys.readouterr().err
+    assert mesh_campaign.main(["--db", str(db), "--airfoils", "naca9999"]) == 2
+
+    assert "naca9999" in capsys.readouterr().out
     assert campaign[0] == [] and not db.exists()  # the store not even made
 # endregion

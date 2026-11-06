@@ -33,6 +33,11 @@ CLAUDE.md
 
 /tests/datagen/meshing/gmsh/test_sicn/old
 
+# Datagen script runs: unnamed outputs (the scratchpad), named experiments, this machine's machine-check stamp
+data/scratchpad/
+data/experiments/
+data/.machine_check.json
+
 # External tools are user-installed, never committed: local paths live in tools.toml
 # (see tools.example.toml)
 tools.toml

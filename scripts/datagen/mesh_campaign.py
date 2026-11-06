@@ -4,31 +4,36 @@ not yet finished under the current constants, each airfoil's best mesh recorded 
 setting: changing a constant makes a new settings row, under which every airfoil runs again. It resumes by
 itself: the airfoils finished under these settings are skipped, the ones a cut-short campaign left run again.
 
-    python -m scripts.datagen.mesh_campaign --db <run store> [--airfoils a,b] [--workers 6]
+    python -m scripts.datagen.mesh_campaign [--db <run store> | --db shared] [--airfoils a,b] [--workers 6]
         [--settings-label TEXT] [--geometry-db PATH] [--work-root DIR]
 
-The repo's own run store is data/manifest/datagen/meshing/meshing.sqlite. Exit code 0 when the campaign ran to
-the end, 1 when it stopped early, 130 on Ctrl-C.
+Left out, --db is a new run store in the scratchpad, which a rerun cannot resume: name one to resume. `shared` is
+the repo's committed store, data/manifest/datagen/meshing/meshing.sqlite. Exit code 0 when the campaign ran to the
+end, 1 when it stopped early, 130 on Ctrl-C.
 """
 
 import argparse
 import sys
 from pathlib import Path
 
-from scripts.datagen.engine import Script_main, Script_names, UsageError
+from scripts.datagen.engine import (
+    GEOMETRY_DB, Output, OutputKind, Script_check_names, Script_main, Script_names, Stage, UsageError,
+)
 from src.datagen.meshing.optimizer.batch.campaign import Optim_campaign_summary, Optim_run_campaign
 from src.datagen.meshing.optimizer.batch.runner import Optim_load_shapes
 from src.datagen.meshing.optimizer.common.constants import WORKERS
+from src.datagen.meshing.optimizer.common.paths import MESHING_DB
 from src.datagen.meshing.optimizer.manifest.store import RunStore
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--db", type=Path, required=True, help="the run store the campaign records into")
+    parser.add_argument("--db", type=Path, help="the run store the campaign records into (default: a new one in the "
+                                                "scratchpad; `shared`: the repo's)")
     parser.add_argument("--airfoils", type=Script_names, help="comma-separated names (default: every stored airfoil)")
     parser.add_argument("--workers", type=int, default=WORKERS, help=f"slots (default {WORKERS})")
     parser.add_argument("--settings-label", help="a label for the settings row, if this campaign records it first")
-    parser.add_argument("--geometry-db", type=Path, help="the geometry manifest (default: the repo's)")
+    parser.add_argument("--geometry-db", type=Path, help="the geometry manifest (default: the repo's, `shared`)")
     parser.add_argument("--work-root", type=Path, help="where runs mesh (default: a temporary folder)")
     return parser
 
@@ -48,8 +53,16 @@ def run(args: argparse.Namespace) -> int:
     return 1 if result.stopped is not None else 0
 
 
+STAGE = Stage(
+    "campaign", "scripts.datagen.mesh_campaign", build_parser, run,
+    outputs=(Output("db", OutputKind.FILE, "run store", scratch="meshing.sqlite", shared=lambda: MESHING_DB,
+                    exists="this run adds to it"),),
+    inputs=(GEOMETRY_DB,),
+    slots=True, meshes=True, check=lambda args, made_here: Script_check_names(Optim_load_shapes, args, made_here))
+
+
 def main(argv=None) -> int:
-    return Script_main(build_parser, run, argv, slots_module="scripts.datagen.mesh_campaign")
+    return Script_main(STAGE, argv)
 
 
 if __name__ == "__main__":

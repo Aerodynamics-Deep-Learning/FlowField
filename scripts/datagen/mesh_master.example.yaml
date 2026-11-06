@@ -1,0 +1,50 @@
+# A mesh_master config. Copy it anywhere, edit it, and run:
+#     python -m scripts.datagen.mesh_master <your copy>.yaml
+#
+# One section per stage; they always run in the order below, whatever order you write them in. Each needs
+# `enabled: true` or `enabled: false` (machine_check is on when its section is left out). A section's other keys
+# are its stage script's options, `-` written as `_`: `python -m scripts.datagen.<script> --help` lists them.
+#
+# Paths: relative ones are under data/. `shared` names a committed store; write one only on purpose. An output
+# left out goes to data/scratchpad/<time>_<this file's name>/<stage>/. A stage reads what an earlier stage of this
+# run wrote unless you name something else. A log of the run lands beside every output.
+#
+# YAML: quote names YAML would read as something else (yes, no, on, off, 0012); write 1e-3 as 1.0e-3; indent with
+# spaces; in double quotes a backslash starts an escape, so write Windows paths with / or in single quotes.
+
+machine_check:                       # does this machine sample and mesh like the reference? ~1 min
+  enabled: true                      # false: a warning, and this run does not check
+
+geometry_calibrate:                  # the CST order/nose/tolerance table (scripts/datagen/geometry_calibrate.py)
+  enabled: false
+  folder: D:/airfoils/for_cst        # reads: the .dat files
+  orders: 4-12
+  # out: experiments/cst/orders.txt  writes: the report
+
+geometry_ingest:                     # .dat folder -> geometry manifest (scripts/datagen/geometry_ingest.py)
+  enabled: false
+  folder: D:/airfoils/for_cst        # leave out to only bring stored airfoils to the current shape version
+  dry_run: false
+  # data_root: shared                writes; shared = the committed manifest (one person at a time)
+
+mesh_calibrate:                      # the ladder's numbers on real meshes (scripts/datagen/mesh_calibrate.py)
+  enabled: false
+  rungs: [1, 2, 3]
+  workers: 6
+  # airfoils: [s1223, e376]          left out: each rung's own
+  # out: experiments/dx003/calibration
+
+campaign:                            # every airfoil's best mesh (scripts/datagen/mesh_campaign.py)
+  enabled: true
+  workers: 6
+  settings_label: trial 3, finer DX_MAX     # names the settings row, if this campaign records it first
+  db: experiments/dx003/meshing.sqlite      # writes; name it to resume a stopped campaign (shared = committed)
+  # airfoils: [naca0012, s1223]      left out: every accepted shape
+  # geometry_db: shared              reads; default: this run's ingest, else shared
+
+remesh:                              # best runs' meshes back out, hash-checked (scripts/datagen/mesh_remesh.py)
+  enabled: true
+  airfoils: [naca0012, s1223]        # or  all: true    or  run: <run id>
+  vtk: true
+  out: experiments/dx003/remeshed    # writes
+  # db: shared                       reads; default: this run's campaign, else shared
