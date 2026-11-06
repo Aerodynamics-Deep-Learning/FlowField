@@ -12,6 +12,7 @@ differs from the code's now: rebuilding it then needs its commit checked out. An
 machine, a dirty tree) is caught by the hash. The run store is only read.
 """
 
+import contextlib
 import json
 import logging
 import os
@@ -58,7 +59,8 @@ def Optim_remesh(store: RunStore, run_id: str, out_dir, *, with_vtk: bool = Fals
     Meshes a stored run again and delivers its `.su2` (and `.vtk`) into `out_dir`, once its hash matches.
 
     c2d runs in `out_dir/.remesh_<run id[:8]>/`, which is deleted whatever happens; the verified files move up
-    as `<name>.su2` and `<name>.vtk`, replacing any there, the name file-safe.
+    as `<name>.su2` and `<name>.vtk`, replacing any there, the name file-safe. An `out_dir` this call made is
+    removed again when nothing was delivered.
 
     Args:
         store (RunStore): The run store holding the run, read-only is enough
@@ -93,6 +95,7 @@ def Optim_remesh(store: RunStore, run_id: str, out_dir, *, with_vtk: bool = Fals
     config = C2D_MeshingConfig(**json.loads(run["config_json"]))
 
     out_dir = Path(out_dir)
+    made = not out_dir.exists()
     work = out_dir / f".remesh_{run_id[:8]}"
     shutil.rmtree(work, ignore_errors=True)  # a killed re-mesh's leftovers
     work.mkdir(parents=True)
@@ -120,6 +123,9 @@ def Optim_remesh(store: RunStore, run_id: str, out_dir, *, with_vtk: bool = Fals
             os.replace(out.mesh_path_vtk, vtk_path)
     finally:
         shutil.rmtree(work, ignore_errors=True)
+        if made:
+            with contextlib.suppress(OSError):  # only an empty folder goes: one this call made, nothing delivered
+                out_dir.rmdir()
     logger.info("%s: run %s re-meshed, %s nodes, hash verified", name, run_id[:8], f"{run['num_nodes']:,}")
     return Remeshed(run_id, name, str(su2_path), str(vtk_path) if vtk_path else None, run["num_nodes"], sha)
 

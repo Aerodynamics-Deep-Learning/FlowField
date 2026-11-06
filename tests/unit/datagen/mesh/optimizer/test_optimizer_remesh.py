@@ -5,10 +5,12 @@ Step 1: Ensure a stored run is rebuilt from the executor's own input and deliver
     - test_the_remesh_builds_the_executors_input
     - test_a_verified_mesh_is_delivered_alone
     - test_a_different_mesh_delivers_nothing
+    - test_a_killed_remeshs_folder_is_cleared_first
 Step 2: Ensure a run this code cannot rebuild is refused before anything meshes
     - test_a_run_that_cannot_be_rebuilt_is_refused_before_meshing
 Step 3: Ensure the command line picks the right runs and reports what it could not deliver
     - test_the_cli_delivers_each_best_and_reports_the_rest
+    - test_the_cli_goes_on_past_an_airfoil_it_cannot_deliver
     - test_the_cli_takes_any_meshed_run
 
 The executor records three naca0012 runs (the golden one, marked best; a manual one; a rejected one) into a
@@ -49,21 +51,24 @@ _GEO = MeshGeoDeviationSummary(n_boundary_nodes=468, max_dev_mesh_to_input=1e-8,
 
 class _Mesher:
     """
-    A stand-in for `Common_GenerateMesh`: writes its `su2` bytes (no file if None) as `<name>.su2`, a `.vtk`
-    when asked and a side file into the run's folder, reporting a mesh that clears every gate. Keeps its inputs.
+    A stand-in for `Common_GenerateMesh`: writes its `su2` bytes (`su2_for[name]`'s for that airfoil; no file
+    if None) as `<name>.su2`, a `.vtk` when asked and a side file into the run's folder, reporting a mesh that
+    clears every gate. Keeps its inputs.
     """
 
     def __init__(self):
-        self.su2, self.calls = _SU2, []
+        self.su2, self.su2_for, self.calls = _SU2, {}, []
 
     def __call__(self, mesh_in):
         self.calls.append(mesh_in)
-        base = os.path.join(mesh_in.working_dir, mesh_in.airfoil.airfoil_name)
+        name = mesh_in.airfoil.airfoil_name
+        base = os.path.join(mesh_in.working_dir, name)
         Path(f"{base}_log.txt").write_text("c2d exited 0")
+        su2 = self.su2_for.get(name, self.su2)
         mesh_path = vtk_path = None
-        if self.su2 is not None:
+        if su2 is not None:
             mesh_path = f"{base}.su2"
-            Path(mesh_path).write_bytes(self.su2)
+            Path(mesh_path).write_bytes(su2)
         if mesh_in.write_vtk:
             vtk_path = f"{base}.vtk"
             Path(vtk_path).write_text("# vtk DataFile")
@@ -112,8 +117,19 @@ def study(tmp_path, monkeypatch):
         store.update_best("naca0012", settings["settings_id"])
     best, other, rejected = rows
     assert [r["status"] for r in rows] == ["meshed", "meshed", "rejected"] and best["passed"] == 1
-    return SimpleNamespace(db=db, exe=exe, mesher=mesher, best=best, other=other, rejected=rejected,
+    return SimpleNamespace(db=db, exe=exe, mesher=mesher, ctx=ctx, best=best, other=other, rejected=rejected,
                            out=tmp_path / "out")
+
+
+def _record_best(study, name):
+    """Records `name`'s golden run into the study's store as its best."""
+    rows = []
+    contour = Optim_build_study_contour(stored_shape(name), MeshBackend.C2D, MeshTopology.OGRD)
+    RunExecutor(study.ctx, rows.append).run(ladder_id=None, geometry_id=name, airfoil_name=name, contour=contour,
+                                            knobs=GOLDEN, rung="golden", seq=0)
+    with RunStore.open(study.db) as store:
+        store.insert_run(rows[0])
+        assert store.update_best(name, study.ctx.settings["settings_id"]) == rows[0]["run_id"]
 
 
 def _remesh(study, run_id, **kw):
@@ -149,10 +165,24 @@ def test_a_different_mesh_delivers_nothing(study, su2, match):
 
     with pytest.raises(RemeshMismatch, match=match) as e:
         _remesh(study, study.best["run_id"], with_vtk=True)
-    assert os.listdir(study.out) == []
+    assert not study.out.exists()  # made for this re-mesh, so removed with it
     assert "meshed on then-host at cccccccccccc" in str(e.value)
     if su2:
         assert study.best["su2_sha256"] in str(e.value)
+    study.out.mkdir()
+    with pytest.raises(RemeshMismatch):
+        _remesh(study, study.best["run_id"])
+    assert study.out.is_dir()  # the caller's own folder stays, empty or not
+
+
+def test_a_killed_remeshs_folder_is_cleared_first(study):
+    leftover = study.out / f".remesh_{study.best['run_id'][:8]}"
+    leftover.mkdir(parents=True)
+    (leftover / "naca0012.su2").write_bytes(b"NDIME= 2\n")  # a re-mesh killed mid-write, its finally never run
+
+    got = _remesh(study, study.best["run_id"])
+
+    assert os.listdir(study.out) == ["naca0012.su2"] and Path(got.su2_path).read_bytes() == _SU2
 # endregion
 
 
@@ -198,6 +228,16 @@ def test_the_cli_delivers_each_best_and_reports_the_rest(study, capsys):
     assert "Re-meshed 1 of 3" in capsys.readouterr().out
     with pytest.raises(SystemExit):
         batch_remesh.main(["--airfoils", "naca9999", *args])  # an unknown name is a usage error
+
+
+def test_the_cli_goes_on_past_an_airfoil_it_cannot_deliver(study, capsys):
+    _record_best(study, "naca4412")
+    study.mesher.su2_for["naca4412"] = b"NDIME= 2\nNPOIN= 2\n"  # its re-mesh comes out different
+
+    assert batch_remesh.main(["--airfoils", "naca4412,naca0012", "--out", str(study.out), "--db", str(study.db)]) == 1
+    printed = capsys.readouterr().out
+    assert "Re-meshed 1 of 2" in printed and "naca4412: run " in printed and "hashes to" in printed
+    assert os.listdir(study.out) == ["naca0012"]  # delivered after the failure; the failure left no folder
 
 
 def test_the_cli_takes_any_meshed_run(study):
