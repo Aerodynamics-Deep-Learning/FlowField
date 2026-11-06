@@ -38,8 +38,9 @@ Sequence 1 (meshing_main): one study = one airfoil x one mesher/topology
         versions, sample report, mesh result
 5 - rerun the optim procedure if needed (back to 2.1) until its budget of
     finished meshes is spent; user/default configs run steps 2-4 once
-6 - finish: keep the best feasible mesh's files, delete the rest, record the
-    study's result
+6 - finish: record the study's result and its best feasible run; no mesh file
+    is kept, a stored run is meshed again on demand and checked against its
+    hash (meshing/optimizer/evaluate/remesh.py)
 
 
 Sequence 2 (add airfoils to the database; manifest/ingest.py, one airfoil: build/add.py)
