@@ -1,19 +1,13 @@
 """
 The mesh study's re-mesh: stored runs meshed again into `<out>/<airfoil>/`, each `.su2` (and `.vtk`, if asked)
 delivered only once it hashes to what its run stored (`evaluate/remesh.py`). By name, an airfoil's mesh is its
-best run under the current settings; by `--run`, any run that meshed, best or not.
-
-To re-mesh:
-    `python -m src.datagen.meshing.optimizer.batch.remesh (--airfoils a,b | --all | --run ID) [--out DIR]
-        [--vtk] [--db PATH]`
+best run under the current settings; by run id, any run that meshed, best or not. Run from the command line by
+`scripts/datagen/mesh_remesh.py`.
 
 Airfoils run one after another; one that cannot be re-meshed is reported and the rest go on. The run store
 is only read, so this can run beside a campaign.
 """
 
-import argparse
-import logging
-import sys
 from pathlib import Path
 from typing import NamedTuple, Optional, Sequence
 
@@ -60,6 +54,30 @@ def Optim_remesh_airfoils(store: RunStore, names: Optional[Sequence[str]], out_r
     return outcomes
 
 
+def Optim_remesh_run(store: RunStore, run_id: str, out_root, *, with_vtk: bool = False,
+                     geometry_db=None) -> RemeshOutcome:
+    """
+    Re-meshes one run, best or not, into `out_root/<its airfoil>/`.
+
+    Args:
+        store (RunStore): The run store, read-only is enough
+        run_id (str): Any run that meshed
+        out_root (str | Path): Where the airfoil's folder goes
+        with_vtk (bool): Also deliver the .vtk
+        geometry_db (str | Path | None): The geometry manifest, the repo's own by default
+
+    Returns:
+        RemeshOutcome: The delivered mesh, or why it was refused or came out different
+
+    Raises:
+        ValueError: If the store holds no such run, before anything is meshed
+    """
+    run = store.run(run_id)
+    if run is None:
+        raise ValueError(f"no run {run_id} in {store.path}")
+    return _remesh_one(store, run["airfoil_name"], run_id, out_root, with_vtk, geometry_db)
+
+
 def _remesh_one(store, name, run_id, out_root, with_vtk, geometry_db) -> RemeshOutcome:
     try:
         remeshed = Optim_remesh(store, run_id, Path(out_root) / Optim_safe_name(name), with_vtk=with_vtk,
@@ -67,42 +85,3 @@ def _remesh_one(store, name, run_id, out_root, with_vtk, geometry_db) -> RemeshO
     except (RemeshRefused, RemeshMismatch) as e:
         return RemeshOutcome(name, None, str(e))
     return RemeshOutcome(name, remeshed, None)
-
-
-def main(argv=None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    which = parser.add_mutually_exclusive_group(required=True)
-    which.add_argument("--airfoils", help="comma-separated names: each one's best run under the current settings")
-    which.add_argument("--all", action="store_true", help="every stored airfoil's best run under the current settings")
-    which.add_argument("--run", help="one run by id, any that meshed")
-    parser.add_argument("--out", type=Path, default=Path("."), help="where each airfoil's folder goes (default: here)")
-    parser.add_argument("--vtk", action="store_true", help="also deliver each .vtk")
-    parser.add_argument("--db", type=Path, help="the run store (default: the repo's meshing.sqlite)")
-    args = parser.parse_args(argv)
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s", datefmt="%H:%M:%S")
-
-    with RunStore.open(args.db, read_only=True) as store:
-        if args.run:
-            run = store.run(args.run)
-            if run is None:
-                parser.error(f"no run {args.run} in {store.path}")
-            outcomes = [_remesh_one(store, run["airfoil_name"], args.run, args.out, args.vtk, None)]
-        else:
-            names = [n.strip() for n in args.airfoils.split(",")] if args.airfoils else None
-            if names:
-                try:
-                    Optim_load_shapes(names)
-                except ValueError as e:
-                    parser.error(str(e))
-            outcomes = Optim_remesh_airfoils(store, names, args.out, with_vtk=args.vtk)
-
-    delivered = sum(o.remeshed is not None for o in outcomes)
-    print(f"Re-meshed {delivered} of {len(outcomes)} into {args.out.resolve()}")
-    for o in outcomes:
-        if o.remeshed is None:
-            print(f"  {o.name}: {o.error}")
-    return 0 if delivered == len(outcomes) else 1
-
-
-if __name__ == "__main__":
-    sys.exit(main())

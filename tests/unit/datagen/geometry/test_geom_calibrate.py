@@ -5,14 +5,16 @@ Step 1: Ensure every file is fitted at every configuration, or its rejection kep
     - test_calibrate_rows
     - test_parallel_matches_sequential
     - test_strays
-Step 2: Ensure the report and the command line
+Step 2: Ensure the report, and that a calibration writes it
     - test_format_calibration
-    - test_main_writes_the_report
+    - test_a_calibration_writes_its_report
 """
 
 import pytest
 
-from src.datagen.geometry.build.calibrate import CalibrationFit, Geom_calibrate, Geom_format_calibration, main
+from src.datagen.geometry.build.calibrate import (
+    CalibrationFit, Geom_calibrate, Geom_format_calibration, Geom_run_calibration,
+)
 from src.datagen.geometry.build.families import _family_contour
 from src.datagen.geometry.common.io import Geom_write_dat
 from src.datagen.geometry.common.schemas import Family, Nose, RejectReason
@@ -67,10 +69,9 @@ def test_format_calibration(folder):
     assert any(line.startswith("naca2412.dat") for line in text.splitlines())
 
 
-def test_main_writes_the_report(folder, tmp_path, capsys):
-    out = tmp_path / "report" / "calibration.txt"
-    main([str(folder), "--orders", "4-5", "--out", str(out), "--workers", "1"])
+def test_a_calibration_writes_its_report(folder, tmp_path):
+    out = tmp_path / "report" / "calibration.txt"  # its folder made on the way
+    text = Geom_run_calibration(folder, out, orders=range(4, 6), workers=1)
 
-    assert out.read_text(encoding="utf-8").startswith("CST calibration of")
-    assert str(out) in capsys.readouterr().out
+    assert out.read_text(encoding="utf-8") == text and text.startswith("CST calibration of")
 # endregion

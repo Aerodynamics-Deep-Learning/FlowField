@@ -1,11 +1,7 @@
 """
 Calibration of the mesh study's ladder: on real c2d meshes, measures the numbers each rung runs on and writes
 the report they are chosen from. Like the CST calibration, it is run by hand and recommends; it changes no
-constant.
-
-To run calibration:
-    `python -m src.datagen.meshing.optimizer.batch.calibrate [--rungs 1,2,3] [--airfoils a,b]
-        [--golden-jmax N] [--rung3-cap 300] [--rung2-cap 100] [--workers 6] [--out DIR]`
+constant. Run from the command line by `scripts/datagen/mesh_calibrate.py`.
 
     Rung 1  every airfoil: n* on its full grid and at the narrowest cluster_width, then jmax*, the smallest
             jmax whose mesh passes the size ratio (a bisection over [JMAX_MIN, JMAX_MAX]); recommends the
@@ -16,19 +12,18 @@ To run calibration:
             plateau; what a downward search saves and costs, and, by replaying those runs, rung 3's
             plateau and cap
 
-Rungs 2 and 3 start from the golden jmax rung 1 recommends when it runs alongside them; a given --golden-jmax
+Rungs 2 and 3 start from the golden jmax rung 1 recommends when it runs alongside them; a given golden jmax
 wins over it, with a warning. Each rung runs under its own settings row. The report (`<date>.txt`) and every
-run (`<date>.sqlite`, the run store's schema) are written to the calibration folder.
+run (`<date>.sqlite`, the run store's schema) are written to the folder it is given (the repo's is
+`CALIBRATION_DIR`).
 """
 
-import argparse
 import datetime
 import json
 import logging
 import math
 import random
 import statistics
-import sys
 import tempfile
 import time
 from functools import partial
@@ -37,11 +32,9 @@ from typing import NamedTuple, Optional, Sequence
 
 from src.datagen.geometry.common.constants import DX_MAX
 from src.datagen.meshing.optimizer.batch.runner import Optim_load_shapes, Optim_run_airfoils
-from src.datagen.meshing.optimizer.batch.slots import Optim_relaunch_for_slots
 from src.datagen.meshing.optimizer.common.constants import (
     CLUSTER_WIDTH_MIN, GOLDEN_JMAX, JMAX_MAX, JMAX_MIN, SMOOTHING_DEFAULTS, WORKERS,
 )
-from src.datagen.meshing.optimizer.common.paths import CALIBRATION_DIR
 from src.datagen.meshing.optimizer.common.settings import Optim_build_settings
 from src.datagen.meshing.optimizer.evaluate.context import RunContext
 from src.datagen.meshing.optimizer.manifest.store import Optim_git_state, RunStore
@@ -150,9 +143,48 @@ class Calibration(NamedTuple):
     recommended: Optional[int]       # rung 1's golden jmax, used or not
 
 
+class CalibrationFiles(NamedTuple):
+    report: Path                     # <date>.txt
+    db: Path                         # <date>.sqlite, every run
+    text: str                        # the report
+
+
+def Optim_run_calibration(out_dir, rungs: Sequence[int] = (1, 2, 3), names: Optional[Sequence[str]] = None,
+                          golden_jmax: Optional[int] = None, rung3_cap: int = RUNG3_CAP, rung2_cap: int = RUNG2_CAP,
+                          workers: int = WORKERS, geometry_db=None, work_root=None) -> CalibrationFiles:
+    """
+    A dated calibration: every run into `<out_dir>/<date>.sqlite`, the report into `<out_dir>/<date>.txt`.
+
+    Args:
+        out_dir (str | Path): The folder for both, made if missing (the repo's is `CALIBRATION_DIR`)
+        rungs, names, golden_jmax, rung3_cap, rung2_cap, workers, geometry_db, work_root: As `Optim_calibrate`
+
+    Returns:
+        CalibrationFiles: Where the report and the database went, and the report
+
+    Raises:
+        ValueError: If `rungs` is empty or holds anything but 1, 2, 3
+        FileExistsError: If the folder already holds today's database, before anything runs
+    """
+    if not rungs or not set(rungs) <= {1, 2, 3}:
+        raise ValueError(f"rungs are any of 1, 2, 3, not {list(rungs)}")
+    out_dir = Path(out_dir)
+    stamp = datetime.date.today().isoformat()
+    db, report = out_dir / f"{stamp}.sqlite", out_dir / f"{stamp}.txt"
+    if db.exists():
+        raise FileExistsError(f"{db} already holds a calibration; give another folder")
+    out_dir.mkdir(parents=True, exist_ok=True)
+    with RunStore.open(db) as store:
+        cal = Optim_calibrate(store, sorted(set(rungs)), names, golden_jmax, rung3_cap, rung2_cap, workers, work_root,
+                              geometry_db)
+        text = Optim_format_report(store, cal)
+    report.write_text(text, encoding="utf-8", newline="\n")
+    return CalibrationFiles(report, db, text)
+
+
 def Optim_calibrate(store: RunStore, rungs: Sequence[int] = (1, 2, 3), names: Optional[Sequence[str]] = None,
                     golden_jmax: Optional[int] = None, rung3_cap: int = RUNG3_CAP, rung2_cap: int = RUNG2_CAP,
-                    workers: int = WORKERS, work_root=None) -> Calibration:
+                    workers: int = WORKERS, work_root=None, geometry_db=None) -> Calibration:
     """
     Calibrates the rungs asked for, every run recorded in `store`.
 
@@ -167,22 +199,23 @@ def Optim_calibrate(store: RunStore, rungs: Sequence[int] = (1, 2, 3), names: Op
         rung2_cap (int): Rung 2's budget while it is calibrated
         workers (int): Worker processes
         work_root (str | Path | None): Where runs mesh; a temporary folder if None
+        geometry_db (str | Path | None): The geometry manifest the airfoils come from, the repo's own if None
 
     Returns:
         Calibration: Each rung's outcomes, and the golden jmax rungs 2 and 3 ran at
     """
     if work_root is None:
         with tempfile.TemporaryDirectory(prefix="calibration_") as work:
-            return Optim_calibrate(store, rungs, names, golden_jmax, rung3_cap, rung2_cap, workers, work)
+            return Optim_calibrate(store, rungs, names, golden_jmax, rung3_cap, rung2_cap, workers, work, geometry_db)
 
     if golden_jmax is not None and 1 in rungs and {2, 3} & set(rungs):
         logger.warning("golden jmax %d is given: rungs 2 and 3 run at it, not at rung 1's recommendation",
                        golden_jmax)
+    load = partial(Optim_load_shapes, db=geometry_db)
     done: dict[int, Stage] = {}
     run = partial(_run_stage, store=store, work_root=Path(work_root), workers=workers)
     if 1 in rungs:
-        done[1] = run(1, partial(Optim_run_ladder, ladder_type=_Bisect), Optim_load_shapes(names),
-                      Optim_build_settings())
+        done[1] = run(1, partial(Optim_run_ladder, ladder_type=_Bisect), load(names), Optim_build_settings())
     recommended = Optim_golden_from(Optim_bisections(store, done[1])) if 1 in done else None
     if golden_jmax is not None:
         source = "given"
@@ -193,11 +226,11 @@ def Optim_calibrate(store: RunStore, rungs: Sequence[int] = (1, 2, 3), names: Op
     if 2 in rungs:
         settings = Optim_build_settings(golden_jmax=golden_jmax, gate_skew_max=SKEW_GATE, rung2_budget=rung2_cap,
                                         rung3_budget=0)
-        done[2] = run(2, Optim_run_ladder, Optim_load_shapes(names or CALIBRATION_SET), settings)
+        done[2] = run(2, Optim_run_ladder, load(names or CALIBRATION_SET), settings)
     if 3 in rungs:
-        chosen = names or [*CALIBRATION_SET, *Optim_ordinary_airfoils([n for n, _ in Optim_load_shapes()])]
+        chosen = names or [*CALIBRATION_SET, *Optim_ordinary_airfoils([n for n, _ in load()])]
         settings = Optim_build_settings(golden_jmax=golden_jmax, rung3_budget=rung3_cap)
-        done[3] = run(3, partial(Optim_run_ladder, ladder_type=_Descend), Optim_load_shapes(chosen), settings)
+        done[3] = run(3, partial(Optim_run_ladder, ladder_type=_Descend), load(chosen), settings)
     return Calibration(done, golden_jmax, source, recommended)
 
 
@@ -610,46 +643,3 @@ def _yes(v) -> str:
     return "-" if v is None else ("yes" if v else "no")
 
 #endregion
-
-
-def main(argv=None) -> None:
-    argv = sys.argv[1:] if argv is None else list(argv)
-    Optim_relaunch_for_slots("src.datagen.meshing.optimizer.batch.calibrate", argv)
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--rungs", default="1,2,3", help="rungs to calibrate, of 1,2,3 (default all)")
-    parser.add_argument("--airfoils", help="comma-separated names for every rung (default: each rung's own)")
-    parser.add_argument("--golden-jmax", type=int,
-                        help="rungs 2 and 3's golden jmax, over rung 1's (default: rung 1's, else the constant)")
-    parser.add_argument("--rung3-cap", type=int, default=RUNG3_CAP,
-                        help=f"rung 3's budget while it is calibrated (default {RUNG3_CAP})")
-    parser.add_argument("--rung2-cap", type=int, default=RUNG2_CAP,
-                        help=f"rung 2's budget while it is calibrated (default {RUNG2_CAP})")
-    parser.add_argument("--workers", type=int, default=WORKERS, help=f"worker processes (default {WORKERS})")
-    parser.add_argument("--out", type=Path, help="folder for the report and database (default: the calibration folder)")
-    args = parser.parse_args(argv)
-
-    try:
-        rungs = sorted({int(r) for r in args.rungs.split(",")})
-    except ValueError:
-        parser.error(f"--rungs takes numbers from 1,2,3, not {args.rungs!r}")
-    if not rungs or not set(rungs) <= {1, 2, 3}:
-        parser.error(f"--rungs takes numbers from 1,2,3, not {args.rungs!r}")
-    names = [n.strip() for n in args.airfoils.split(",")] if args.airfoils else None
-    out = args.out or CALIBRATION_DIR
-    stamp = datetime.date.today().isoformat()
-    db, report = out / f"{stamp}.sqlite", out / f"{stamp}.txt"
-    if db.exists():
-        parser.error(f"{db} already holds a calibration; pass another --out")
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s", datefmt="%H:%M:%S")
-
-    out.mkdir(parents=True, exist_ok=True)
-    with RunStore.open(db) as store:
-        cal = Optim_calibrate(store, rungs, names, args.golden_jmax, args.rung3_cap, args.rung2_cap, args.workers)
-        text = Optim_format_report(store, cal)
-    report.write_text(text, encoding="utf-8", newline="\n")
-    print(text)
-    print(f"Written to {report} and {db}")
-
-
-if __name__ == "__main__":
-    main()

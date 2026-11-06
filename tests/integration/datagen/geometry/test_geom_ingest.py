@@ -29,7 +29,7 @@ import src.datagen.geometry.manifest.ingest as ingest_module
 from src.datagen.geometry.build.add import Geom_add_airfoil, Geom_identify
 from src.datagen.geometry.common.constants import NORM_N_POINTS, SHAPE_VERSION
 from src.datagen.geometry.build.families import _family_contour
-from src.datagen.geometry.manifest.ingest import Geom_ingest_folder, main
+from src.datagen.geometry.manifest.ingest import Geom_format_summary, Geom_ingest_folder
 from src.datagen.geometry.common.io import Geom_coords_hash, Geom_read_dat, Geom_write_dat
 from src.datagen.geometry.common.paths import Geom_paths
 from src.datagen.geometry.common.schemas import Closure, Family, ItemStatus, RejectReason
@@ -180,15 +180,14 @@ def test_loosened_gate_admits_a_stored_rejection(source, tmp_path, monkeypatch):
 
 
 # region Step 3
-def test_dry_run_writes_nothing(source, tmp_path, capsys):
+def test_dry_run_writes_nothing(source, tmp_path):
     data = tmp_path / "data"
     summary = Geom_ingest_folder(source, data, dry_run=True)
-    main([str(source), "--dry-run", "--data-root", str(data)])
 
     assert _outcomes(summary) == _EXPECTED  # in-run duplicates found without a manifest
     assert summary.summary_path is None and all(i.report_path is None for i in summary.items)
     assert not data.exists()
-    assert "(dry run, nothing written)" in capsys.readouterr().out
+    assert "(dry run, nothing written)" in Geom_format_summary(summary)
 
 
 def test_dry_run_reads_an_existing_manifest(source, tmp_path):

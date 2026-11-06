@@ -1,5 +1,6 @@
 """
-Tests for `meshing.optimizer.evaluate.remesh` and its command line, `meshing.optimizer.batch.remesh`, i.e.:
+Tests for `meshing.optimizer.evaluate.remesh` and the airfoils' and runs' re-mesh, `meshing.optimizer.batch.remesh`,
+i.e.:
 
 Step 1: Ensure a stored run is rebuilt from the executor's own input and delivered only once verified
     - test_the_remesh_builds_the_executors_input
@@ -8,10 +9,10 @@ Step 1: Ensure a stored run is rebuilt from the executor's own input and deliver
     - test_a_killed_remeshs_folder_is_cleared_first
 Step 2: Ensure a run this code cannot rebuild is refused before anything meshes
     - test_a_run_that_cannot_be_rebuilt_is_refused_before_meshing
-Step 3: Ensure the command line picks the right runs and reports what it could not deliver
-    - test_the_cli_delivers_each_best_and_reports_the_rest
-    - test_the_cli_goes_on_past_an_airfoil_it_cannot_deliver
-    - test_the_cli_takes_any_meshed_run
+Step 3: Ensure the right runs are picked, and what could not be delivered is reported while the rest go on
+    - test_each_best_is_delivered_and_the_rest_reported
+    - test_the_airfoils_go_on_past_one_that_cannot_be_delivered
+    - test_any_meshed_run_is_remeshed_by_its_id
 
 The executor records three naca0012 runs (the golden one, marked best; a manual one; a rejected one) into a
 scratch store with the sampler real and `Common_GenerateMesh` a stand-in; the re-mesh then meshes with the same
@@ -217,35 +218,42 @@ def test_a_run_that_cannot_be_rebuilt_is_refused_before_meshing(study, monkeypat
 
 
 # region Step 3
-def test_the_cli_delivers_each_best_and_reports_the_rest(study, capsys):
-    args = ["--out", str(study.out), "--db", str(study.db)]
+def _delivered(outcomes):
+    return [(o.name, o.remeshed is not None) for o in outcomes]
 
-    assert batch_remesh.main(["--airfoils", "naca0012,naca4412", *args]) == 1
-    printed = capsys.readouterr().out
-    assert "Re-meshed 1 of 2" in printed and "naca4412: no best run under settings" in printed
+
+def test_each_best_is_delivered_and_the_rest_reported(study):
+    with RunStore.open(study.db, read_only=True) as store:
+        named = batch_remesh.Optim_remesh_airfoils(store, ["naca0012", "naca4412"], study.out)
+        every = batch_remesh.Optim_remesh_airfoils(store, None, study.out)
+        with pytest.raises(ValueError, match="naca9999"):  # an unknown name, before anything meshes
+            batch_remesh.Optim_remesh_airfoils(store, ["naca9999"], study.out)
+
+    assert _delivered(named) == [("naca0012", True), ("naca4412", False)]
+    assert named[1].error.startswith("no best run under settings")
     assert os.listdir(study.out) == ["naca0012"] and os.listdir(study.out / "naca0012") == ["naca0012.su2"]
-    assert batch_remesh.main(["--all", *args]) == 1
-    assert "Re-meshed 1 of 3" in capsys.readouterr().out
-    with pytest.raises(SystemExit):
-        batch_remesh.main(["--airfoils", "naca9999", *args])  # an unknown name is a usage error
+    assert len(every) == len(SHAPE_NAMES) and [d for _, d in _delivered(every)].count(True) == 1
 
 
-def test_the_cli_goes_on_past_an_airfoil_it_cannot_deliver(study, capsys):
+def test_the_airfoils_go_on_past_one_that_cannot_be_delivered(study):
     _record_best(study, "naca4412")
     study.mesher.su2_for["naca4412"] = b"NDIME= 2\nNPOIN= 2\n"  # its re-mesh comes out different
 
-    assert batch_remesh.main(["--airfoils", "naca4412,naca0012", "--out", str(study.out), "--db", str(study.db)]) == 1
-    printed = capsys.readouterr().out
-    assert "Re-meshed 1 of 2" in printed and "naca4412: run " in printed and "hashes to" in printed
+    with RunStore.open(study.db, read_only=True) as store:
+        outcomes = batch_remesh.Optim_remesh_airfoils(store, ["naca4412", "naca0012"], study.out)
+
+    assert _delivered(outcomes) == [("naca4412", False), ("naca0012", True)]
+    assert outcomes[0].error.startswith("run ") and "hashes to" in outcomes[0].error
     assert os.listdir(study.out) == ["naca0012"]  # delivered after the failure; the failure left no folder
 
 
-def test_the_cli_takes_any_meshed_run(study):
-    args = ["--vtk", "--out", str(study.out), "--db", str(study.db)]
+def test_any_meshed_run_is_remeshed_by_its_id(study):
+    with RunStore.open(study.db, read_only=True) as store:
+        got = batch_remesh.Optim_remesh_run(store, study.other["run_id"], study.out, with_vtk=True)
+        with pytest.raises(ValueError, match="no run nope in"):
+            batch_remesh.Optim_remesh_run(store, "nope", study.out)
 
-    assert batch_remesh.main(["--run", study.other["run_id"], *args]) == 0
+    assert _delivered([got]) == [("naca0012", True)]
     assert sorted(os.listdir(study.out / "naca0012")) == ["naca0012.su2", "naca0012.vtk"]
     assert study.mesher.calls[-1].mesh_config.jmax == 148  # the manual run's, not the best's
-    with pytest.raises(SystemExit):
-        batch_remesh.main(["--run", "nope", *args])
 # endregion

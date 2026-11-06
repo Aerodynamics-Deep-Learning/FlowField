@@ -15,12 +15,12 @@ Step 3: Ensure rung 3's curves, its replay of the plateau, and the budgets
     - test_a_failed_golden_run_is_no_best_to_beat
     - test_the_plateau_pick_takes_the_fewest_meshes_within_the_loss
     - test_the_budgets_round_up_to_ten
-Step 4: Ensure the rungs run together, the ordinary airfoils, the golden jmax's source, the report and the CLI
+Step 4: Ensure the rungs run together, the ordinary airfoils, the golden jmax's source, the report and its files
     - test_the_ordinary_airfoils_are_drawn_the_same_way
     - test_a_calibration_runs_every_rung_and_reports_it
     - test_the_golden_jmax_comes_from_the_flag_rung_1_or_the_constant
     - test_a_given_golden_jmax_over_rung_1_is_warned
-    - test_main_writes_the_report_and_the_database_once
+    - test_a_dated_calibration_writes_its_report_and_database_once
 
 n* is stubbed and the executor is a stand-in whose rows come from a formula of the knobs, judged by the real
 verdict; NOMAD, the ladder, the store and the report are real. The real sampler and c2d are in the
@@ -116,7 +116,7 @@ def stubs(tmp_path, monkeypatch):
     floors = []
     monkeypatch.setattr(cal, "Optim_n_star_search", lambda contour, s: floors.append(s) or FLOOR)
     monkeypatch.setattr(cal, "Optim_load_shapes",
-                        lambda names=None: [(n, stored_shape(n)) for n in names or ("naca0012",)])
+                        lambda names=None, db=None: [(n, stored_shape(n)) for n in names or ("naca0012",)])
     return floors
 
 
@@ -372,19 +372,21 @@ def test_a_given_golden_jmax_over_rung_1_is_warned(stubs, tmp_path, monkeypatch,
     assert caplog.records == []  # no rung 1, nothing overridden
 
 
-def test_main_writes_the_report_and_the_database_once(stubs, tmp_path, monkeypatch, capsys):
+def test_a_dated_calibration_writes_its_report_and_database_once(stubs, tmp_path, monkeypatch):
     _world(monkeypatch, _sr_from(142))
-    args = ["--rungs", "1", "--airfoils", "naca0012", "--workers", "1", "--out", str(tmp_path)]
-    cal.main(args)
+    out = tmp_path / "calibration"  # made on the way
+    files = cal.Optim_run_calibration(out, (1,), ["naca0012"], workers=1)
     stamp = date.today().isoformat()
 
-    report = (tmp_path / f"{stamp}.txt").read_text(encoding="utf-8")
-    assert "naca0012" in report and "Rung 1: n*, jmax*" in report and report in capsys.readouterr().out
-    with RunStore.open(tmp_path / f"{stamp}.sqlite", read_only=True) as store:
+    assert (files.report, files.db) == (out / f"{stamp}.txt", out / f"{stamp}.sqlite")
+    report = files.report.read_text(encoding="utf-8")
+    assert report == files.text and "naca0012" in report and "Rung 1: n*, jmax*" in report
+    with RunStore.open(files.db, read_only=True) as store:
         assert store._conn.execute("SELECT COUNT(*) FROM runs WHERE rung = 'bisect'").fetchone()[0] > 0
-    with pytest.raises(SystemExit):  # the day's database is never written over
-        cal.main(args)
-    for rungs in ("4", "1,x", ""):
-        with pytest.raises(SystemExit):
-            cal.main(["--rungs", rungs, "--out", str(tmp_path / "other")])
+    with pytest.raises(FileExistsError, match="already holds a calibration"):  # the day's database is never written over
+        cal.Optim_run_calibration(out, (1,), ["naca0012"], workers=1)
+    for rungs in ((4,), ()):
+        with pytest.raises(ValueError, match="rungs are any of 1, 2, 3"):
+            cal.Optim_run_calibration(tmp_path / "other", rungs)
+    assert not (tmp_path / "other").exists()
 # endregion

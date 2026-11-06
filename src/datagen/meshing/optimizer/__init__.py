@@ -10,7 +10,9 @@ _EXPORTS = {
     "Optim_campaign_summary": "batch.campaign",     # a campaign's outcome, read off the run store
     "Optim_calibrate": "batch.calibrate",           # the ladder's calibration: jmax*, rung 3's plateau, rung 2's budget
     "Optim_format_report": "batch.calibrate",       # the calibration's report, read off its run store
+    "Optim_run_calibration": "batch.calibrate",     # a dated calibration: its database and report in one folder
     "Optim_remesh_airfoils": "batch.remesh",        # each airfoil's best run meshed again into its own folder
+    "Optim_remesh_run": "batch.remesh",             # one run by id meshed again into its airfoil's folder
     # One airfoil
     "Optim_run_ladder": "search.ladder",            # n*, the golden run and the rungs it routes to, reported as events
     "LadderOutcome": "search.events",         # how a ladder ended, its error handed up rather than raised

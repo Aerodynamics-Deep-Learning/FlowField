@@ -1,9 +1,10 @@
 """
 Tests for `meshing.optimizer.batch.campaign`, the ladder over every airfoil, i.e.:
 
-Step 1: Ensure a campaign runs its airfoils under the constants' own settings row, and takes no setting
+Step 1: Ensure a campaign runs its airfoils, from the manifest it is given, under the constants' own settings row
     - test_a_campaign_runs_its_airfoils_under_the_constants
-    - test_the_command_line_takes_no_setting
+    - test_the_airfoils_come_from_the_manifest_given
+    - test_an_unknown_airfoil_is_refused_before_anything_is_recorded
 Step 2: Ensure a campaign resumes: the finished are skipped, the aborted and the ones left running run again
     - test_a_rerun_skips_the_finished_and_reruns_the_aborted
     - test_a_ladder_left_running_is_aborted_at_the_start
@@ -21,7 +22,8 @@ import uuid
 import pytest
 
 from src.datagen.geometry.common.paths import Geom_paths
-from src.datagen.meshing.optimizer.batch.campaign import Optim_campaign_summary, Optim_run_campaign, main
+from src.datagen.meshing.optimizer.batch import campaign
+from src.datagen.meshing.optimizer.batch.campaign import Optim_campaign_summary, Optim_run_campaign
 from src.datagen.meshing.optimizer.batch.runner import BatchStopped
 from src.datagen.meshing.optimizer.common.settings import Optim_build_settings
 from src.datagen.meshing.optimizer.evaluate.context import StudySetupError
@@ -93,12 +95,21 @@ def test_a_campaign_runs_its_airfoils_under_the_constants(store):
         assert ladder["status"] == "passed" and store.run(best)["num_nodes"] == _NODES[ladder["airfoil_name"]]
 
 
-@pytest.mark.parametrize("setting", ["--golden-jmax", "--rung3-budget", "--gate-skew-max"])
-def test_the_command_line_takes_no_setting(setting, capsys):
-    with pytest.raises(SystemExit) as stopped:
-        main([setting, "150"])
+def test_the_airfoils_come_from_the_manifest_given(store, monkeypatch, tmp_path):
+    asked, load = [], campaign.Optim_load_shapes
+    monkeypatch.setattr(campaign, "Optim_load_shapes", lambda names, db: asked.append(db) or load(names))
+    manifest = tmp_path / "geometry.sqlite"
 
-    assert stopped.value.code == 2 and "unrecognized arguments" in capsys.readouterr().err
+    result = Optim_run_campaign(store, ["naca0012"], workers=1, task=_ladder, geometry_db=manifest)
+
+    assert asked == [manifest] and result.names == ["naca0012"]
+
+
+def test_an_unknown_airfoil_is_refused_before_anything_is_recorded(store):
+    with pytest.raises(ValueError, match="naca9999"):
+        _campaign(store, "naca0012", "naca9999")
+
+    assert store._conn.execute("SELECT COUNT(*) FROM settings").fetchone()[0] == 0
 # endregion
 
 

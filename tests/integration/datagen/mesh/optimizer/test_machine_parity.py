@@ -3,20 +3,21 @@ Whether this machine makes the mesh study's inputs and meshes bit for bit as the
 
 Step 1: Ensure the sampler gives every manifest airfoil the reference's points and figures
     - test_this_machine_samples_like_the_reference
-Step 2: Ensure c2d turns three of them into the reference's meshes
+Step 2: Ensure c2d turns the calibration set's ten hard airfoils into the reference's meshes
     - test_this_machine_meshes_like_the_reference
 
 Run it on a new machine before a campaign or a re-mesh: a failure means meshes made here will not hash like
 the reference's, so runs stored elsewhere will not re-mesh here. The reference, `machine_parity.json` beside
 this file, holds per manifest airfoil the SHA-256 of its samples at three configs (points and reports), the n*
-grid's, and the .su2 SHA-256 of three golden meshes with the c2d executable's own. Step 2 skips without c2d, or
-with another executable, whose meshes belong to another settings row. After a sampler or shape version change,
-or a new manifest, rewrite the reference on the reference machine:
+grid's, the .su2 SHA-256 of the calibration set's golden meshes with the c2d executable's own, and the machine it
+was written on. Step 2 skips without c2d, or with another executable, whose meshes belong to another settings
+row. After a sampler or shape version change, or a new manifest, rewrite the reference on the reference machine:
     `python -m tests.integration.datagen.mesh.optimizer.test_machine_parity`
 """
 
 import hashlib
 import json
+import socket
 import tempfile
 from pathlib import Path
 
@@ -29,6 +30,7 @@ from src.datagen.geometry.sample.fields import SamplingFields
 from src.datagen.geometry.sample.sample import Geom_sample
 from src.datagen.meshing.c2d.run import C2D_find_exe
 from src.datagen.meshing.common.schemas import MeshBackend, MeshTopology
+from src.datagen.meshing.optimizer.batch.calibrate import CALIBRATION_SET
 from src.datagen.meshing.optimizer.batch.runner import Optim_load_shapes
 from src.datagen.meshing.optimizer.common.constants import (
     CELL_CEILING, CLUSTER_WIDTH_MAX, CLUSTER_WIDTH_MIN, NSTAR_CW_GRID, NSTAR_LE_GRID, RATIO_MIN, SMOOTHING_DEFAULTS,
@@ -46,7 +48,7 @@ CONFIGS = ({"dx_mid": DX_MAX, "le_ratio": 0.025, "te_ratio": 1.0, "cluster_width
            {"dx_mid": 0.004, "le_ratio": 0.3, "te_ratio": 0.2, "cluster_width": 0.25},
            {"dx_mid": 0.002, "le_ratio": 0.01, "te_ratio": 0.05, "cluster_width": 0.1})
 JMAX = 147
-MESHED = ("naca0012", "s1223", "sc21010")
+MESHED = CALIBRATION_SET  # the most surface points, the highest and lowest jmax*, the worst lift losses
 
 
 def _nstar_grid_hash() -> str:
@@ -90,15 +92,19 @@ def _reference() -> dict:
     return ref
 
 
+def _by(ref: dict) -> str:
+    return f" (the reference was written on {ref.get('written_on', 'an unnamed machine')})"
+
+
 # region Step 1
 def test_this_machine_samples_like_the_reference():
     ref = _reference()
     got = _sample_hashes()
 
     assert set(got) == set(ref["samples"]), "the manifest's airfoils are not the reference's: rewrite the reference"
-    assert _nstar_grid_hash() == ref["nstar_grid"], "n*'s grid points differ from the reference's"
+    assert _nstar_grid_hash() == ref["nstar_grid"], "n*'s grid points differ from the reference's" + _by(ref)
     differ = sorted(name for name in got if got[name] != ref["samples"][name])
-    assert not differ, f"{len(differ)} of {len(got)} airfoils sample differently here: {', '.join(differ)}"
+    assert not differ, f"{len(differ)} of {len(got)} airfoils sample differently here: {', '.join(differ)}" + _by(ref)
 # endregion
 
 
@@ -112,15 +118,19 @@ def test_this_machine_meshes_like_the_reference(tmp_path):
     if exe != ref_exe:
         pytest.skip(f"this c2d executable ({exe[:12]}) is not the reference's ({ref_exe[:12]})")
 
-    assert _mesh_hashes(tmp_path) == ref["c2d"]["meshes"]
+    got, expected = _mesh_hashes(tmp_path), ref["c2d"]["meshes"]
+    assert set(got) == set(expected), "the reference meshed other airfoils: rewrite the reference"
+    differ = sorted(name for name in got if got[name] != expected[name])
+    assert not differ, f"{len(differ)} of {len(got)} airfoils mesh differently here: {', '.join(differ)}" + _by(ref)
 # endregion
 
 
 if __name__ == "__main__":
-    reference = {"sampler_version": SAMPLER_VERSION, "shape_version": SHAPE_VERSION,
+    reference = {"sampler_version": SAMPLER_VERSION, "shape_version": SHAPE_VERSION, "written_on": socket.gethostname(),
                  "nstar_grid": _nstar_grid_hash(), "samples": _sample_hashes()}
     if C2D_find_exe() is not None:
         with tempfile.TemporaryDirectory() as tmp:
             reference["c2d"] = {"mesher_sha256": Optim_mesher_sha256(), "meshes": _mesh_hashes(tmp)}
     REFERENCE.write_text(json.dumps(reference, indent=1, sort_keys=True) + "\n")
-    print(f"{REFERENCE}: {len(reference['samples'])} airfoils" + (", 3 meshes" if "c2d" in reference else ""))
+    meshes = f", {len(reference['c2d']['meshes'])} meshes" if "c2d" in reference else ""
+    print(f"{REFERENCE}: {len(reference['samples'])} airfoils{meshes}, written on {reference['written_on']}")

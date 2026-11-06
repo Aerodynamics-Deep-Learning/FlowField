@@ -1,15 +1,12 @@
 """
 Calibration of the CST order, nose and fit tolerance: fits every airfoil in a root folder at a range of
 orders, with each way of representing the nose, through the same code the ingest uses, and writes the
-table the constants are chosen from. Touches no database.
-
-To run calibration:
-    `python -m src.datagen.geometry.build.calibrate <folder> [--orders 4-12] [--out <file>] [--workers <n>]`
+table the constants are chosen from. Touches no database. Run from the command line by
+`scripts/datagen/geometry_calibrate.py`.
 
 Files are independent, so they are fitted in parallel processes, one per core by default.
 """
 
-import argparse
 import datetime
 import os
 from concurrent.futures import ProcessPoolExecutor
@@ -24,7 +21,7 @@ from scipy.interpolate import CubicSpline
 from .add import _fit_and_gate, _prepare
 from src.datagen.geometry.common.constants import CST_NOSE, CURVE_POINTS
 from .parametrization import Geom_cst_contour, Geom_curve_distance
-from src.datagen.geometry.common.paths import Geom_git_version, Geom_paths, Geom_source_label
+from src.datagen.geometry.common.paths import Geom_git_version, Geom_source_label
 from src.datagen.geometry.common.schemas import CSTParams, Family, Nose, RejectReason
 
 _TOLS = (5e-4, 1e-3, 2e-3, 3e-3)
@@ -185,22 +182,21 @@ def Geom_format_calibration(rows: list[CalibrationRow], folder, default_nose: No
     return "\n".join(out) + "\n"
 
 
-def main(argv=None) -> None:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("folder", type=Path, help="root folder of .dat files")
-    parser.add_argument("--orders", default="4-12", help="CST orders, 'lo-hi' (default 4-12)")
-    parser.add_argument("--out", type=Path, help="report file (default: the calibration folder under data/)")
-    parser.add_argument("--workers", type=int, help="parallel processes (default: one per core)")
-    args = parser.parse_args(argv)
+def Geom_run_calibration(folder, out, orders=range(4, 13), workers: Optional[int] = None) -> str:
+    """
+    The calibration of `folder` at `orders`, its report written to `out`.
 
-    lo, hi = (int(v) for v in args.orders.split("-"))
-    out = args.out or Geom_paths().calibration_dir / f"{datetime.date.today().isoformat()}.txt"
-    text = Geom_format_calibration(Geom_calibrate(args.folder, range(lo, hi + 1), workers=args.workers), args.folder)
+    Args:
+        folder (str | Path): A root folder of .dat files
+        out (str | Path): The report file; its folder is made if missing
+        orders (Iterable[int]): CST orders to fit
+        workers (int | None): Parallel processes, one per core by default
+
+    Returns:
+        str: The report
+    """
+    text = Geom_format_calibration(Geom_calibrate(folder, orders, workers=workers), folder)
+    out = Path(out)
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(text, encoding="utf-8", newline="\n")
-    print(text)
-    print(f"Written to {out}")
-
-
-if __name__ == "__main__":
-    main()
+    return text

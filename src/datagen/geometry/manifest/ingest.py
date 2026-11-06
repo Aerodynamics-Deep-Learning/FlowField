@@ -1,7 +1,6 @@
 """
-Geom addition driver: adds every root .dat under a folder to the geometry manifest.
-
-    `python -m src.datagen.geometry.manifest.ingest [<folder>] [--dry-run] [--data-root <data folder>]`
+Geom addition driver: adds every root .dat under a folder to the geometry manifest. Run from the command line
+by `scripts/datagen/geometry_ingest.py`.
 
 First, every stored airfoil without a shape under the current `SHAPE_VERSION` (all of them, after a
 version bump) is refitted from its raw copy, and every stored rejection is judged again from its copy
@@ -19,7 +18,6 @@ A file that fails is recorded and the run goes on; only a missing folder or an u
 stops it. A dry run does everything but write, against the manifest as it stands.
 """
 
-import argparse
 import datetime
 import secrets
 import shutil
@@ -31,21 +29,21 @@ from src.datagen.geometry.build.add import Geom_add_airfoil, Geom_identify
 from src.datagen.geometry.build.checks import Geom_check_suspect_point
 from src.datagen.geometry.common.constants import CST_FIT_TOL, FAMILY_MATCH_TOL, SHAPE_VERSION
 from src.datagen.geometry.common.io import GeometryFormatError, Geom_write_dat
-from src.datagen.geometry.common.paths import DATA_ROOT, GeometryPaths, Geom_git_version, Geom_paths, Geom_source_label
+from src.datagen.geometry.common.paths import GeometryPaths, Geom_git_version, Geom_paths, Geom_source_label
 from src.datagen.geometry.common.schemas import (
     AddResult, GeometryRecord, IngestItem, IngestSummary, Identity, ItemStatus, RejectionRecord, RejectReason,
 )
 from .store import GeometryStore
 
 
-def Geom_ingest_folder(folder=None, data_root=DATA_ROOT, dry_run: bool = False) -> IngestSummary:
+def Geom_ingest_folder(folder, data_root, dry_run: bool = False) -> IngestSummary:
     """
     Brings the stored airfoils to the current shape version, then adds every .dat under `folder`.
 
     Args:
         folder (str | Path | None): A root folder, searched recursively; None to only bring the stored
             airfoils to the current shape version
-        data_root (str | Path): The `data/` folder holding the manifest and its files
+        data_root (str | Path): The data folder holding the manifest and its files (the repo's own is `DATA_ROOT`)
         dry_run (bool): Do everything but write
 
     Returns:
@@ -394,22 +392,3 @@ def Geom_format_summary(summary: IngestSummary) -> str:
         suspect = "" if not fitted or Geom_check_suspect_point(res.fit)[0] else f"  (suspect point x={res.fit.x_at_max:.4f})"
         out.append(f"{item.status.value:9} {item.reason or '':15} {fit} {closure:8} {item.source_relpath}{suspect}")
     return "\n".join(out) + "\n"
-
-
-def main(argv=None) -> None:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("folder", type=Path, nargs="?",
-                        help="root folder of .dat files, searched recursively; leave out to only bring the stored "
-                             "airfoils to the current shape version")
-    parser.add_argument("--dry-run", action="store_true", help="do everything but write")
-    parser.add_argument("--data-root", type=Path, default=DATA_ROOT, help="the data/ folder (default: the repo's)")
-    args = parser.parse_args(argv)
-
-    summary = Geom_ingest_folder(args.folder, args.data_root, args.dry_run)
-    print(Geom_format_summary(summary))
-    if summary.summary_path:
-        print(f"Summary written to {Geom_paths(args.data_root).from_rel(summary.summary_path)}")
-
-
-if __name__ == "__main__":
-    main()

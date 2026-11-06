@@ -1,12 +1,11 @@
 """
 The re-mesh on the real c2d, i.e.:
 
-Step 1: Ensure a stored best run is rebuilt bit for bit through the command line, its .vtk alongside
+Step 1: Ensure a stored best run is rebuilt bit for bit into its airfoil's folder, its .vtk alongside
     - test_a_best_run_is_remeshed_bit_for_bit
 
 naca0012 from the repo's geometry manifest is meshed once by the executor as a golden run and recorded as
-its best in a scratch run store; the re-mesh's command line then rebuilds it. Skipped without the manifest
-or c2d.
+its best in a scratch run store; the airfoils' re-mesh then rebuilds it. Skipped without the manifest or c2d.
 """
 
 import os
@@ -17,7 +16,7 @@ from src.datagen.geometry.common.constants import DX_MAX
 from src.datagen.geometry.common.paths import Geom_paths
 from src.datagen.meshing.c2d.run import C2D_find_exe
 from src.datagen.meshing.common.schemas import MeshBackend, MeshTopology
-from src.datagen.meshing.optimizer.batch.remesh import main
+from src.datagen.meshing.optimizer.batch.remesh import Optim_remesh_airfoils
 from src.datagen.meshing.optimizer.batch.runner import Optim_load_shapes
 from src.datagen.meshing.optimizer.common.constants import SMOOTHING_DEFAULTS
 from src.datagen.meshing.optimizer.common.settings import Optim_build_settings
@@ -52,7 +51,9 @@ def test_a_best_run_is_remeshed_bit_for_bit(tmp_path):
         assert store.update_best(shape.geometry_id, settings["settings_id"]) == row["run_id"], row["failed_gates"]
 
     out = tmp_path / "out"
-    assert main(["--airfoils", "naca0012", "--vtk", "--out", str(out), "--db", str(db)]) == 0
+    with RunStore.open(db, read_only=True) as store:
+        [outcome] = Optim_remesh_airfoils(store, ["naca0012"], out, with_vtk=True)
+    assert outcome.error is None
     folder = out / "naca0012"
     assert sorted(os.listdir(folder)) == ["naca0012.su2", "naca0012.vtk"]  # no temp folder, no c2d side files
     assert Optim_su2_sha256(folder / "naca0012.su2")[0] == row["su2_sha256"]
