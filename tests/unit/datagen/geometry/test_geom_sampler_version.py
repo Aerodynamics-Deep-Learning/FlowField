@@ -33,6 +33,17 @@ _PINNED = {
         ('cusp', 'blunt'): (712, 356, 439.382331823),
         ('cusp', 'round'): (767, 384, 493.642948231),
     },
+    'samp-r2': {
+        ('naca4412', 'sharp'): (715, 359, 444.197985565),
+        ('naca4412', 'blunt'): (715, 359, 445.028358846),
+        ('naca4412', 'round'): (772, 388, 501.730137018),
+        ('tiltfoil', 'sharp'): (714, 359, 443.523618758),
+        ('tiltfoil', 'blunt'): (714, 359, 443.848080034),
+        ('tiltfoil', 'round'): (771, 389, 500.164828712),
+        ('cusp', 'sharp'): (712, 356, 438.850996041),
+        ('cusp', 'blunt'): (712, 356, 439.382331823),
+        ('cusp', 'round'): (767, 384, 493.642948231),
+    },
 }
 
 # A cambered NACA formula and a tilted tabulated section as stored under cst8-r1, and a cusp

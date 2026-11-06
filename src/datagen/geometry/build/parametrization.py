@@ -12,6 +12,9 @@ value and slope at the TE.
 
 Near the TE a surface is ~A_N (1 - x), so the TE wedge is positive exactly when the upper A_N exceeds the
 lower's. The fit solves for that difference and bounds it at zero: a cusp at worst, never crossed.
+
+Powers are taken by multiplication and sqrt, and sums term by term, never `**` or a matrix product, so a
+shape evaluates to the same bits on every machine (`common/portable.py`); its exponents must be multiples of 0.5.
 """
 
 import math
@@ -23,20 +26,47 @@ from src.datagen.geometry.common.constants import CST_N1, CST_N2, CST_NOSE, CST_
 from src.datagen.geometry.common.schemas import CSTParams, FitMetrics, Nose
 
 
+def _powers(x: np.ndarray, n: int) -> list[np.ndarray]:
+    """[1, x, x^2, ..., x^n], each the last times x."""
+    out = [np.ones_like(x)]
+    for _ in range(n):
+        out.append(out[-1] * x)
+    return out
+
+
+def _pow(x: np.ndarray, p: float) -> np.ndarray:
+    """x^p for p a multiple of 0.5, by multiplication and sqrt."""
+    twice = 2 * p
+    if twice != int(twice):
+        raise ValueError(f"CST exponents must be multiples of 0.5 to evaluate the same on every machine, got {p}")
+    n, half = divmod(abs(int(twice)), 2)
+    out = _powers(x, n)[-1]
+    if half:
+        out = out * np.sqrt(x)
+    return 1.0 / out if p < 0 else out
+
+
+def _weighted(basis: np.ndarray, weights) -> np.ndarray:
+    """basis @ weights, summed column by column (a BLAS product's order depends on the CPU)."""
+    out = np.zeros(basis.shape[0])
+    for k, w in enumerate(weights):
+        out = out + basis[:, k] * w
+    return out
+
+
 def _bernstein(x: np.ndarray, order: int) -> np.ndarray:
     """(len(x), order + 1) Bernstein basis."""
-    i = np.arange(order + 1)
-    binom = np.array([math.comb(order, k) for k in i], dtype=float)
-    return binom * x[:, None] ** i * (1 - x[:, None]) ** (order - i)
+    xp, op = _powers(x, order), _powers(1 - x, order)
+    return np.stack([math.comb(order, k) * xp[k] * op[order - k] for k in range(order + 1)], axis=1)
 
 
 def _class(x: np.ndarray, n1: float, n2: float) -> np.ndarray:
-    return x ** n1 * (1 - x) ** n2
+    return _pow(x, n1) * _pow(1 - x, n2)
 
 
 def _lem(x: np.ndarray, order: int) -> np.ndarray:
     """The LEM term's shape: ~x at the nose, peaks at x = 1 / (N + 1.5), 3% of that by mid-chord at N = 8."""
-    return x * (1 - x) ** (order + 0.5)
+    return x * _pow(1 - x, order + 0.5)
 
 
 def Geom_cst_eval(cst: CSTParams, x: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
@@ -53,7 +83,7 @@ def Geom_cst_eval(cst: CSTParams, x: np.ndarray) -> tuple[np.ndarray, np.ndarray
     x = np.asarray(x, dtype=float)
     basis = _class(x, cst.n1, cst.n2)[:, None] * _bernstein(x, cst.order)
     lem = cst.le_weight * _lem(x, cst.order)
-    return basis @ np.asarray(cst.upper) + lem, basis @ np.asarray(cst.lower) + lem
+    return _weighted(basis, cst.upper) + lem, _weighted(basis, cst.lower) + lem
 
 
 def Geom_cst_slope(cst: CSTParams, x: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
@@ -76,10 +106,10 @@ def Geom_cst_slope(cst: CSTParams, x: np.ndarray) -> tuple[np.ndarray, np.ndarra
     else:
         d_basis = np.zeros_like(basis)
     c = _class(x, n1, n2)
-    d_c = n1 * x ** (n1 - 1) * (1 - x) ** n2 - n2 * x ** n1 * (1 - x) ** (n2 - 1)
-    d_lem = cst.le_weight * ((1 - x) ** (n + 0.5) - (n + 0.5) * x * (1 - x) ** (n - 0.5))
+    d_c = n1 * _pow(x, n1 - 1) * _pow(1 - x, n2) - n2 * _pow(x, n1) * _pow(1 - x, n2 - 1)
+    d_lem = cst.le_weight * (_pow(1 - x, n + 0.5) - (n + 0.5) * x * _pow(1 - x, n - 0.5))
     m = d_c[:, None] * basis + c[:, None] * d_basis
-    return m @ np.asarray(cst.upper) + d_lem, m @ np.asarray(cst.lower) + d_lem
+    return _weighted(m, cst.upper) + d_lem, _weighted(m, cst.lower) + d_lem
 
 
 def Geom_cst_te_wedge(cst: CSTParams) -> float:

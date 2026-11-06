@@ -13,10 +13,10 @@ le_ratio, sets how closely the points follow the shape.
 """
 
 import json
-import math
 import time
 from typing import NamedTuple, Optional
 
+from src.datagen.geometry.common.portable import Geom_exp, Geom_log
 from src.datagen.geometry.sample.contour import Contour
 from src.datagen.geometry.sample.fields import SamplingFields
 from src.datagen.geometry.sample.sample import Geom_sample
@@ -62,9 +62,12 @@ def Optim_n_star_search(contour: Contour, settings: dict) -> NStarResult:
 
 
 def _grid(lo: float, hi: float, count: int, log: bool = False) -> list[float]:
-    """`count` values from lo to hi, evenly spaced (in log10 if `log`); the ends are the bounds exactly."""
+    """
+    `count` values from lo to hi, evenly spaced (in log if `log`); the ends are the bounds exactly. The logs
+    are `portable`'s, so a grid point has the same bits on every machine.
+    """
     if count == 1:
         return [lo]
-    a, b = (math.log10(lo), math.log10(hi)) if log else (lo, hi)
+    a, b = (Geom_log(lo), Geom_log(hi)) if log else (lo, hi)
     inner = (a + i * (b - a) / (count - 1) for i in range(1, count - 1))
-    return [lo, *(10.0 ** v if log else v for v in inner), hi]
+    return [lo, *(Geom_exp(v) if log else v for v in inner), hi]

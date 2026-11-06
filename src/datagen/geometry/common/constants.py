@@ -63,7 +63,7 @@ MIN_DAT_POINTS = 5
 
 # Names the contour -> spacing -> checks behind a sample, constants below included; bump the revision on
 # any change to it (tests/unit/datagen/geometry/test_geom_sampler_version.py fails until you do)
-SAMPLER_VERSION = "samp-r1"
+SAMPLER_VERSION = "samp-r2"
 
 # Longest panel allowed anywhere, so the bound on the mid-chord spacing. Provisional, pending the SU2 sweeps
 DX_MAX = 0.006

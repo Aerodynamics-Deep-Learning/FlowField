@@ -9,6 +9,7 @@ caps never fail it.
 
 Points: N(s), the integral of ds/h, counts the panels the spacing calls for up to s. Each stretch between
 pins gets ceil(its N) panels, evenly in N: no panel is longer than its target and the pins land exactly.
+All of it uses `common/portable.py`'s arithmetic, so a sample has the same bits on every machine.
 """
 
 import math
@@ -17,6 +18,7 @@ from typing import NamedTuple, Optional
 import numpy as np
 
 from src.datagen.geometry.common.constants import PRECHECK_MARGIN, THETA_MAX_DEG
+from src.datagen.geometry.common.portable import Geom_exp, Geom_sin
 from src.datagen.geometry.common.schemas import TETreatment
 from src.datagen.geometry.sample.contour import Contour, PinKind
 from src.datagen.geometry.sample.fields import SamplingFields
@@ -53,7 +55,7 @@ def Geom_target_spacing(contour: Contour, fields: SamplingFields) -> Spacing:
     h = _spacing(contour, s, fields.dx_mid, le, te, fields.cluster_width)
     inv = 1.0 / h
     count = np.concatenate([[0.0], np.cumsum(0.5 * (inv[1:] + inv[:-1]) * np.diff(s))])
-    h_table = _spacing(contour, contour.table_s, fields.dx_mid, le, te, fields.cluster_width)
+    h_table = h[np.searchsorted(s, contour.table_s)]  # the table's points are among s
     return Spacing(s=s, h=h, count=count, h_table=h_table, le=le, te=te, te_clamped=bool(te_clamped))
 
 
@@ -115,7 +117,7 @@ def Geom_stations(contour: Contour, spacing: Spacing, panels: list[int]) -> np.n
 
 def _turn_limit() -> float:
     """The most curvature x spacing the pre-check passes."""
-    return 2 * math.sin(math.radians(THETA_MAX_DEG) / 2) * PRECHECK_MARGIN
+    return 2 * Geom_sin(math.radians(THETA_MAX_DEG) / 2) * PRECHECK_MARGIN
 
 
 def _te_max(contour: Contour) -> Optional[float]:
@@ -135,4 +137,13 @@ def _spacing(contour: Contour, s: np.ndarray, dx: float, le: float, te: float, w
         start, end = 0.0, contour.length
     d_le = np.abs(s - pins[PinKind.LE])
     d_te = np.maximum(0.0, np.minimum(s - start, end - s))
-    return np.minimum(dx - (dx - le) * np.exp(-(d_le / width) ** 2), dx - (dx - te) * np.exp(-(d_te / width) ** 2))
+    return np.minimum(dx - (dx - le) * _dip(d_le / width), dx - (dx - te) * _dip(d_te / width))
+
+
+def _dip(r: np.ndarray) -> np.ndarray:
+    """exp(-r^2); left 0 past r^2 = 40, where it is under half an ULP of the spacing it scales, so h is unchanged."""
+    z = -(r ** 2)
+    out = np.zeros_like(z)
+    live = z > -40.0
+    out[live] = Geom_exp(z[live])
+    return out

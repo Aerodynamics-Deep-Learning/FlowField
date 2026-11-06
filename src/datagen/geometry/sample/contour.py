@@ -14,7 +14,8 @@ control points, so with all three on its own side of y = 0 a cap cannot cross th
 
 The surfaces are parametrized by u = sqrt(x), which stays regular at the LE where dy/dx does not. Each
 piece is tabulated densely; the tables only say where along the curve a point sits, `evaluate` computes
-it on the piece itself.
+it on the piece itself. Everything here uses `common/portable.py`'s arithmetic, so a contour has the same
+bits on every machine.
 """
 
 import math
@@ -26,6 +27,7 @@ import numpy as np
 
 from src.datagen.geometry.build.parametrization import Geom_cst_eval, Geom_cst_slope
 from src.datagen.geometry.common.constants import ARC_TABLE_POINTS, THETA_MAX_DEG, WELD_OFFSET
+from src.datagen.geometry.common.portable import Geom_sin
 from src.datagen.geometry.common.schemas import CSTParams, ShapeRecord, TETreatment
 
 
@@ -75,8 +77,10 @@ class _Cap:
     def peak_curvature(self) -> float:
         """The largest curvature, at the vertex: B' x B'' is constant, so where |B'| is smallest."""
         a, b = self.p1 - self.p0, self.p2 - 2 * self.p1 + self.p0
-        t = float(np.clip(-np.dot(a, b) / np.dot(b, b), 0.0, 1.0))
-        return float(abs(a[0] * b[1] - a[1] * b[0]) / (2 * np.linalg.norm(a + t * b) ** 3))
+        t = min(max(-float(a[0] * b[0] + a[1] * b[1]) / float(b[0] * b[0] + b[1] * b[1]), 0.0), 1.0)
+        v0, v1 = float(a[0] + t * b[0]), float(a[1] + t * b[1])
+        speed = math.sqrt(v0 * v0 + v1 * v1)
+        return float(abs(a[0] * b[1] - a[1] * b[0]) / (2 * (speed * speed * speed)))
 
 
 @dataclass(frozen=True, eq=False)
@@ -156,7 +160,7 @@ def Geom_build_contour(shape: ShapeRecord, te: TETreatment, gap: Optional[float]
         kinds = [PinKind.TIP, PinKind.WELD_UPPER, PinKind.LE, PinKind.WELD_LOWER, PinKind.TIP]
         xys = [(1.0, 0.0), tuple(cap_u.p0), (0.0, 0.0), tuple(cap_l.p0), (1.0, 0.0)]
         caps = tuple(np.array([c.p0, c.p1, c.p2]) for c in (cap_u, cap_l))
-        te_cap_limit = 2 * math.sin(math.radians(THETA_MAX_DEG) / 2) / max(cap_u.peak_curvature(),
+        te_cap_limit = 2 * Geom_sin(math.radians(THETA_MAX_DEG) / 2) / max(cap_u.peak_curvature(),
                                                                         cap_l.peak_curvature())
     elif te is TETreatment.SHARP:
         spec = [(upper, 1.0, 0.0), (lower, 0.0, 1.0)]
@@ -171,11 +175,14 @@ def Geom_build_contour(shape: ShapeRecord, te: TETreatment, gap: Optional[float]
     for piece, start, end in spec:
         params = np.linspace(start, end, ARC_TABLE_POINTS)
         d = np.diff(piece.points(params), axis=0)
-        seg = np.hypot(d[:, 0], d[:, 1])
+        seg = np.sqrt(d[:, 0] * d[:, 0] + d[:, 1] * d[:, 1])
         arc = np.concatenate([[0.0], np.cumsum(seg)])
-        turn = np.abs(np.diff(np.unwrap(np.arctan2(d[:, 1], d[:, 0]))))
+        # each inner point's curvature: the circle through it and its neighbours, 2 |a x b| / (|a| |b| |a + b|)
+        a, b = d[:-1], d[1:]
+        cross = np.abs(a[:, 0] * b[:, 1] - a[:, 1] * b[:, 0])
+        sx, sy = a[:, 0] + b[:, 0], a[:, 1] + b[:, 1]
         table_s.append(offset + arc[1:-1])
-        table_kappa.append(turn / (0.5 * (seg[1:] + seg[:-1])))
+        table_kappa.append(2.0 * cross / (seg[:-1] * seg[1:] * np.sqrt(sx * sx + sy * sy)))
         pieces.append((piece, _frozen(params), _frozen(arc)))
         starts.append(offset)
         offset += float(arc[-1])

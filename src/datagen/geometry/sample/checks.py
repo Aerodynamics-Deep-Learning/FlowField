@@ -7,6 +7,8 @@ rule is a sampler bug, never a bad config, so it raises.
                A sharp TE's closure point is a corner by design, and skipped
     deviation  the curve strays from its panels by at most DEV_MAX, the sagitta of a chord of DX_MAX that
                turns THETA_MAX_DEG on a circle: the two rules above bound every panel by it
+
+The measures use `common/portable.py`'s arithmetic, so a run's recorded sample figures match on every machine.
 """
 
 import math
@@ -14,10 +16,11 @@ import math
 import numpy as np
 
 from src.datagen.geometry.common.constants import DX_MAX, THETA_MAX_DEG
+from src.datagen.geometry.common.portable import Geom_atan2, Geom_tan
 from src.datagen.geometry.common.schemas import TETreatment
 from src.datagen.geometry.sample.contour import Contour
 
-DEV_MAX = (DX_MAX / 2) * math.tan(math.radians(THETA_MAX_DEG) / 4)
+DEV_MAX = (DX_MAX / 2) * Geom_tan(math.radians(THETA_MAX_DEG) / 4)
 
 _ALONG = np.arange(1, 6) / 6  # where along each panel the curve is compared with it
 
@@ -43,18 +46,19 @@ def Geom_sample_checks(contour: Contour, s: np.ndarray, points: np.ndarray, dx_m
         SamplerAssertionError: If a rule is broken
     """
     e = np.diff(points, axis=0)
-    panel = np.hypot(e[:, 0], e[:, 1])
+    panel = np.sqrt(e[:, 0] * e[:, 0] + e[:, 1] * e[:, 1])
 
     a, b, vertex = e[:-1], e[1:], np.arange(1, len(points) - 1)
     if contour.te is TETreatment.ROUND:  # its closure point is smooth, so checked too
         a, b, vertex = np.vstack([e[-1:], a]), np.vstack([e[:1], b]), np.concatenate([[0], vertex])
-    turn = np.degrees(np.abs(np.arctan2(a[:, 0] * b[:, 1] - a[:, 1] * b[:, 0], np.sum(a * b, axis=1))))
+    turn = np.degrees(np.abs(Geom_atan2(a[:, 0] * b[:, 1] - a[:, 1] * b[:, 0], a[:, 0] * b[:, 0] + a[:, 1] * b[:, 1])))
 
     curve = contour.evaluate((s[:-1, None] + _ALONG * np.diff(s)[:, None]).ravel()).reshape(len(e), len(_ALONG), 2)
     rel = curve - points[:-1, None, :]
-    t = np.clip(np.sum(rel * e[:, None, :], axis=2) / np.maximum(panel ** 2, 1e-300)[:, None], 0.0, 1.0)
+    along = rel[..., 0] * e[:, None, 0] + rel[..., 1] * e[:, None, 1]
+    t = np.clip(along / np.maximum(panel ** 2, 1e-300)[:, None], 0.0, 1.0)
     off = rel - t[..., None] * e[:, None, :]
-    dev = np.hypot(off[..., 0], off[..., 1]).max(axis=1)
+    dev = np.sqrt(off[..., 0] * off[..., 0] + off[..., 1] * off[..., 1]).max(axis=1)
 
     k_panel, k_turn, k_dev = int(np.argmax(panel)), int(np.argmax(turn)), int(np.argmax(dev))
     measures = dict(max_panel=float(panel[k_panel]), x_at_max_panel=float(points[k_panel:k_panel + 2, 0].mean()),
