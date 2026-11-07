@@ -19,7 +19,7 @@ from typing import Optional
 
 from pydantic import BaseModel
 
-from src.datagen.constants import CELL_CEILING, TE_GAP_DEFAULT
+from src.datagen.constants import CELL_CEILING, TE_GAP
 from src.datagen.geometry.common.schemas import SampleReport, ShapeRecord, TETreatment
 from src.datagen.geometry.sample.contour import Contour, Geom_build_contour
 from src.datagen.geometry.sample.fields import SamplingFields
@@ -47,7 +47,7 @@ class SampledInput(BaseModel):
 
 
 def Optim_build_study_contour(shape: ShapeRecord, backend: MeshBackend, topology: MeshTopology,
-                              gap: float = TE_GAP_DEFAULT) -> Optional[Contour]:
+                              gap: float = TE_GAP) -> Optional[Contour]:
     """
     The contour a study samples, once.
 

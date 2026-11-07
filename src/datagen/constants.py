@@ -4,10 +4,11 @@ study's gates, ladder and search space, the calibration's method, and how batche
 pipeline's acceptance limits, protocol names, implementation details, version strings) lives in its domain's own
 constants module.
 
-Imports only `meshing.common.constants`, which imports nothing.
+Each one can be set for a run (a config's `settings:`, a script's `--set`) by its name in lower case. Imports only
+`meshing.common.constants`, which imports nothing, as a module: every upper-case name here is one of these values.
 """
 
-from src.datagen.meshing.common.constants import ASPECT_RATIO_LIMIT, GEO_DEV_LIMIT, SIZE_RATIO_LIMIT
+from src.datagen.meshing.common import constants as _pipeline
 
 #region Geometry: the CST fit and the sampler
 
@@ -40,7 +41,7 @@ THETA_MAX_DEG = 15.0
 DESIGN_RE = 1.5e7
 
 # The study's TE gap [c] for a round or blunt TE: a study hyperparameter, recorded with the study
-TE_GAP_DEFAULT = 0.004
+TE_GAP = 0.004
 
 # Most surface points x jmax a config may ask for; more is rejected before meshing
 CELL_CEILING = 300_000
@@ -62,9 +63,9 @@ GATE_ORTHO_MIN = 0.9
 GATE_JAC_MIN = 0.9
 
 # The entry flag's own
-GATE_AR_MAX = ASPECT_RATIO_LIMIT
-GATE_SIZE_RATIO_MAX = SIZE_RATIO_LIMIT
-GATE_GEO_DEV_MAX = GEO_DEV_LIMIT
+GATE_AR_MAX = _pipeline.ASPECT_RATIO_LIMIT
+GATE_SIZE_RATIO_MAX = _pipeline.SIZE_RATIO_LIMIT
+GATE_GEO_DEV_MAX = _pipeline.GEO_DEV_LIMIT
 
 #endregion
 

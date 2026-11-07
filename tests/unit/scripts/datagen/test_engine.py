@@ -23,6 +23,7 @@ Step 5: Ensure a script's own entry: its help, and only running when it is a chi
 The stages are `engine_stages.py`'s stand-ins; the scripts' data/ is a temporary folder (conftest).
 """
 
+import argparse
 import datetime
 import logging
 import os
@@ -118,6 +119,13 @@ def test_the_arguments_parse_back_to_the_same_options(tmp_path):
 
     assert parser.parse_args(Script_argv(parser, args)) == args
     assert Script_argv(parser, parser.parse_args([])) == ["--exit", "0"]  # defaults kept, nothing set left out
+
+    settings = argparse.ArgumentParser()  # each setting its own `--set`, typed back the same in a child
+    engine.Script_settings_option(settings, {"gate_skew_max", "cal_windows"})
+    args = settings.parse_args(["--set", "gate_skew_max=0.22", "--set", "cal_windows=10, 20"])
+    assert Script_argv(settings, args) == ["--set", "gate_skew_max=0.22", "--set", "cal_windows=10,20"]
+    assert settings.parse_args(Script_argv(settings, args)) == args
+    assert args.set[1].value == (10, 20)  # a tuple of its constant's element type
 # endregion
 
 

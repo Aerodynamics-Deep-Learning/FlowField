@@ -19,6 +19,7 @@ Step 3: Ensure rung 3's curves, its replay of the plateau, and the budgets
 Step 4: Ensure the rungs run together, the ordinary airfoils, the golden jmax's source, the report and its files
     - test_the_ordinary_airfoils_are_drawn_the_same_way
     - test_a_calibration_runs_every_rung_and_reports_it
+    - test_rung_2_takes_the_airfoils_rung_1_found_over_a_shape_gate
     - test_the_golden_jmax_comes_from_the_flag_rung_1_or_the_constant
     - test_a_given_golden_jmax_over_rung_1_is_warned
     - test_a_dated_calibration_writes_its_report_and_database_once
@@ -216,7 +217,7 @@ def test_the_campaign_estimate_times_n_star_the_golden_mesh_and_its_bumps():
 
 # region Step 2
 def test_rung_2_is_read_off_real_ladders(stubs, tmp_path, monkeypatch):
-    settings = Optim_build_settings(gate_skew_max=cal.SKEW_GATE, rung2_budget=6, rung3_budget=0)
+    settings = Optim_build_settings(rung2_budget=6, rung3_budget=0)
     _world(monkeypatch, _skew_off_defaults)
     passes = _climb(None, settings, tmp_path)
     _world(monkeypatch, lambda k: {"q_skew_max": 0.3})
@@ -288,20 +289,17 @@ def test_a_failed_golden_run_is_no_best_to_beat(stubs, tmp_path, monkeypatch):
     assert descent.final is not None and descent.final >= 399 * 150  # its passes come from jmax 150 up
 
 
-def test_the_plateau_pick_takes_the_fewest_meshes_within_the_loss(monkeypatch):
-    monkeypatch.setattr(cal, "CAL_WINDOWS", (2, 4))
-    monkeypatch.setattr(cal, "CAL_GAINS", (0.01,))
+def test_the_plateau_pick_takes_the_fewest_meshes_within_the_loss():
+    method = cal.Method(windows=(2, 4), gains=(0.01,))
     stalls = cal.Descent("a", "passed", 400, 1000, True, [1000, 900, 900, 900, 900, 850], [0, 1, 2, 3, 4, 5], None)
     never = cal.Descent("b", "failed", 400, 1000, False, [None, None, None], [0, 1, 2], None)
 
-    table = cal.Optim_plateau_table([stalls, never])
+    table = cal.Optim_plateau_table([stalls, never], method)
     assert [(p.window, p.meshes) for p in table] == [(2, 3 + 2), (4, 5 + 2)]  # no pass: the cap, never a stop
     assert table[0].worst_loss == pytest.approx(900 / 850 - 1) and table[1].worst_loss == 0.0
-    assert cal.Optim_pick_plateau(table).window == 4  # 2 stops before the last gain: too much given up
-    monkeypatch.setattr(cal, "CAL_MAX_LOSS", 0.1)
-    assert cal.Optim_pick_plateau(table).window == 2  # now both qualify: the fewest meshes
-    monkeypatch.setattr(cal, "CAL_MAX_LOSS", -1.0)
-    assert cal.Optim_pick_plateau(table) is None
+    assert cal.Optim_pick_plateau(table, method).window == 4  # 2 stops before the last gain: too much given up
+    assert cal.Optim_pick_plateau(table, method._replace(max_loss=0.1)).window == 2  # both qualify: the fewest
+    assert cal.Optim_pick_plateau(table, method._replace(max_loss=-1.0)) is None
 
 
 def test_the_budgets_round_up_to_ten():
@@ -342,7 +340,8 @@ def test_a_calibration_runs_every_rung_and_reports_it(stubs, tmp_path, monkeypat
         assert (result.golden_jmax, result.golden_source) == (140 + cal.CAL_GOLDEN_MARGIN, "rung 1")  # jmax* 140
         assert result.recommended == result.golden_jmax
         r2, r3 = result.stages[2].settings, result.stages[3].settings
-        assert (r2["gate_skew_max"], r2["rung2_budget"], r2["rung3_budget"]) == (cal.SKEW_GATE, 5, 0)
+        study = Optim_build_settings()["gate_skew_max"]  # every rung judges by the study's gates
+        assert (r2["gate_skew_max"], r2["rung2_budget"], r2["rung3_budget"]) == (study, 5, 0)
         assert (r3["golden_jmax"], r3["rung3_budget"]) == (result.golden_jmax, 10)
         labels = {row[0] for row in store._conn.execute("SELECT label FROM settings")}
         assert labels == {"calibration rung 1", "calibration rung 2", "calibration rung 3"}
@@ -361,6 +360,27 @@ def test_a_calibration_runs_every_rung_and_reports_it(stubs, tmp_path, monkeypat
                     "Rung 3: from the golden run", "Plateau replay", "Plateau pick", "Rung-3 cap"):
         assert heading in text, heading
     assert "part" not in text.lower()
+
+
+def test_rung_2_takes_the_airfoils_rung_1_found_over_a_shape_gate(stubs, tmp_path, monkeypatch, caplog):
+    monkeypatch.setattr(cal, "Optim_load_shapes", lambda names=None, db=None: [
+        (n, stored_shape(n)) for n in names or ("naca0012", "naca4412")])
+    # skew 0.3 at the smoothing defaults, so at jmax*; a run's settings and method reach every rung
+    _world(monkeypatch, lambda k: {**_sr_from(140)(k), **_skew_off_defaults(k)})
+    with RunStore.open(tmp_path / "cal.sqlite") as store, caplog.at_level(logging.INFO, logger=cal.__name__):
+        result = cal.Optim_calibrate(store, (1, 2), None, rung2_cap=3, workers=1, work_root=tmp_path / "work",
+                                     overrides={"gate_skew_max": 0.28}, method=cal.Method(golden_margin=2))
+    assert result.stages[2].names == ["naca0012", "naca4412"]  # both over skew 0.28 at jmax*
+    assert {s.settings["gate_skew_max"] for s in result.stages.values()} == {0.28}
+    assert result.golden_jmax == 140 + 2 and result.method.golden_margin == 2
+    assert any("those over a shape gate at jmax* in rung 1" in r.getMessage() for r in caplog.records)
+
+    _world(monkeypatch, _sr_from(140))  # jmax* passes every gate: rung 2 has nothing to run
+    with RunStore.open(tmp_path / "other.sqlite") as store, caplog.at_level(logging.INFO, logger=cal.__name__):
+        result = cal.Optim_calibrate(store, (1, 2), None, workers=1, work_root=tmp_path / "work2")
+    assert 2 not in result.stages
+    assert any(r.getMessage().endswith("none to run: every airfoil passes the shape gates at jmax* in rung 1")
+               for r in caplog.records)
 
 
 @pytest.mark.parametrize("given, rungs, expected", [(150, (1,), (150, "given")),

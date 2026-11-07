@@ -16,6 +16,11 @@
 # folder: experiments/dx003          the run's folder; left out: a new data/scratchpad/<time>_<this file's name>/.
 #                                    Named again, it keeps one log (each run under its own PLAN) and resumes a campaign
 
+# settings:                          values of src/datagen/constants.py for this run, named in lower case; each stage
+#   gate_skew_max: 0.22              takes those it reads. A stage's own `settings:` sets them for it alone, over these.
+#   rung2_budget: 60                 The campaign and the re-mesh must agree: the re-mesh finds the campaign's meshes
+#                                    by their settings. Left out, every value is the constant's
+
 machine_check:                       # does this machine sample and mesh like the reference? ~1 min
   enabled: true                      # false: a warning, and this run does not check
 
@@ -37,6 +42,8 @@ mesh_calibrate:                      # the ladder's numbers on real meshes (scri
   workers: 6
   # airfoils: [s1223, e376]          left out: each rung's own
   # out: experiments/dx003/calibration
+  # settings:                        for this stage alone, e.g. a stricter gate to see what rung 2 would take
+  #   gate_skew_max: 0.22
 
 campaign:                            # every airfoil's best mesh (scripts/datagen/meshing/campaign.py)
   enabled: true

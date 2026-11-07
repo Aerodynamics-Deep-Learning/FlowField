@@ -8,6 +8,7 @@ Step 1: Ensure the row holds every column under a stable id
     - test_missing_exe_raises
 Step 2: Ensure only the tunable columns can be overridden, each one moving the id
     - test_each_overridable_column_moves_the_id
+    - test_the_settings_a_run_sets_are_the_constants_overridable
     - test_overrides_cannot_hash_one_setting_two_ways
     - test_other_columns_cannot_be_overridden
 Step 3: Ensure the constants agree with the config and schemas they describe
@@ -31,7 +32,7 @@ from src.datagen.meshing.common import constants as common
 from src.datagen.meshing.common.schemas import MeshBackend, MeshTopology
 from src.datagen.meshing.optimizer.common import constants as C
 from src.datagen.meshing.optimizer.common.settings import (
-    OVERRIDABLE, Optim_build_settings, Optim_config_schema_fp, Optim_mesher_sha256, Optim_pinned,
+    OVERRIDABLE, STUDY_KEYS, Optim_build_settings, Optim_config_schema_fp, Optim_mesher_sha256, Optim_pinned,
 )
 from src.datagen.meshing.optimizer.common.space import KNOBS
 from src.datagen.meshing.optimizer.evaluate import sampling
@@ -93,11 +94,19 @@ def test_missing_exe_raises(monkeypatch):
 @pytest.mark.parametrize("column", OVERRIDABLE)
 def test_each_overridable_column_moves_the_id(exe, column):
     default = Optim_build_settings()
-    new = default[column] + 1 if isinstance(default[column], int) else default[column] * 0.9
+    grid = json.loads(default["nstar_json"])
+    axis = {"nstar_le_grid": "le_grid", "nstar_cw_grid": "cw_grid"}.get(column)  # n*'s two fold into nstar_json
+    old = grid[axis] if axis else default[column]
+    new = old + 1 if isinstance(old, int) else old * 0.9
     row = Optim_build_settings(**{column: new})
 
-    assert row[column] == new
+    assert (json.loads(row["nstar_json"])[axis] if axis else row[column]) == new
     assert row["settings_id"] != default["settings_id"]
+
+
+def test_the_settings_a_run_sets_are_the_constants_overridable(exe):
+    # a config names each by its constant; one missing there could never be set
+    assert sorted(key for key in STUDY_KEYS if key.upper() not in vars(D)) == []
 
 
 def test_overrides_cannot_hash_one_setting_two_ways(exe):
@@ -110,7 +119,7 @@ def test_overrides_cannot_hash_one_setting_two_ways(exe):
         Optim_build_settings(nomad_seed=True)
 
 
-@pytest.mark.parametrize("column", ["dx_max", "design_re", "mesher_sha256", "search_space_json",
+@pytest.mark.parametrize("column", ["dx_max", "theta_max_deg", "mesher_sha256", "search_space_json", "nstar_json",
                                     "settings_id", "gate_skew"])
 def test_other_columns_cannot_be_overridden(exe, column):
     # They describe the code or the exe, so an override would record settings the run did not use
@@ -154,7 +163,7 @@ def test_constants_match_what_they_claim():
 
 
 def test_sampling_keeps_its_names():
-    assert (sampling.TE_GAP_DEFAULT, sampling.CELL_CEILING) == (D.TE_GAP_DEFAULT, D.CELL_CEILING)
+    assert (sampling.TE_GAP, sampling.CELL_CEILING) == (D.TE_GAP, D.CELL_CEILING)
 
 
 def test_config_schema_fp_is_stable():

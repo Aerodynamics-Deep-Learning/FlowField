@@ -2,7 +2,8 @@
 What every datagen script shares, and the run it makes (scripts/datagen/README.md is the guide):
 
     plan     before anything runs: the run's folder (a new data/scratchpad/<time>_<name>/ unless the master's config
-             names one), each stage's options parsed by its own parser, every output decided (left out: the run
+             names one), each stage's options parsed by its own parser, its settings (`--set`, src/datagen/
+             constants.py's values) checked against what it reads, every output decided (left out: the run
              folder's <stage>/; given: new or existing; `shared`: the committed one), this run's outputs handed to
              later stages' inputs, each stage's own checks, the warnings; any problem refuses the whole run
     log      one log, `log.log` in the run's folder beside the config's copy (`config_<time>.yaml`, one per run),
@@ -33,6 +34,7 @@ import traceback
 from pathlib import Path
 from typing import Callable, NamedTuple, Optional, Sequence
 
+from src.datagen import constants
 from src.datagen.geometry.common.paths import DATA_ROOT, REPO_ROOT, Geom_paths
 
 CHILD_ENV = "FLOWFIELD_STAGE_CHILD"
@@ -101,6 +103,8 @@ class Stage(NamedTuple):
     meshes: bool = False                           # what it makes depends on this machine meshing like the reference
     check: Optional[Callable] = None               # (args, inputs made by this run) -> problems, before anything runs
     after: Optional[Callable] = None               # (its plan, stages passed, the run) after it exits 0
+    reads: frozenset = frozenset()                 # the settings it takes (`--set`): src/datagen/constants.py's names
+    aliases: tuple = ()                            # (option, setting): an option that is a setting's short form
 
 
 def _manifest_of(data_root: Path) -> Path:
@@ -125,6 +129,98 @@ def Script_check_names(load: Callable, args: argparse.Namespace, made_here: set)
     except ValueError as e:
         return [str(e)]
     return []
+
+#endregion
+
+
+#region Settings: src/datagen/constants.py's values, set for a run
+
+# Every setting by its name in lower case, with the value it has when not set
+SETTABLE = {name.lower(): value for name, value in vars(constants).items() if name.isupper()}
+
+# Read when the code loads, so a run cannot set them yet
+_LOAD_TIME = frozenset({"cst_order", "cst_nose", "cst_fit_tol", "dx_max", "theta_max_deg", "y_plus", "farfield_radius",
+                        "smoothing_defaults", "dx_mid_min", "ratio_min", "cluster_width_min", "cluster_width_max",
+                        "jmax_min", "jmax_max"})
+
+
+class Setting(NamedTuple):
+    key: str
+    value: object
+
+
+def Script_setting(text: str) -> Setting:
+    """
+    `key=value` as a setting, the value in its constant's type (a tuple comma-separated), for an option's `type`.
+
+    Raises:
+        argparse.ArgumentTypeError: For no such setting, one not settable yet, or a value of the wrong kind
+    """
+    key, sep, raw = text.partition("=")
+    key, raw = key.strip().lower(), raw.strip()
+    if not sep or not key:
+        raise argparse.ArgumentTypeError(f"a setting is key=value, not {text!r}")
+    if key not in SETTABLE:
+        raise argparse.ArgumentTypeError(f"no setting {key!r}: the settings are src/datagen/constants.py's values, "
+                                         f"named in lower case")
+    if key in _LOAD_TIME:
+        raise argparse.ArgumentTypeError(f"{key} cannot be set for a run yet: the code reads it when it loads")
+    default = SETTABLE[key]
+    if isinstance(default, tuple):
+        kind = type(default[0]) if default else str
+        return Setting(key, tuple(_scalar(key, kind, part.strip()) for part in raw.split(",") if part.strip()))
+    return Setting(key, _scalar(key, type(default), raw))
+
+
+def _scalar(key: str, kind: type, raw: str):
+    try:
+        return kind(raw)
+    except ValueError:
+        what = {int: "an int", float: "a number"}.get(kind, kind.__name__)
+        raise argparse.ArgumentTypeError(f"{key} takes {what}, not {raw!r}") from None
+
+
+def Script_settings_option(parser: argparse.ArgumentParser, reads) -> None:
+    """Adds `--set key=value`, repeatable, naming the settings the stage reads."""
+    parser.add_argument("--set", action="append", type=Script_setting, metavar="KEY=VALUE",
+                        help="a value of src/datagen/constants.py for this run, named in lower case; repeat for more "
+                             f"(this script reads {', '.join(sorted(reads))})")
+
+
+def Script_settings(args: argparse.Namespace, stage: "Stage") -> dict:
+    """
+    A run's settings: each `--set`, and each option that is a setting's short form.
+
+    Raises:
+        UsageError: For a setting the stage does not read, or one given twice with two values
+    """
+    problems = _settings_problems(stage, args)
+    if problems:
+        raise UsageError("; ".join(problems))
+    return _gathered(stage, args)
+
+
+def _gathered(stage: "Stage", args: argparse.Namespace) -> dict:
+    settings = {s.key: s.value for s in getattr(args, "set", None) or []}
+    for option, key in stage.aliases:
+        if getattr(args, option, None) is not None:
+            settings[key] = getattr(args, option)
+    return settings
+
+
+def _settings_problems(stage: "Stage", args: argparse.Namespace) -> list[str]:
+    given, problems = {}, []
+    for s in getattr(args, "set", None) or []:
+        if s.key not in stage.reads:
+            problems.append(f"{stage.name} does not read {s.key}")
+        elif given.setdefault(s.key, s.value) != s.value:
+            problems.append(f"{s.key} is set twice, {_text(given[s.key])} and {_text(s.value)}")
+    for option, key in stage.aliases:
+        value = getattr(args, option, None)
+        if value is not None and key in given and given[key] != value:
+            problems.append(f"{key} is given twice: --{option.replace('_', '-')} {_text(value)} and "
+                            f"--set {key}={_text(given[key])}")
+    return problems
 
 #endregion
 
@@ -158,7 +254,8 @@ class RunPlan(NamedTuple):
 
 def Script_plan(name: str, requested: Sequence[tuple[Stage, Sequence[str]]], *, title: Optional[str] = None,
                 config: Optional[Path] = None, off: Sequence[str] = (), started: Optional[datetime.datetime] = None,
-                folder: Optional[Path] = None) -> RunPlan:
+                folder: Optional[Path] = None, sources: Optional[dict] = None,
+                notes: Sequence[tuple[str, str, str]] = ()) -> RunPlan:
     """
     Plans a run without running or writing anything.
 
@@ -170,6 +267,8 @@ def Script_plan(name: str, requested: Sequence[tuple[Stage, Sequence[str]]], *, 
         off (Sequence[str]): Stages the config switched off
         started (datetime | None): When the run started; now if None
         folder (Path | None): The run's folder; a new one in the scratchpad if None
+        sources (dict | None): (stage, setting) -> where the master's config set it; 'given' for the rest
+        notes (Sequence[tuple[str, str, str]]): The master's own (stage, level, text), said first
 
     Returns:
         RunPlan: Everything the run will do and say
@@ -178,8 +277,9 @@ def Script_plan(name: str, requested: Sequence[tuple[Stage, Sequence[str]]], *, 
         PlanError: With every problem found, when there is any
     """
     started = started or datetime.datetime.now()
-    problems, notes, plans, made = [], [], [], {}
+    problems, plans, made, master_notes, notes = [], [], {}, list(notes), []
     folder = _run_folder(name, started, folder, notes, problems)
+    notes += master_notes
     for stage, argv in requested:
         parser = stage.build_parser()
         parser.error = _refuse
@@ -188,6 +288,11 @@ def Script_plan(name: str, requested: Sequence[tuple[Stage, Sequence[str]]], *, 
         except _Refused as e:
             problems.append((stage.name, str(e)))
             continue
+        problems += [(stage.name, text) for text in _settings_problems(stage, args)]
+        for key, value in _gathered(stage, args).items():
+            source = (sources or {}).get((stage.name, key), "given")
+            notes.append((stage.name, "info", f"settings: {key} {_text(value)} ({source}; constants.py "
+                                              f"{_text(SETTABLE[key])})"))
         writes = [_output(stage, out, args, folder, started, made, notes, problems) for out in stage.outputs]
         made_here = set()
         reads = [_input(stage, inp, args, made, made_here, notes, problems) for inp in stage.inputs]
@@ -304,7 +409,10 @@ def Script_argv(parser: argparse.ArgumentParser, args: argparse.Namespace) -> li
         value = getattr(args, action.dest, None)
         if value is None or value is False:
             continue
-        if not action.option_strings:
+        if isinstance(action, argparse._AppendAction):  # `--set`, once per value
+            for item in value:
+                optional += [action.option_strings[-1], _text(item)]
+        elif not action.option_strings:
             positional.append(_text(value))
         elif value is True:
             optional.append(action.option_strings[-1])
@@ -314,6 +422,8 @@ def Script_argv(parser: argparse.ArgumentParser, args: argparse.Namespace) -> li
 
 
 def _text(value) -> str:
+    if isinstance(value, Setting):
+        return f"{value.key}={_text(value.value)}"
     if isinstance(value, range):
         return f"{value.start}-{value.stop - 1}"
     if isinstance(value, (list, tuple)):
@@ -597,7 +707,8 @@ def _code_version() -> str:
 
 def Script_run(name: str, requested: Sequence[tuple[Stage, Sequence[str]]], *, in_process: bool,
                title: Optional[str] = None, config: Optional[Path] = None, off: Sequence[str] = (),
-               folder: Optional[Path] = None) -> int:
+               folder: Optional[Path] = None, sources: Optional[dict] = None,
+               notes: Sequence[tuple[str, str, str]] = ()) -> int:
     """
     Plans and runs; a refused plan is logged into a new scratchpad folder and exits 2.
 
@@ -609,13 +720,16 @@ def Script_run(name: str, requested: Sequence[tuple[Stage, Sequence[str]]], *, i
         config (Path | None): The master's config
         off (Sequence[str]): Stages the config switched off
         folder (Path | None): The run's folder; a new one in the scratchpad if None
+        sources (dict | None): As `Script_plan`
+        notes (Sequence[tuple[str, str, str]]): As `Script_plan`
 
     Returns:
         int: The exit code
     """
     started = datetime.datetime.now()
     try:
-        plan = Script_plan(name, requested, title=title, config=config, off=off, started=started, folder=folder)
+        plan = Script_plan(name, requested, title=title, config=config, off=off, started=started, folder=folder,
+                           sources=sources, notes=notes)
     except PlanError as e:
         return Script_refuse(name, e.problems, title=title, config=config, started=started)
     return Script_execute(plan, in_process=in_process)

@@ -37,7 +37,7 @@ from multiprocessing.connection import wait
 from pathlib import Path
 from typing import Callable, Optional, Sequence
 
-from src.datagen.constants import SLOT_MEMORY_CAP_MB, WATCHDOG_S
+from src.datagen.constants import SLOT_MEMORY_CAP_MB, WATCHDOG_S, WORKERS
 from src.datagen.geometry.common.constants import SHAPE_VERSION
 from src.datagen.geometry.common.schemas import ShapeRecord
 from src.datagen.geometry.manifest.store import GeometryStore
@@ -52,6 +52,16 @@ logger = logging.getLogger(__name__)
 # A worker's BLAS and OpenMP pools: one thread, as its ladder is serial; at 16 threads OpenBLAS alone commits
 # ~1 GB per process
 _WORKER_ENV = {"OPENBLAS_NUM_THREADS": "1", "OMP_NUM_THREADS": "1", "MKL_NUM_THREADS": "1"}
+
+# The settings a batch's slots take (src/datagen/constants.py): how many, how long one may go silent, its memory cap
+EXECUTION_KEYS = frozenset({"workers", "watchdog_s", "slot_memory_cap_mb"})
+
+
+def Optim_execution(settings: dict) -> dict:
+    """A run's settings as a batch's `workers`, `watchdog_s` and `cap_mb`, the constants' where not set."""
+    return {"workers": settings.get("workers", WORKERS), "watchdog_s": settings.get("watchdog_s", WATCHDOG_S),
+            "cap_mb": settings.get("slot_memory_cap_mb", SLOT_MEMORY_CAP_MB)}
+
 
 # Longest wait between checks of the watchdog and Ctrl-C
 _POLL_S = 1.0

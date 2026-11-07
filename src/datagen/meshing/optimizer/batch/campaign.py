@@ -4,7 +4,7 @@ store. It runs at the constants alone, with no overrides, so every settings row 
 changing a constant makes a new settings_id, under which every airfoil runs again. Run from the command line by
 `scripts/datagen/meshing/campaign.py`.
 
-It resumes by itself: an airfoil with a passed or failed ladder under the current settings is skipped, and a
+It resumes by itself: an airfoil with a passed or failed ladder under the run's settings is skipped, and a
 ladder a cut-short campaign left running is marked aborted at the start, so its airfoil runs again. The
 workers run in slots (`runner`), and the summary is read back from the store.
 """
@@ -16,7 +16,7 @@ import time
 from collections import Counter
 from typing import Callable, NamedTuple, Optional, Sequence
 
-from src.datagen.constants import WORKERS
+from src.datagen.constants import SLOT_MEMORY_CAP_MB, WATCHDOG_S, WORKERS
 from src.datagen.meshing.optimizer.batch.runner import BatchStopped, Optim_load_shapes, Optim_run_airfoils
 from src.datagen.meshing.optimizer.common.settings import Optim_build_settings
 from src.datagen.meshing.optimizer.evaluate.context import RunContext
@@ -41,9 +41,10 @@ class CampaignResult(NamedTuple):
 
 def Optim_run_campaign(store: RunStore, names: Optional[Sequence[str]] = None, workers: int = WORKERS,
                        work_root=None, label: Optional[str] = None, task: Callable = Optim_run_ladder,
-                       geometry_db=None) -> CampaignResult:
+                       geometry_db=None, *, overrides: Optional[dict] = None, watchdog_s: float = WATCHDOG_S,
+                       cap_mb: int = SLOT_MEMORY_CAP_MB) -> CampaignResult:
     """
-    Runs the ladder over the airfoils not yet finished under the current settings.
+    Runs the ladder over the airfoils not yet finished under the run's settings.
 
     Args:
         store (RunStore): The run store, `meshing.sqlite` for a real campaign
@@ -53,6 +54,9 @@ def Optim_run_campaign(store: RunStore, names: Optional[Sequence[str]] = None, w
         label (str | None): The settings row's label, if this campaign records it first
         task (Callable): The ladder; another only in tests
         geometry_db (str | Path | None): The geometry manifest the airfoils come from, the repo's own if None
+        overrides (dict | None): The run's settings over the constants (`Optim_build_settings`)
+        watchdog_s (float): A slot silent this long is killed as hung
+        cap_mb (int): Each slot's memory cap
 
     Returns:
         CampaignResult: What ran, and what stopped it early (a `BatchStopped` or Ctrl-C), if anything
@@ -62,7 +66,7 @@ def Optim_run_campaign(store: RunStore, names: Optional[Sequence[str]] = None, w
     """
     t0 = time.perf_counter()
     airfoils = Optim_load_shapes(names, geometry_db)
-    settings = Optim_build_settings()
+    settings = Optim_build_settings(**(overrides or {}))
     settings_id = store.ensure_settings(settings, label=label)
     cut_short = store.abort_running()
     if cut_short:
@@ -79,7 +83,7 @@ def Optim_run_campaign(store: RunStore, names: Optional[Sequence[str]] = None, w
         ctx = RunContext.create(settings, work_root or scratch)
         stopped = None
         try:
-            Optim_run_airfoils(task, todo, ctx, store, workers)
+            Optim_run_airfoils(task, todo, ctx, store, workers, watchdog_s=watchdog_s, cap_mb=cap_mb)
         except (BatchStopped, KeyboardInterrupt) as e:
             stopped = e
     return CampaignResult(ctx.batch_id, settings_id, skipped, [name for name, _ in todo], time.perf_counter() - t0,

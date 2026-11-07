@@ -78,7 +78,7 @@ def remesh(monkeypatch):
 def test_the_airfoils_best_runs_are_asked_for(remesh, db, tmp_path, data_root, capsys):
     out, manifest = tmp_path.resolve() / "out", tmp_path.resolve() / "geometry.sqlite"
     manifest.touch()
-    shared = {"with_vtk": False, "geometry_db": Geom_paths().db}
+    shared = {"with_vtk": False, "geometry_db": Geom_paths().db, "overrides": {}}
 
     assert mesh_remesh.main(["--airfoils", "naca4412,naca0012", "--out", str(out), "--vtk", "--db", str(db),
                              "--geometry-db", str(manifest)]) == 1
@@ -88,9 +88,12 @@ def test_the_airfoils_best_runs_are_asked_for(remesh, db, tmp_path, data_root, c
     assert mesh_remesh.main(["--airfoils", "naca0012", "--db", str(db)]) == 0  # every one delivered
     left_out = remesh[2][2]
     assert left_out.name == "remesh" and left_out.parent.parent == data_root / "scratchpad"  # its run folder
-    assert remesh == [("airfoils", ["naca4412", "naca0012"], out, {"with_vtk": True, "geometry_db": manifest}),
+    assert remesh == [("airfoils", ["naca4412", "naca0012"], out,
+                       {"with_vtk": True, "geometry_db": manifest, "overrides": {}}),
                       ("airfoils", None, out, shared),
                       ("airfoils", ["naca0012"], left_out, shared)]
+    assert mesh_remesh.main(["--all", "--out", str(out), "--db", str(db), "--set", "gate_skew_max=0.22"]) == 1
+    assert remesh[-1][3]["overrides"] == {"gate_skew_max": 0.22}  # the campaign's settings, to find its meshes
 
 
 def test_one_run_is_asked_for_by_its_id(remesh, db, tmp_path, capsys):

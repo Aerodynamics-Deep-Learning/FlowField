@@ -7,14 +7,16 @@ constant. Run from the command line by `scripts/datagen/meshing/calibrate.py`.
             jmax whose mesh passes the size ratio (a bisection over [JMAX_MIN, JMAX_MAX]); recommends the
             golden jmax, whether n*'s cluster_width grid can shrink to one value, and estimates a campaign's
             wall time from the times it measured
-    Rung 2  the calibration set: real ladders with the skew gate tightened, so rung 2 has work; its budget
+    Rung 2  the airfoils rung 1 found over a shape gate at jmax* (the calibration set without rung 1): real
+            ladders, which climb to rung 2; its budget
     Rung 3  the calibration set and a few ordinary airfoils: the golden run, then rung 3 to its cap with no
             plateau; what a downward search saves and costs, and, by replaying those runs, rung 3's
             plateau and cap
 
 Rungs 2 and 3 start from the golden jmax rung 1 recommends when it runs alongside them; a given golden jmax
-wins over it, with a warning. Each rung runs under its own settings row. The report (`<date>.txt`) and every
-run (`<date>.sqlite`, the run store's schema) are written to the folder it is given (the repo's is
+wins over it, with a warning. Each rung runs under its own settings row, a run's settings over the constants
+(src/datagen/constants.py), and the calibration's own choices are its `Method`. The report (`<date>.txt`) and
+every run (`<date>.sqlite`, the run store's schema) are written to the folder it is given (the repo's is
 `CALIBRATION_DIR`).
 """
 
@@ -32,14 +34,15 @@ from typing import NamedTuple, Optional, Sequence
 
 from src.datagen.constants import (
     CAL_GAINS, CAL_GOLDEN_MARGIN, CAL_MAX_LOSS, CAL_ORDINARY_COUNT, CAL_RUNG2_CAP, CAL_RUNG3_CAP, CAL_SET, CAL_WINDOWS,
-    CAL_WITHIN, CLUSTER_WIDTH_MIN, DX_MAX, GOLDEN_JMAX, JMAX_MAX, JMAX_MIN, SMOOTHING_DEFAULTS, WORKERS,
+    CAL_WITHIN, CLUSTER_WIDTH_MIN, DX_MAX, GOLDEN_JMAX, JMAX_MAX, JMAX_MIN, SLOT_MEMORY_CAP_MB, SMOOTHING_DEFAULTS,
+    WATCHDOG_S, WORKERS,
 )
 from src.datagen.meshing.optimizer.batch.runner import Optim_load_shapes, Optim_run_airfoils
 from src.datagen.meshing.optimizer.common.settings import Optim_build_settings
 from src.datagen.meshing.optimizer.evaluate.context import RunContext
 from src.datagen.meshing.optimizer.manifest.store import Optim_git_state, RunStore
 from src.datagen.meshing.optimizer.search.events import LadderOutcome, Optim_failure_values, Optim_ladder_line
-from src.datagen.meshing.optimizer.search.ladder import Ladder, Optim_run_ladder
+from src.datagen.meshing.optimizer.search.ladder import SHAPE_GATES, Ladder, Optim_run_ladder
 from src.datagen.meshing.optimizer.search.mads import Optim_plateau_reached
 from src.datagen.meshing.optimizer.search.nstar import Optim_n_star_search
 
@@ -48,9 +51,25 @@ logger = logging.getLogger(__name__)
 # Rung 3's ordinary airfoils are drawn with this seed: the same ones every run
 ORDINARY_SEED = 1
 
-# Rung 2's skew gate, apart from GATE_SKEW_MAX so each can be varied alone: under most golden runs' worst skew
-# (median 0.243), so rung 2 has work
-SKEW_GATE = 0.22
+
+class Method(NamedTuple):
+    """The calibration's own choices: src/datagen/constants.py's CAL_ values, unless a run sets them."""
+    set: tuple = CAL_SET                   # the hard cases
+    ordinary_count: int = CAL_ORDINARY_COUNT
+    golden_margin: int = CAL_GOLDEN_MARGIN
+    windows: tuple = CAL_WINDOWS           # rung 3's replay
+    gains: tuple = CAL_GAINS
+    max_loss: float = CAL_MAX_LOSS
+    within: float = CAL_WITHIN
+
+    @classmethod
+    def of(cls, settings: dict) -> "Method":
+        """The method a run's settings make: each `cal_<field>` over its constant."""
+        return cls(**{f: settings[f"cal_{f}"] for f in cls._fields if f"cal_{f}" in settings})
+
+
+# The settings the calibration reads of its own: the method's, and the caps rungs 2 and 3 run to
+CAL_KEYS = frozenset({*(f"cal_{f}" for f in Method._fields), "cal_rung2_cap", "cal_rung3_cap"})
 
 # A rung's start and end in the log
 _RUNG_START = "----- START rung {} of 3 -----"
@@ -141,6 +160,7 @@ class Calibration(NamedTuple):
     golden_jmax: int                 # what rungs 2 and 3 ran at
     golden_source: str               # 'given', 'rung 1' or 'constant'
     recommended: Optional[int]       # rung 1's golden jmax, used or not
+    method: Method = Method()
 
 
 class CalibrationFiles(NamedTuple):
@@ -150,14 +170,17 @@ class CalibrationFiles(NamedTuple):
 
 
 def Optim_run_calibration(out_dir, rungs: Sequence[int] = (1, 2, 3), names: Optional[Sequence[str]] = None,
-                          golden_jmax: Optional[int] = None, rung3_cap: int = CAL_RUNG3_CAP, rung2_cap: int = CAL_RUNG2_CAP,
-                          workers: int = WORKERS, geometry_db=None, work_root=None) -> CalibrationFiles:
+                          golden_jmax: Optional[int] = None, rung3_cap: int = CAL_RUNG3_CAP,
+                          rung2_cap: int = CAL_RUNG2_CAP, workers: int = WORKERS, geometry_db=None, work_root=None,
+                          *, overrides: Optional[dict] = None, method: Method = Method(),
+                          watchdog_s: float = WATCHDOG_S, cap_mb: int = SLOT_MEMORY_CAP_MB) -> CalibrationFiles:
     """
     A dated calibration: every run into `<out_dir>/<date>.sqlite`, the report into `<out_dir>/<date>.txt`.
 
     Args:
         out_dir (str | Path): The folder for both, made if missing (the repo's is `CALIBRATION_DIR`)
-        rungs, names, golden_jmax, rung3_cap, rung2_cap, workers, geometry_db, work_root: As `Optim_calibrate`
+        rungs, names, golden_jmax, rung3_cap, rung2_cap, workers, geometry_db, work_root, overrides, method,
+            watchdog_s, cap_mb: As `Optim_calibrate`
 
     Returns:
         CalibrationFiles: Where the report and the database went, and the report
@@ -176,7 +199,7 @@ def Optim_run_calibration(out_dir, rungs: Sequence[int] = (1, 2, 3), names: Opti
     out_dir.mkdir(parents=True, exist_ok=True)
     with RunStore.open(db) as store:
         cal = Optim_calibrate(store, sorted(set(rungs)), names, golden_jmax, rung3_cap, rung2_cap, workers, work_root,
-                              geometry_db)
+                              geometry_db, overrides=overrides, method=method, watchdog_s=watchdog_s, cap_mb=cap_mb)
         text = Optim_format_report(store, cal)
     report.write_text(text, encoding="utf-8", newline="\n")
     return CalibrationFiles(report, db, text)
@@ -184,7 +207,9 @@ def Optim_run_calibration(out_dir, rungs: Sequence[int] = (1, 2, 3), names: Opti
 
 def Optim_calibrate(store: RunStore, rungs: Sequence[int] = (1, 2, 3), names: Optional[Sequence[str]] = None,
                     golden_jmax: Optional[int] = None, rung3_cap: int = CAL_RUNG3_CAP, rung2_cap: int = CAL_RUNG2_CAP,
-                    workers: int = WORKERS, work_root=None, geometry_db=None) -> Calibration:
+                    workers: int = WORKERS, work_root=None, geometry_db=None, *, overrides: Optional[dict] = None,
+                    method: Method = Method(), watchdog_s: float = WATCHDOG_S,
+                    cap_mb: int = SLOT_MEMORY_CAP_MB) -> Calibration:
     """
     Calibrates the rungs asked for, every run recorded in `store`.
 
@@ -192,7 +217,8 @@ def Optim_calibrate(store: RunStore, rungs: Sequence[int] = (1, 2, 3), names: Op
         store (RunStore): Where every rung's runs go
         rungs (Sequence[int]): Any of 1, 2, 3
         names (Sequence[str] | None): The airfoils for every rung; each rung's own if None (rung 1 every stored
-            airfoil, rung 2 the calibration set, rung 3 the set and the ordinary airfoils)
+            airfoil, rung 2 those rung 1 found over a shape gate at jmax* or, without rung 1, the calibration set,
+            rung 3 the set and the ordinary airfoils)
         golden_jmax (int | None): Rungs 2 and 3's golden jmax, winning over rung 1's recommendation (with a
             warning); rung 1's if it runs, else `GOLDEN_JMAX`, when None
         rung3_cap (int): Rung 3's budget while it is calibrated
@@ -200,24 +226,33 @@ def Optim_calibrate(store: RunStore, rungs: Sequence[int] = (1, 2, 3), names: Op
         workers (int): Worker processes
         work_root (str | Path | None): Where runs mesh; a temporary folder if None
         geometry_db (str | Path | None): The geometry manifest the airfoils come from, the repo's own if None
+        overrides (dict | None): The run's settings for every rung's settings row (`Optim_build_settings`), but
+            the golden jmax and the budgets, which the calibration sets
+        method (Method): The calibration's own choices
+        watchdog_s (float): A slot silent this long is killed as hung
+        cap_mb (int): Each slot's memory cap
 
     Returns:
-        Calibration: Each rung's outcomes, and the golden jmax rungs 2 and 3 ran at
+        Calibration: Each rung's outcomes, the golden jmax rungs 2 and 3 ran at, and the method
     """
     if work_root is None:
         with tempfile.TemporaryDirectory(prefix="calibration_") as work:
-            return Optim_calibrate(store, rungs, names, golden_jmax, rung3_cap, rung2_cap, workers, work, geometry_db)
+            return Optim_calibrate(store, rungs, names, golden_jmax, rung3_cap, rung2_cap, workers, work, geometry_db,
+                                   overrides=overrides, method=method, watchdog_s=watchdog_s, cap_mb=cap_mb)
 
+    overrides = dict(overrides or {})
     if golden_jmax is not None and 1 in rungs and {2, 3} & set(rungs):
         logger.warning("golden jmax %d is given: rungs 2 and 3 run at it, not at rung 1's recommendation",
                        golden_jmax)
     load = partial(Optim_load_shapes, db=geometry_db)
     done: dict[int, Stage] = {}
-    run = partial(_run_stage, store=store, work_root=Path(work_root), workers=workers, first=min(rungs))
+    run = partial(_run_stage, store=store, work_root=Path(work_root), workers=workers, first=min(rungs),
+                  watchdog_s=watchdog_s, cap_mb=cap_mb)
     if 1 in rungs:
-        done[1] = run(1, partial(Optim_run_ladder, ladder_type=_Bisect), load(names), Optim_build_settings(),
+        done[1] = run(1, partial(Optim_run_ladder, ladder_type=_Bisect), load(names), Optim_build_settings(**overrides),
                       f"n* and jmax* by bisection over [{JMAX_MIN}, {JMAX_MAX}]", edge=_bisect_edge)
-    recommended = Optim_golden_from(Optim_bisections(store, done[1])) if 1 in done else None
+    bisections = Optim_bisections(store, done[1]) if 1 in done else []
+    recommended = Optim_golden_from(bisections, method) if 1 in done else None
     if golden_jmax is not None:
         source = "given"
     elif recommended is not None:
@@ -225,38 +260,51 @@ def Optim_calibrate(store: RunStore, rungs: Sequence[int] = (1, 2, 3), names: Op
     else:
         golden_jmax, source = GOLDEN_JMAX, "constant"
     if 1 in done:
-        rows = Optim_bisections(store, done[1])
-        found = sum(b.jmax_star is not None for b in rows)
-        _end_rung(done[1], f"jmax* found on {found}/{len(rows)}, {sum(b.failed is not None for b in rows)} failed",
-                  _rung1_findings(rows, done[1], golden_jmax))
+        found = sum(b.jmax_star is not None for b in bisections)
+        _end_rung(done[1], f"jmax* found on {found}/{len(bisections)}, "
+                           f"{sum(b.failed is not None for b in bisections)} failed",
+                  _rung1_findings(bisections, done[1], golden_jmax, method))
     if 2 in rungs:
-        settings = Optim_build_settings(golden_jmax=golden_jmax, gate_skew_max=SKEW_GATE, rung2_budget=rung2_cap,
-                                        rung3_budget=0)
-        done[2] = run(2, Optim_run_ladder, load(names or CAL_SET), settings,
-                      f"smoothing searches at skew gate {SKEW_GATE:g}, budget {rung2_cap}, golden jmax {golden_jmax}")
-        rows = Optim_smoothings(store, done[2])
-        routed = [s for s in rows if s.meshes is not None]
-        _end_rung(done[2], f"{len(routed)}/{len(rows)} entered rung 2, {sum(s.passed for s in routed)} passed",
-                  _rung2_findings(rows))
+        settings = Optim_build_settings(**{**overrides, "golden_jmax": golden_jmax, "rung2_budget": rung2_cap,
+                                           "rung3_budget": 0})
+        what = f"smoothing searches at the study's gates (skew {settings['gate_skew_max']:g}), budget {rung2_cap}, " \
+               f"golden jmax {golden_jmax}"
+        if names:
+            chosen = list(names)
+        elif 1 in done:  # those the campaign sends up to rung 2
+            chosen = [b.name for b in bisections if b.failed_at_star and set(b.failed_at_star) <= SHAPE_GATES]
+            what += "; those over a shape gate at jmax* in rung 1"
+        else:
+            chosen = list(method.set)
+        if chosen:
+            done[2] = run(2, Optim_run_ladder, load(chosen), settings, what)
+            rows = Optim_smoothings(store, done[2])
+            routed = [s for s in rows if s.meshes is not None]
+            _end_rung(done[2], f"{len(routed)}/{len(rows)} entered rung 2, {sum(s.passed for s in routed)} passed",
+                      _rung2_findings(rows))
+        else:
+            logger.info("%s  none to run: every airfoil passes the shape gates at jmax* in rung 1",
+                        _RUNG_START.format(2))
     if 3 in rungs:
-        chosen = names or [*CAL_SET, *Optim_ordinary_airfoils([n for n, _ in load()])]
-        settings = Optim_build_settings(golden_jmax=golden_jmax, rung3_budget=rung3_cap)
+        chosen = names or [*method.set, *Optim_ordinary_airfoils([n for n, _ in load()], method)]
+        settings = Optim_build_settings(**{**overrides, "golden_jmax": golden_jmax, "rung3_budget": rung3_cap})
         done[3] = run(3, partial(Optim_run_ladder, ladder_type=_Descend), load(chosen), settings,
                       f"downward searches from the golden run (jmax {golden_jmax}) to {rung3_cap} c2d runs each",
                       edge=partial(_descend_edge, store, settings))
         rows = Optim_descents(store, done[3])
         _end_rung(done[3], f"{len(rows)} airfoils, {sum(len(d.nodes) - 1 for d in rows)} c2d runs",
-                  _rung3_findings(rows, Optim_plateau_table(rows)))
-    return Calibration(done, golden_jmax, source, recommended)
+                  _rung3_findings(rows, Optim_plateau_table(rows, method), method))
+    return Calibration(done, golden_jmax, source, recommended, method)
 
 
 def _run_stage(rung: int, task, airfoils: list, settings: dict, what: str, *, store: RunStore, work_root: Path,
-               workers: int, first: int, edge=None) -> Stage:
+               workers: int, first: int, watchdog_s: float, cap_mb: int, edge=None) -> Stage:
     logger.info("%s  %s; %d airfoils, %d workers", _RUNG_START.format(rung), what, len(airfoils), workers)
     store.ensure_settings(settings, label=f"calibration rung {rung}")
     ctx = RunContext.create(settings, work_root / f"rung{rung}")
     t0 = time.perf_counter()
-    outcomes = Optim_run_airfoils(task, airfoils, ctx, store, workers, warn_memory=rung == first, edge=edge)
+    outcomes = Optim_run_airfoils(task, airfoils, ctx, store, workers, warn_memory=rung == first, edge=edge,
+                                  watchdog_s=watchdog_s, cap_mb=cap_mb)
     return Stage(rung, settings, [name for name, _ in airfoils], outcomes, time.perf_counter() - t0)
 
 
@@ -267,10 +315,10 @@ def _end_rung(stage: Stage, headline: str, findings: list[str]) -> None:
         logger.info("  %s", line)
 
 
-def Optim_ordinary_airfoils(names: Sequence[str]) -> list[str]:
-    """`CAL_ORDINARY_COUNT` airfoils outside the calibration set, the same ones for the same names."""
-    rest = sorted(set(names) - set(CAL_SET))
-    return sorted(random.Random(ORDINARY_SEED).sample(rest, min(CAL_ORDINARY_COUNT, len(rest))))
+def Optim_ordinary_airfoils(names: Sequence[str], method: Method = Method()) -> list[str]:
+    """The method's count of airfoils outside its calibration set, the same ones for the same names."""
+    rest = sorted(set(names) - set(method.set))
+    return sorted(random.Random(ORDINARY_SEED).sample(rest, min(method.ordinary_count, len(rest))))
 
 #endregion
 
@@ -292,6 +340,7 @@ class Bisection(NamedTuple):
     seconds: Optional[float]          # the whole ladder
     skew_at_star: Optional[float] = None  # the jmax* mesh's worst skew
     sr_below: Optional[float] = None      # the size ratio one jmax below jmax*, where the bisection last failed
+    failed_at_star: Optional[list] = None  # the gates the jmax* mesh fails, the size ratio passing there
 
 
 def Optim_bisections(store: RunStore, stage: Stage) -> list[Bisection]:
@@ -306,14 +355,15 @@ def Optim_bisections(store: RunStore, stage: Stage) -> list[Bisection]:
             name, outcome.status, ladder["n_star"], notes.get("n_star_floor"), knobs and knobs["cluster_width"],
             star, notes.get("jmax_star_passes"), notes.get("bisect_failed") or _why(outcome),
             {j: r["wall_s"] for j, r in meshed.items()}, ladder["n_star_s"], notes.get("n_star_floor_s"),
-            ladder["wall_s"], at_star and at_star["q_skew_max"], below and below["q_size_ratio_max"]))
+            ladder["wall_s"], at_star and at_star["q_skew_max"], below and below["q_size_ratio_max"],
+            at_star and json.loads(at_star["failed_gates"])))
     return out
 
 
-def Optim_golden_from(rows: list[Bisection]) -> Optional[int]:
-    """The golden jmax: the median jmax* (rounded up) + `CAL_GOLDEN_MARGIN`; None with no jmax* at all."""
+def Optim_golden_from(rows: list[Bisection], method: Method = Method()) -> Optional[int]:
+    """The golden jmax: the median jmax* (rounded up) + the method's margin; None with no jmax* at all."""
     found = [b.jmax_star for b in rows if b.jmax_star is not None]
-    return math.ceil(statistics.median(found)) + CAL_GOLDEN_MARGIN if found else None
+    return math.ceil(statistics.median(found)) + method.golden_margin if found else None
 
 
 class CampaignEstimate(NamedTuple):
@@ -489,10 +539,10 @@ class PlateauRow(NamedTuple):
     mean_loss: float
 
 
-def Optim_plateau_table(rows: list[Descent]) -> list[PlateauRow]:
+def Optim_plateau_table(rows: list[Descent], method: Method = Method()) -> list[PlateauRow]:
     table = []
-    for window in CAL_WINDOWS:
-        for gain in CAL_GAINS:
+    for window in method.windows:
+        for gain in method.gains:
             meshes, seconds, losses = 0, 0.0, []
             for d in rows:
                 k = Optim_replay(d.nodes, window, gain)
@@ -504,15 +554,15 @@ def Optim_plateau_table(rows: list[Descent]) -> list[PlateauRow]:
     return table
 
 
-def Optim_pick_plateau(table: list[PlateauRow]) -> Optional[PlateauRow]:
-    """The fewest meshes among the pairs giving up at most `CAL_MAX_LOSS` on every airfoil; ties to the cautious."""
-    qualified = [p for p in table if p.worst_loss <= CAL_MAX_LOSS]
+def Optim_pick_plateau(table: list[PlateauRow], method: Method = Method()) -> Optional[PlateauRow]:
+    """The fewest meshes among the pairs losing at most the method's max loss on any airfoil; ties to the cautious."""
+    qualified = [p for p in table if p.worst_loss <= method.max_loss]
     return min(qualified, key=lambda p: (p.meshes, -p.window, p.min_gain)) if qualified else None
 
 
-def Optim_rung3_cap(rows: list[Descent]) -> Optional[int]:
-    """The most c2d runs any airfoil took to get within `CAL_WITHIN` of its best, rounded up to 10."""
-    needed = [m for m in (Optim_meshes_within(d.nodes, CAL_WITHIN) for d in rows) if m is not None]
+def Optim_rung3_cap(rows: list[Descent], method: Method = Method()) -> Optional[int]:
+    """The most c2d runs any airfoil took to get within the method's `within` of its best, rounded up to 10."""
+    needed = [m for m in (Optim_meshes_within(d.nodes, method.within) for d in rows) if m is not None]
     return _round_up(max(needed)) if needed else None
 
 #endregion
@@ -538,7 +588,7 @@ def Optim_format_report(store: RunStore, cal: Calibration) -> str:
     if 1 in cal.stages:
         out += _format_rung1(Optim_bisections(store, cal.stages[1]), cal)
     if 2 in cal.stages:
-        out += _format_rung2(Optim_smoothings(store, cal.stages[2]))
+        out += _format_rung2(Optim_smoothings(store, cal.stages[2]), cal.stages[2])
     if 3 in cal.stages:
         jmax_star = {b.name: b.jmax_star for b in Optim_bisections(store, cal.stages[1])} if 1 in cal.stages else {}
         out += _format_rung3(Optim_descents(store, cal.stages[3]), jmax_star, cal)
@@ -558,22 +608,22 @@ def _format_rung1(rows: list[Bisection], cal: Calibration) -> list[str]:
                    f"{jmax:>6} {_yes(b.passes_all):>4} {len(b.mesh_s):>6} {_f(b.n_star_s, '.1f'):>6} "
                    f"{_f(b.seconds, '.0f'):>6}  {b.failed or ''}")
     out.append("")
-    out += [f"  {line}" for line in _rung1_findings(rows, cal.stages[1], cal.golden_jmax)]
+    out += [f"  {line}" for line in _rung1_findings(rows, cal.stages[1], cal.golden_jmax, cal.method)]
     out.append("")
     return out
 
 
-def _rung1_findings(rows: list[Bisection], stage: Stage, golden_jmax: int) -> list[str]:
+def _rung1_findings(rows: list[Bisection], stage: Stage, golden_jmax: int, method: Method) -> list[str]:
     """What rung 1 found, for the report and the log: jmax*, the golden jmax, n*, a campaign's time, failures."""
     out = []
     found = [b.jmax_star for b in rows if b.jmax_star is not None]
     above = sum(b.jmax_star is None and b.failed is None for b in rows)
     if found:
-        golden = Optim_golden_from(rows)
+        golden = Optim_golden_from(rows, method)
         out.append(f"jmax*: min {min(found)}, median {statistics.median(found):g}, max {max(found)} "
                    f"({len(found)} found, {above} above {JMAX_MAX}, {sum(b.failed is not None for b in rows)} failed)")
         bumps = sorted(j - golden for j in found if j > golden)
-        out.append(f"Golden jmax = median rounded up + {CAL_GOLDEN_MARGIN} = {golden}: {len(found) - len(bumps)}/"
+        out.append(f"Golden jmax = median rounded up + {method.golden_margin} = {golden}: {len(found) - len(bumps)}/"
                    f"{len(found)} pass the size ratio there"
                    + (f"; the rest need {', '.join(map(str, bumps))} bumps" if bumps else ""))
         out.append(f"jmax* also passes every other gate on {sum(bool(b.passes_all) for b in rows)}/{len(found)}")
@@ -608,8 +658,8 @@ def _rung1_findings(rows: list[Bisection], stage: Stage, golden_jmax: int) -> li
     return out
 
 
-def _format_rung2(rows: list[Smoothing]) -> list[str]:
-    out = [f"Rung 2: its budget, under a skew gate of {SKEW_GATE:g}",
+def _format_rung2(rows: list[Smoothing], stage: Stage) -> list[str]:
+    out = [f"Rung 2: its budget, under the study's skew gate {stage.settings['gate_skew_max']:g}",
            f"  {'airfoil':22s} {'golden skew':>11} {'golden failed':22s} {'route':32s} {'meshes':>6} {'skew':>6}  note"]
     for s in rows:
         meshes = "-" if s.meshes is None else (str(s.meshes) if s.passed else f"never ({s.meshes})")
@@ -649,7 +699,7 @@ def _format_rung3(rows: list[Descent], jmax_star: dict, cal: Calibration) -> lis
            f"  {'airfoil':22s} {'golden':>8} {'best':>8} {'saving':>7} {'by jmax*':>8} {'to 1%':>6} {'to best':>7} "
            f"{'s to 1%':>8} {'s best':>7}  note"]
     for d in rows:
-        within, best_at = Optim_meshes_within(d.nodes, CAL_WITHIN), Optim_meshes_within(d.nodes, 0.0)
+        within, best_at = Optim_meshes_within(d.nodes, cal.method.within), Optim_meshes_within(d.nodes, 0.0)
         saving = at_jmax = None
         if d.golden_passed and d.final is not None:
             saving = 1 - d.final / d.golden_nodes
@@ -660,8 +710,8 @@ def _format_rung3(rows: list[Descent], jmax_star: dict, cal: Calibration) -> lis
                    f"{_i(within):>6} {_i(best_at):>7} {_f(within is not None and d.seconds[within], '.0f'):>8} "
                    f"{_f(best_at is not None and d.seconds[best_at], '.0f'):>7}  "
                    f"{d.failed or ('' if d.golden_passed else 'golden failed')}")
-    table = Optim_plateau_table(rows)
-    saving, *picks = _rung3_findings(rows, table)
+    table = Optim_plateau_table(rows, cal.method)
+    saving, *picks = _rung3_findings(rows, table, cal.method)
     out += ["", f"  {saving}", "",
             "  Plateau replay: where each (window, min_gain) would have stopped every search above, summed; "
             "loss: how far its best ends above the cap's",
@@ -675,19 +725,19 @@ def _format_rung3(rows: list[Descent], jmax_star: dict, cal: Calibration) -> lis
     return out
 
 
-def _rung3_findings(rows: list[Descent], table: list[PlateauRow]) -> list[str]:
+def _rung3_findings(rows: list[Descent], table: list[PlateauRow], method: Method) -> list[str]:
     """What rung 3 found, for the report and the log: the nodes saved, the plateau pick, the cap."""
     savings = [(1 - d.final / d.golden_nodes, d.name) for d in rows if d.golden_passed and d.final is not None]
     saving = "nodes saved against the golden run: " + (
         f"median {_pct(statistics.median(s for s, _ in savings))}, max {_pct(max(savings)[0])} ({max(savings)[1]})"
         if savings else "none (no golden run passed)")
-    pick = Optim_pick_plateau(table)
+    pick = Optim_pick_plateau(table, method)
     return [saving,
-            f"Plateau pick (fewest meshes giving up at most {_pct(CAL_MAX_LOSS, 1)} on every airfoil): "
+            f"Plateau pick (fewest meshes giving up at most {_pct(method.max_loss, 1)} on every airfoil): "
             + (f"window {pick.window}, min_gain {pick.min_gain:g}, {pick.meshes} meshes, {pick.seconds / 60:.1f} min"
                if pick else "none qualifies"),
-            f"Rung-3 cap (the most meshes any airfoil took to within {_pct(CAL_WITHIN, 0)} of its best, rounded up "
-            f"to 10): {_i(Optim_rung3_cap(rows))}"]
+            f"Rung-3 cap (the most meshes any airfoil took to within {_pct(method.within, 0)} of its best, rounded up "
+            f"to 10): {_i(Optim_rung3_cap(rows, method))}"]
 
 
 def _time(stamp: str) -> datetime.datetime:

@@ -5,8 +5,10 @@ Step 1: Ensure the options reach the campaign, its store the scratchpad's when l
 how it ended the exit code
     - test_the_options_reach_the_campaign
     - test_how_the_campaign_ended_is_the_exit_code
-Step 2: Ensure it takes no setting, and a mistake in what was asked stops it before anything is recorded
-    - test_the_command_line_takes_no_setting
+Step 2: Ensure settings reach it through `--set` alone, each one it reads, and a mistake in what was asked stops it
+before anything is recorded
+    - test_settings_reach_the_campaign
+    - test_a_setting_it_cannot_take_is_a_usage_error
     - test_an_unknown_airfoil_is_a_usage_error
 
 The campaign and the manifest are stand-ins; the campaign is tested in the optimizer tiers.
@@ -15,7 +17,7 @@ The campaign and the manifest are stand-ins; the campaign is tested in the optim
 import pytest
 
 from scripts.datagen.meshing import campaign as mesh_campaign
-from src.datagen.constants import WORKERS
+from src.datagen.constants import SLOT_MEMORY_CAP_MB, WATCHDOG_S, WORKERS
 from src.datagen.geometry.common.paths import Geom_paths
 from src.datagen.meshing.optimizer.batch.campaign import CampaignResult
 from src.datagen.meshing.optimizer.batch.runner import BatchStopped
@@ -54,9 +56,10 @@ def test_the_options_reach_the_campaign(campaign, tmp_path, data_root, capsys):
                                "--work-root", str(work)]) == 0
     assert mesh_campaign.main([]) == 0
     [scratch] = [p.parent for p in (data_root / "scratchpad").glob("*/campaign")]  # the run that left it out
-    assert calls == [(db, ["naca0012", "naca4412"], 2, work, "trial 3", {"geometry_db": manifest}),
+    constants = {"overrides": {}, "watchdog_s": WATCHDOG_S, "cap_mb": SLOT_MEMORY_CAP_MB}
+    assert calls == [(db, ["naca0012", "naca4412"], 2, work, "trial 3", {"geometry_db": manifest, **constants}),
                      (scratch / "campaign" / "meshing.sqlite", None, WORKERS, None, None,
-                      {"geometry_db": Geom_paths().db})]
+                      {"geometry_db": Geom_paths().db, **constants})]
     assert "the summary" in capsys.readouterr().out
 
 
@@ -70,11 +73,32 @@ def test_how_the_campaign_ended_is_the_exit_code(campaign, tmp_path, stopped, co
 
 
 # region Step 2
-@pytest.mark.parametrize("setting", ["--golden-jmax", "--rung3-budget", "--gate-skew-max"])
-def test_the_command_line_takes_no_setting(campaign, tmp_path, capsys, setting):
-    assert mesh_campaign.main(["--db", str(tmp_path / "meshing.sqlite"), setting, "150"]) == 2
+def test_settings_reach_the_campaign(campaign, tmp_path, capsys):
+    assert mesh_campaign.main(["--db", str(tmp_path / "meshing.sqlite"), "--set", "gate_skew_max=0.22",
+                               "--set", "RUNG2_BUDGET=60", "--set", "watchdog_s=900", "--workers", "3"]) == 0
 
-    assert "unrecognized arguments" in capsys.readouterr().out and campaign[0] == []
+    [(_, _, workers, _, _, kw)] = campaign[0]
+    assert workers == 3 and kw["overrides"] == {"gate_skew_max": 0.22, "rung2_budget": 60}  # typed as the constants
+    assert (kw["watchdog_s"], kw["cap_mb"]) == (900, SLOT_MEMORY_CAP_MB)
+    printed = capsys.readouterr().out
+    assert "settings: gate_skew_max 0.22 (given; constants.py 0.25)" in printed  # the plan shows what moved
+    assert "settings: workers 3 (given; constants.py 6)" in printed
+
+
+@pytest.mark.parametrize("args, says", [
+    (["--golden-jmax", "150"], "unrecognized arguments"),
+    (["--set", "cal_set=a,b"], "campaign does not read cal_set"),
+    (["--set", "dx_max=0.004"], "dx_max cannot be set for a run yet"),
+    (["--set", "nope=1"], "no setting 'nope'"),
+    (["--set", "rung2_budget=5.5"], "rung2_budget takes an int, not '5.5'"),
+    (["--set", "gate_skew_max"], "a setting is key=value"),
+    (["--set", "gate_skew_max=0.2", "--set", "gate_skew_max=0.3"], "gate_skew_max is set twice"),
+    (["--workers", "4", "--set", "workers=5"], "workers is given twice: --workers 4 and --set workers=5"),
+], ids=["not an option", "not read here", "read at load", "unknown", "wrong type", "no value", "twice", "flag too"])
+def test_a_setting_it_cannot_take_is_a_usage_error(campaign, tmp_path, capsys, args, says):
+    assert mesh_campaign.main(["--db", str(tmp_path / "meshing.sqlite"), *args]) == 2
+
+    assert says in capsys.readouterr().out and campaign[0] == []
 
 
 def test_an_unknown_airfoil_is_a_usage_error(campaign, tmp_path, capsys):

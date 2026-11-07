@@ -1,13 +1,15 @@
 """
 Tests for `scripts.datagen.meshing.master`, the run a YAML config makes, i.e.:
 
-Step 1: Ensure a config's sections become the enabled stages' arguments, in the fixed order, and `folder` the run's
-folder
+Step 1: Ensure a config's sections become the enabled stages' arguments, in the fixed order, its settings each
+stage's `--set` for what it reads, and `folder` the run's folder
     - test_options_become_arguments
     - test_stages_run_in_the_fixed_order_and_machine_check_is_on_unless_switched_off
+    - test_settings_reach_the_stages_that_read_them
     - test_folder_names_the_run_folder
 Step 2: Ensure a mistake in the config refuses the run, and the committed example plans
     - test_a_config_mistake_refuses_the_run
+    - test_a_settings_mistake_refuses_the_run
     - test_the_example_config_plans
 
 The stages' runs are the engine's tests'; these stop at the plan.
@@ -47,15 +49,51 @@ def test_options_become_arguments(tmp_path, data_root):
 
 
 def test_stages_run_in_the_fixed_order_and_machine_check_is_on_unless_switched_off(tmp_path):
-    requested, off, folder = Script_load_config(_config(tmp_path, "remesh:\n  enabled: true\n  all: true\n"
-                                                                  "campaign:\n  enabled: true\n"
-                                                                  "geometry_ingest:\n  enabled: false\n"))
+    config = Script_load_config(_config(tmp_path, "remesh:\n  enabled: true\n  all: true\n"
+                                                  "campaign:\n  enabled: true\n"
+                                                  "geometry_ingest:\n  enabled: false\n"))
 
-    assert [(stage.name, argv) for stage, argv in requested] == [("machine_check", []), ("campaign", []),
-                                                                 ("remesh", ["--all"])]
-    assert off == ["geometry_ingest"] and folder is None
-    requested, off, _ = Script_load_config(_config(tmp_path, "machine_check:\n  enabled: false\n"))
-    assert requested == [] and off == ["machine_check"]
+    assert [(stage.name, argv) for stage, argv in config.stages] == [("machine_check", []), ("campaign", []),
+                                                                     ("remesh", ["--all"])]
+    assert config.off == ["geometry_ingest"] and config.folder is None
+    config = Script_load_config(_config(tmp_path, "machine_check:\n  enabled: false\n"))
+    assert config.stages == [] and config.off == ["machine_check"]
+
+
+def test_settings_reach_the_stages_that_read_them(tmp_path):
+    config = Script_load_config(_config(tmp_path, "settings:\n  gate_skew_max: 0.22\n  workers: 4\n"
+                                                  "  cal_windows: [10, 20]\n"
+                                                  "machine_check:\n  enabled: false\n"
+                                                  "mesh_calibrate:\n  enabled: true\n  settings:\n"
+                                                  "    gate_skew_max: 0.2\n"
+                                                  "campaign:\n  enabled: true\n"
+                                                  "remesh:\n  enabled: true\n  all: true\n"))
+
+    assert [(stage.name, argv) for stage, argv in config.stages] == [  # each stage only what it reads
+        ("mesh_calibrate", ["--set", "gate_skew_max=0.2", "--set", "workers=4", "--set", "cal_windows=10,20"]),
+        ("campaign", ["--set", "gate_skew_max=0.22", "--set", "workers=4"]),
+        ("remesh", ["--all", "--set", "gate_skew_max=0.22"])]
+    assert config.sources[("mesh_calibrate", "gate_skew_max")] == "its own settings, over the settings block's 0.22"
+    assert config.sources[("campaign", "workers")] == "the settings block" and config.notes == []
+    unread = Script_load_config(_config(tmp_path, "settings:\n  cal_set: [naca0012]\n"
+                                                  "machine_check:\n  enabled: false\n"))
+    assert unread.notes == [("settings", "!", "cal_set is read by no stage this run")]  # mesh_calibrate is off
+
+
+def test_a_settings_mistake_refuses_the_run(tmp_path):
+    config = _config(tmp_path, "settings:\n  nope: 1\n  dx_max: 0.004\n"
+                               "machine_check:\n  enabled: false\n"
+                               "campaign:\n  enabled: true\n  settings:\n    cal_set: [naca0012]\n"
+                               "    gate_skew_max: 0.22\n"
+                               "remesh:\n  enabled: true\n  all: true\n  settings: 0.2\n")
+
+    with pytest.raises(PlanError) as refused:
+        Script_load_config(config)
+    assert [(stage, text.split(":")[0]) for stage, text in refused.value.problems] == [
+        ("settings", "no setting 'nope'"), ("settings", "dx_max cannot be set for a run yet"),
+        ("campaign", "does not read cal_set"), ("remesh", "settings are `name"),
+        ("remesh", "gate_skew_max is left to constants.py here but 0.22 in campaign; the re-mesh finds the campaign's "
+                   "meshes by their settings, so both must set it alike")]
 
 
 def test_folder_names_the_run_folder(tmp_path, data_root, capsys):
@@ -98,10 +136,10 @@ def test_a_config_mistake_refuses_the_run(tmp_path, data_root, capsys):
 def test_the_example_config_plans(data_root):
     if not Geom_paths().db.exists():
         pytest.skip(f"no geometry manifest at {Geom_paths().db}")
-    requested, off, _ = Script_load_config(EXAMPLE)
+    config = Script_load_config(EXAMPLE)
 
-    plan = Script_plan("example", requested, off=off)
+    plan = Script_plan("example", config.stages, off=config.off, sources=config.sources, notes=config.notes)
     assert [sp.stage.name for sp in plan.stages] == ["machine_check", "campaign", "remesh"]
-    assert plan.stages[2].reads[0].how == "this run's campaign" and off == ["geometry_calibrate", "geometry_ingest",
-                                                                           "mesh_calibrate"]
+    assert plan.stages[2].reads[0].how == "this run's campaign" and config.off == [
+        "geometry_calibrate", "geometry_ingest", "mesh_calibrate"]
 # endregion

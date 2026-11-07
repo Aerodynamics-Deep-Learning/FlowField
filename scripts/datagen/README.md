@@ -58,7 +58,7 @@ stage is the script's name in configs and logs.
 | `geometry.calibrate <folder>` | `geometry_calibrate` | fits every file at CST orders 4-12 for choosing the CST constants | the `.dat` folder | `--out`: a report file | ~1 min for 190 files |
 | `geometry.ingest [folder]` | `geometry_ingest` | adds the folder's airfoils to a manifest; without a folder, brings stored ones to the current shape version | the `.dat` folder | `--data-root`: a data folder (manifest, raw copies, reports) | ~15 s for 190 files |
 | `meshing.calibrate` | `mesh_calibrate` | measures the numbers the ladder's rungs run on | `--geometry-db` | `--out`: a folder, `<date>.txt` and `<date>.sqlite` | ~1 h for 158 airfoils on 6 workers (rung 1 ~12 min, rung 2 ~6, rung 3 ~41) |
-| `meshing.campaign` | `campaign` | the ladder over every airfoil not finished under the current constants | `--geometry-db` | `--db`: a run store | ~10 min for 158 airfoils on 6 workers, most of it the few that reach rung 3 |
+| `meshing.campaign` | `campaign` | the ladder over every airfoil not finished under the run's settings (the constants, unless set) | `--geometry-db` | `--db`: a run store | ~10 min for 158 airfoils on 6 workers, most of it the few that reach rung 3 |
 | `meshing.remesh` | `remesh` | rebuilds best runs (`--airfoils`, `--all`) or one run (`--run`), each checked against its stored hash | `--db`, `--geometry-db` | `--out`: a folder per airfoil, and `quality.png` | ~3 s an airfoil |
 
 Exit codes, for every script and the master:
@@ -90,8 +90,10 @@ machine_check -> geometry_calibrate -> geometry_ingest -> mesh_calibrate -> camp
 - **One section per stage**, each with `enabled: true` or `enabled: false`. `machine_check` is on when its
   section is left out; switching it off warns.
 - **A section's other keys are its script's options**, `-` written as `_`: `--settings-label` is
-  `settings_label`, `--dry-run` is `dry_run`. `true` turns a flag on; a list becomes `a,b`. No constant can be
-  set here, since no script has an option for one.
+  `settings_label`, `--dry-run` is `dry_run`. `true` turns a flag on; a list becomes `a,b`.
+- **`settings:`** sets values of `src/datagen/constants.py` for the run, by their names in lower case
+  (`gate_skew_max: 0.22`): at the top, for every stage that reads one; inside a stage's section, for that stage
+  alone, over the top's. Section 8 has the rules.
 - **Paths**: a relative path is under `data/`; an absolute one is used as written. `shared` names a committed
   store (section 5).
 - **`folder:`**, beside the sections, names the run's folder (section 5); left out, it is a new
@@ -211,12 +213,25 @@ what moved, until the check passes again. A config with `machine_check` enabled 
 The master's machine check refuses to start when the reference does not fit the code (another sampler or shape
 version) or lists other airfoils than the shared manifest, and says how to fix it.
 
-## 8. Changing a constant
+## 8. Changing a constant, or setting one for a run
 
-The campaign runs at the constants as they are. A changed constant (or another c2d executable) makes a new
-`settings_id`, under which every airfoil runs again; the rows of earlier settings stay in the store, and a
-re-mesh by name always takes the best run under the current settings. `--settings-label` names a settings row
-when the campaign that first records it runs, so you can find it again in a SQLite viewer.
+Every value that can change is in `src/datagen/constants.py`. A run sets one without editing it: a config's
+`settings:`, or a script's `--set name=value` (repeatable; `--help` lists what each script reads). The value is
+typed as its constant (a tuple comma-separated), and refused before anything runs when it names nothing in the
+file, a stage that does not read it, or two values for one name. A few are read when the code loads (the CST
+order, nose and tolerance, `dx_max`, `theta_max_deg`, the search space's bounds, y+, the farfield radius, the
+smoothing defaults) and cannot be set for a run yet. The PLAN names every value a run set and where it came from:
+
+```
+[campaign]  [info]  settings: gate_skew_max 0.22 (the settings block; constants.py 0.25)
+```
+
+A changed constant or setting (or another c2d executable) makes a new `settings_id`, under which every airfoil
+runs again; the rows of earlier settings stay in the store, and a re-mesh by name takes the best run under the
+run's settings, so it must set what the campaign set (the master refuses a run where the two differ).
+`--settings-label` names a settings row when the campaign that first records it runs, so you can find it again
+in a SQLite viewer. The calibration runs every rung under the study's settings; its own choices are the `cal_`
+ones, and `--golden-jmax`, `--rung2-cap`, `--rung3-cap` and `--workers` are short forms of settings.
 
 ## 9. Ingesting into the shared manifest is a release
 

@@ -1,7 +1,7 @@
 """
 The mesh study's re-mesh: stored runs meshed again into `<out>/<airfoil>/`, each `.su2` (and `.vtk`, if asked)
 delivered only once it hashes to what its run stored (`evaluate/remesh.py`). By name, an airfoil's mesh is its
-best run under the current settings; by run id, any run that meshed, best or not. Run from the command line by
+best run under the run's settings (the constants, unless set); by run id, any run that meshed, best or not. Run from the command line by
 `scripts/datagen/meshing/remesh.py`.
 
 Airfoils run one after another, with a progress line every tenth; one that cannot be re-meshed is warned of
@@ -28,9 +28,9 @@ class RemeshOutcome(NamedTuple):
 
 
 def Optim_remesh_airfoils(store: RunStore, names: Optional[Sequence[str]], out_root, *, with_vtk: bool = False,
-                          geometry_db=None) -> list[RemeshOutcome]:
+                          geometry_db=None, overrides: Optional[dict] = None) -> list[RemeshOutcome]:
     """
-    Re-meshes each airfoil's best run under the current settings into `out_root/<name>/`.
+    Re-meshes each airfoil's best run under the run's settings into `out_root/<name>/`.
 
     Args:
         store (RunStore): The run store, read-only is enough
@@ -38,6 +38,8 @@ def Optim_remesh_airfoils(store: RunStore, names: Optional[Sequence[str]], out_r
         out_root (str | Path): Where each airfoil's folder goes
         with_vtk (bool): Also deliver each .vtk
         geometry_db (str | Path | None): The geometry manifest, the repo's own by default
+        overrides (dict | None): The run's settings over the constants, as the campaign ran under
+            (`Optim_build_settings`)
 
     Returns:
         list[RemeshOutcome]: One per airfoil, in order; an airfoil with no best run, or refused, or whose
@@ -46,7 +48,7 @@ def Optim_remesh_airfoils(store: RunStore, names: Optional[Sequence[str]], out_r
     Raises:
         ValueError: If a name has no stored shape, before anything is meshed
     """
-    settings_id = Optim_build_settings()["settings_id"]
+    settings_id = Optim_build_settings(**(overrides or {}))["settings_id"]
     shapes = Optim_load_shapes(names, geometry_db)
     finished = store.finished_airfoils(settings_id)
     progress, outcomes = Progress(len(shapes)), []

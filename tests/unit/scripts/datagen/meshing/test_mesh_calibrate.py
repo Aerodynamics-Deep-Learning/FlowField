@@ -1,8 +1,10 @@
 """
 Tests for `scripts.datagen.meshing.calibrate`, the ladder calibration's command line, i.e.:
 
-Step 1: Ensure the options reach the calibration, its folder the run folder's when left out, and its files named
+Step 1: Ensure the options and settings reach the calibration, its folder the run folder's when left out, and its
+files named
     - test_the_options_reach_the_calibration
+    - test_settings_reach_the_calibration
 Step 2: Ensure a mistake in what was asked stops it before anything meshes
     - test_a_mistake_is_a_usage_error
 
@@ -15,9 +17,9 @@ from pathlib import Path
 import pytest
 
 from scripts.datagen.meshing import calibrate as mesh_calibrate
-from src.datagen.constants import CAL_RUNG2_CAP, CAL_RUNG3_CAP, WORKERS
+from src.datagen.constants import CAL_RUNG2_CAP, CAL_RUNG3_CAP, SLOT_MEMORY_CAP_MB, WATCHDOG_S, WORKERS
 from src.datagen.geometry.common.paths import Geom_paths
-from src.datagen.meshing.optimizer.batch.calibrate import CalibrationFiles
+from src.datagen.meshing.optimizer.batch.calibrate import CalibrationFiles, Method
 
 
 def _known(names, db=None):
@@ -31,8 +33,8 @@ def _known(names, db=None):
 def calibrate(monkeypatch):
     calls = []
 
-    def run(*args):
-        calls.append(args)
+    def run(*args, **kw):
+        calls.append((*args, kw))
         return CalibrationFiles(Path("r.txt"), Path("r.sqlite"), "the report")
 
     monkeypatch.setattr(mesh_calibrate, "Optim_run_calibration", run)
@@ -52,10 +54,23 @@ def test_the_options_reach_the_calibration(calibrate, tmp_path, data_root, capsy
     assert mesh_calibrate.main([]) == 0
     left_out = calibrate[1][0]
     assert left_out.name == "mesh_calibrate" and left_out.parent.parent == data_root / "scratchpad"  # its run folder
-    assert calibrate == [(out, [1, 3], ["naca0012", "s1223"], 150, 30, 10, 2, manifest, work),
-                         (left_out, [1, 2, 3], None, None, CAL_RUNG3_CAP, CAL_RUNG2_CAP, WORKERS, Geom_paths().db, None)]
+    constants = {"overrides": {}, "method": Method(), "watchdog_s": WATCHDOG_S, "cap_mb": SLOT_MEMORY_CAP_MB}
+    assert calibrate == [(out, [1, 3], ["naca0012", "s1223"], 150, 30, 10, 2, manifest, work, constants),
+                         (left_out, [1, 2, 3], None, None, CAL_RUNG3_CAP, CAL_RUNG2_CAP, WORKERS, Geom_paths().db, None,
+                          constants)]
     printed = capsys.readouterr().out
     assert "the report" not in printed and "r.txt; every run: r.sqlite" in printed  # the findings came per rung
+
+
+def test_settings_reach_the_calibration(calibrate, tmp_path):
+    assert mesh_calibrate.main(["--out", str(tmp_path / "cal"), "--set", "gate_skew_max=0.22", "--set",
+                                "golden_jmax=150", "--set", "cal_golden_margin=3", "--set", "cal_windows=10,20",
+                                "--set", "cal_rung2_cap=40", "--set", "slot_memory_cap_mb=1024"]) == 0
+
+    [(_, _, _, golden, rung3_cap, rung2_cap, *_, kw)] = calibrate
+    assert (golden, rung3_cap, rung2_cap) == (150, CAL_RUNG3_CAP, 40)  # the golden jmax and caps the calibration's
+    assert kw["overrides"] == {"gate_skew_max": 0.22} and kw["cap_mb"] == 1024
+    assert kw["method"] == Method(golden_margin=3, windows=(10, 20))
 # endregion
 
 
@@ -65,7 +80,9 @@ def test_the_options_reach_the_calibration(calibrate, tmp_path, data_root, capsy
     (["--rungs", "1,x"], "rungs are numbers from 1,2,3, not '1,x'"),
     (["--airfoils", "naca0012,naca9999"], "naca9999"),
     (["--out", "TAKEN"], "already holds today's calibration"),
-], ids=["rung 4", "rung unreadable", "unknown airfoil", "today's calibration there"])
+    (["--set", "rung2_budget=60"], "mesh_calibrate does not read rung2_budget"),  # it measures it
+    (["--rung2-cap", "10", "--set", "cal_rung2_cap=20"], "cal_rung2_cap is given twice"),
+], ids=["rung 4", "rung unreadable", "unknown airfoil", "today's calibration there", "a budget", "cap twice"])
 def test_a_mistake_is_a_usage_error(calibrate, tmp_path, capsys, args, says):
     taken = tmp_path / "taken"
     taken.mkdir()

@@ -7,7 +7,9 @@ Runs the data-generation stages a YAML config enables, always in this order, eac
 
 One section per stage with `enabled: true` or `false` (machine_check is on when its section is left out); its other
 keys are the stage script's options, `-` written as `_` (`--settings-label` as `settings_label`; `--help` on
-each script lists them). Relative paths are under data/ and `shared` names a committed store. `folder:` names the
+each script lists them). `settings:` sets values of src/datagen/constants.py for the run, by their names in lower
+case: at the top for every stage that reads one, inside a stage's section for that stage alone, over the top's.
+Relative paths are under data/ and `shared` names a committed store. `folder:` names the
 run's folder, which holds its log (log.log), a copy of the config and every output left out, under <stage>/; left
 out, it is a new data/scratchpad/<time>_<config name>/. A stage reads what an earlier stage of the same run wrote
 unless told otherwise. Everything is checked before anything runs; the first stage that fails stops the run.
@@ -30,12 +32,15 @@ from scripts.datagen.meshing import remesh as mesh_remesh
 STAGES = (machine_check.STAGE, geometry_calibrate.STAGE, geometry_ingest.STAGE, mesh_calibrate.STAGE,
           mesh_campaign.STAGE, mesh_remesh.STAGE)
 FOLDER_KEY = "folder"
+SETTINGS_KEY = "settings"
 
 
 class Config(NamedTuple):
     stages: list[tuple[Stage, list[str]]]          # (stage, arguments) per enabled stage, in the fixed order
     off: list[str]                                 # the stages it switched off
     folder: Optional[Path]                         # the run's folder; None: a new one in the scratchpad
+    sources: dict = {}                             # (stage, setting) -> which block set it
+    notes: list = []                               # (stage, level, text) for the plan
 
 
 def Script_load_config(path) -> Config:
@@ -59,10 +64,12 @@ def Script_load_config(path) -> Config:
     if not isinstance(data, dict):
         raise PlanError([("config", "a config is one section per stage")])
     names = [stage.name for stage in STAGES]
-    problems = [("config", f"no stage named {key!r}; the stages are {', '.join(names)} (beside them: `folder`)")
-                for key in data if key not in names and key != FOLDER_KEY]
+    problems = [("config", f"no stage named {key!r}; the stages are {', '.join(names)} (beside them: `folder`, "
+                           f"`settings`)") for key in data if key not in (*names, FOLDER_KEY, SETTINGS_KEY)]
     folder = _folder(data.get(FOLDER_KEY), problems)
-    requested, off = [], []
+    top = _settings(data.get(SETTINGS_KEY), "settings", problems)
+    problems += [("settings", f"no stage reads {key}") for key in top if not any(key in s.reads for s in STAGES)]
+    requested, off, resolved, sources = [], [], {}, {}
     for stage in STAGES:
         section = data.get(stage.name, {"enabled": True} if stage.name == "machine_check" else None)
         if section is None and stage.name not in data:
@@ -73,14 +80,62 @@ def Script_load_config(path) -> Config:
         if not section["enabled"]:
             off.append(stage.name)
             continue
+        own = _settings(section.get(SETTINGS_KEY), stage.name, problems)
+        problems += [(stage.name, f"does not read {key}") for key in own if key not in stage.reads]
+        settings = {k: v for k, v in {**top, **own}.items() if k in stage.reads}
+        for key in settings:
+            sources[(stage.name, key)] = "the settings block" if key not in own else (
+                f"its own settings, over the settings block's {engine._text(top[key])}" if key in top else
+                "its own settings")
+        resolved[stage.name] = settings
         try:
-            requested.append((stage, Script_options_to_argv(stage, {k: v for k, v in section.items()
-                                                                     if k != "enabled"})))
+            argv = Script_options_to_argv(stage, {k: v for k, v in section.items() if k not in ("enabled",
+                                                                                                SETTINGS_KEY)})
         except ValueError as e:
             problems.append((stage.name, str(e)))
+            continue
+        requested.append((stage, argv + [a for key, value in settings.items()
+                                         for a in ("--set", f"{key}={engine._text(value)}")]))
+    problems += _disagreements(resolved)
+    notes = [("settings", "!", f"{key} is read by no stage this run") for key in top
+             if any(key in s.reads for s in STAGES) and not any(key in r for r in resolved.values())]
     if problems:
         raise PlanError(problems)
-    return Config(requested, off, folder)
+    return Config(requested, off, folder, sources, notes)
+
+
+def _settings(value, where: str, problems: list) -> dict:
+    """A `settings:` block, each value typed as its constant: setting -> value."""
+    if value is None:
+        return {}
+    if not isinstance(value, dict):
+        problems.append((where, "settings are `name: value` lines under `settings:`"))
+        return {}
+    out = {}
+    for key, raw in value.items():
+        text = ",".join(str(v) for v in raw) if isinstance(raw, (list, tuple)) else str(raw)
+        try:
+            setting = engine.Script_setting(f"{key}={text}")
+        except argparse.ArgumentTypeError as e:
+            problems.append((where, str(e)))
+            continue
+        out[setting.key] = setting.value
+    return out
+
+
+def _disagreements(resolved: dict) -> list[tuple[str, str]]:
+    """The re-mesh finds the campaign's meshes by their settings, so where both run they must hold the same ones."""
+    if "campaign" not in resolved or "remesh" not in resolved:
+        return []
+    campaign, remesh = resolved["campaign"], resolved["remesh"]
+    shared = mesh_campaign.STAGE.reads & mesh_remesh.STAGE.reads
+    return [("remesh", f"{key} is {_said(remesh, key)} here but {_said(campaign, key)} in campaign; the re-mesh "
+                       f"finds the campaign's meshes by their settings, so both must set it alike")
+            for key in sorted(shared) if campaign.get(key) != remesh.get(key)]
+
+
+def _said(settings: dict, key: str) -> str:
+    return engine._text(settings[key]) if key in settings else "left to constants.py"
 
 
 def _folder(value, problems: list) -> Optional[Path]:
@@ -150,7 +205,7 @@ def main(argv=None) -> int:
     except PlanError as e:
         return Script_refuse(name, e.problems, title=title, config=config)
     return Script_run(name, loaded.stages, in_process=False, title=title, config=config, off=loaded.off,
-                      folder=loaded.folder)
+                      folder=loaded.folder, sources=loaded.sources, notes=loaded.notes)
 
 
 if __name__ == "__main__":

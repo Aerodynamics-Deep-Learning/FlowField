@@ -6,7 +6,7 @@ opt in with `pytest -m interactive`.
 
 Each `_CASES` entry is a stored airfoil's name with its TE handling ("te", and "gap" for a blunt or
 round one) and any sampling knobs (`SamplingFields`' names); what is left out takes the studies'
-defaults (the knobs' defaults, the gap TE_GAP_DEFAULT).
+defaults (the knobs' defaults, the gap TE_GAP).
 
 Keys:
     1-9   case 1-9 of `_CASES`
@@ -33,7 +33,7 @@ from src.datagen.geometry.manifest.store import GeometryStore
 from src.datagen.geometry.sample.contour import Geom_build_contour
 from src.datagen.geometry.sample.fields import SamplingFields
 from src.datagen.geometry.sample.sample import Geom_sample
-from src.datagen.meshing.optimizer.evaluate.sampling import TE_GAP_DEFAULT
+from src.datagen.meshing.optimizer.evaluate.sampling import TE_GAP
 
 _CASES = {
     "naca4412": {"te": "round"},                                          # every default: ~600 points
@@ -73,7 +73,7 @@ def _load(cases: dict) -> list[_Case]:
             shape = store.get_shape(geo.geometry_id, SHAPE_VERSION) if geo is not None else None
             assert shape is not None, f"{name} has no stored shape under {SHAPE_VERSION}; edit _CASES"
             knobs = dict(settings)
-            te, gap = TETreatment(knobs.pop("te", "round")), knobs.pop("gap", TE_GAP_DEFAULT)
+            te, gap = TETreatment(knobs.pop("te", "round")), knobs.pop("gap", TE_GAP)
             fields = SamplingFields(**knobs)
             contour = Geom_build_contour(shape, te, gap)
             smp = Geom_sample(contour, fields)

@@ -26,7 +26,7 @@ from src.datagen.meshing.common.utils import (
 )
 from src.datagen.meshing.gmsh.schemas import GMSH_CMeshingConfig, GMSH_OMeshingConfig
 from src.datagen.meshing.optimizer.evaluate.sampling import (
-    CELL_CEILING, TE_FOR_PAIRING, TE_GAP_DEFAULT, Optim_build_study_contour, Optim_sample_for_mesher,
+    CELL_CEILING, TE_FOR_PAIRING, TE_GAP, Optim_build_study_contour, Optim_sample_for_mesher,
 )
 from src.datagen.schemas import Freestream
 from tests.geometry_shapes import SHAPE_NAMES, stored_shape
@@ -60,7 +60,7 @@ def test_build_study_contour():
     shape = stored_shape("naca0012")
 
     assert Optim_build_study_contour(shape, *C2D_O).te is TETreatment.ROUND
-    assert Optim_build_study_contour(shape, *C2D_O).gap == TE_GAP_DEFAULT
+    assert Optim_build_study_contour(shape, *C2D_O).gap == TE_GAP
     assert Optim_build_study_contour(shape, *C2D_O, gap=0.006).gap == 0.006
     assert Optim_build_study_contour(shape, *C2D_C).te is TETreatment.SHARP
     assert Optim_build_study_contour(shape, *GMSH_O).te is TETreatment.ROUND
