@@ -117,6 +117,13 @@ def test_the_grid_comes_from_the_settings(settings, monkeypatch):
     assert {(f.dx_mid, f.te_ratio) for f, _ in sampler.calls} == {(settings["dx_max"], 1.0)}
     assert {mp for _, mp in sampler.calls} == {300_000 // 150}  # the golden run's point ceiling
 
+    sampler.calls.clear()  # a run's own bounds and dx_max: the grid spans them
+    own = _sized(Optim_build_settings(ratio_min=0.01, cluster_width_min=0.05, cluster_width_max=0.1, dx_max=0.004), 3, 2)
+    Optim_n_star_search(None, own)
+    assert sorted({f.le_ratio for f, _ in sampler.calls})[::2] == [0.01, 1.0]
+    assert sorted({f.cluster_width for f, _ in sampler.calls}) == [0.05, 0.1]
+    assert {f.dx_mid for f, _ in sampler.calls} == {0.004}
+
 
 @pytest.mark.parametrize("corner", ["lowest", "highest"])
 def test_n_stars_knobs_are_a_start_nomad_can_take(settings, monkeypatch, corner):

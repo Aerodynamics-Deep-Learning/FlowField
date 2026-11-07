@@ -17,7 +17,6 @@ from typing import NamedTuple, Optional
 
 import numpy as np
 
-from src.datagen.constants import THETA_MAX_DEG
 from src.datagen.geometry.common.constants import PRECHECK_MARGIN
 from src.datagen.geometry.common.portable import Geom_exp, Geom_sin
 from src.datagen.geometry.common.schemas import TETreatment
@@ -62,8 +61,8 @@ def Geom_target_spacing(contour: Contour, fields: SamplingFields) -> Spacing:
 
 def Geom_turn_precheck(contour: Contour, spacing: Spacing) -> tuple[float, float]:
     """
-    How far the spacing comes to turning more than THETA_MAX_DEG at a point: a chord h on curvature k turns
-    2 asin(k h / 2), so k h must stay under 2 sin(THETA_MAX_DEG / 2), here with PRECHECK_MARGIN to spare.
+    How far the spacing comes to turning more than the contour's theta_max_deg at a point: a chord h on curvature
+    k turns 2 asin(k h / 2), so k h must stay under 2 sin(theta_max_deg / 2), here with PRECHECK_MARGIN to spare.
     Needs no points, so a config failing it is rejected before any are placed.
 
     Args:
@@ -76,7 +75,7 @@ def Geom_turn_precheck(contour: Contour, spacing: Spacing) -> tuple[float, float
     product = contour.table_kappa * spacing.h_table
     worst = int(np.argmax(product))
     x = float(contour.evaluate(contour.table_s[worst:worst + 1])[0, 0])
-    return float(product[worst] / _turn_limit() - 1.0), x
+    return float(product[worst] / _turn_limit(contour) - 1.0), x
 
 
 def Geom_stretch_panels(contour: Contour, spacing: Spacing) -> list[int]:
@@ -116,9 +115,9 @@ def Geom_stations(contour: Contour, spacing: Spacing, panels: list[int]) -> np.n
     return np.concatenate(parts + [[pins[-1].s]])
 
 
-def _turn_limit() -> float:
-    """The most curvature x spacing the pre-check passes."""
-    return 2 * Geom_sin(math.radians(THETA_MAX_DEG) / 2) * PRECHECK_MARGIN
+def _turn_limit(contour: Contour) -> float:
+    """The most curvature x spacing the pre-check passes on this contour."""
+    return 2 * Geom_sin(math.radians(contour.theta_max_deg) / 2) * PRECHECK_MARGIN
 
 
 def _te_max(contour: Contour) -> Optional[float]:
@@ -127,7 +126,7 @@ def _te_max(contour: Contour) -> Optional[float]:
         return None
     pins = {p.kind: p.s for p in contour.pins}
     caps = (contour.table_s < pins[PinKind.WELD_UPPER]) | (contour.table_s > pins[PinKind.WELD_LOWER])
-    return _turn_limit() / float(contour.table_kappa[caps].max()) * (1 - 1e-9)
+    return _turn_limit(contour) / float(contour.table_kappa[caps].max()) * (1 - 1e-9)
 
 
 def _spacing(contour: Contour, s: np.ndarray, dx: float, le: float, te: float, width: float) -> np.ndarray:

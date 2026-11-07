@@ -139,9 +139,7 @@ def Script_check_names(load: Callable, args: argparse.Namespace, made_here: set)
 SETTABLE = {name.lower(): value for name, value in vars(constants).items() if name.isupper()}
 
 # Read when the code loads, so a run cannot set them yet
-_LOAD_TIME = frozenset({"cst_order", "cst_nose", "cst_fit_tol", "dx_max", "theta_max_deg", "y_plus", "farfield_radius",
-                        "smoothing_defaults", "dx_mid_min", "ratio_min", "cluster_width_min", "cluster_width_max",
-                        "jmax_min", "jmax_max"})
+_LOAD_TIME = frozenset({"cst_order", "cst_nose", "cst_fit_tol"})
 
 
 class Setting(NamedTuple):
@@ -151,7 +149,8 @@ class Setting(NamedTuple):
 
 def Script_setting(text: str) -> Setting:
     """
-    `key=value` as a setting, the value in its constant's type (a tuple comma-separated), for an option's `type`.
+    `key=value` as a setting, the value in its constant's type, for an option's `type`: a tuple comma-separated,
+    a dict as `name:value` pairs comma-separated (those given, each typed as the constant's own).
 
     Raises:
         argparse.ArgumentTypeError: For no such setting, one not settable yet, or a value of the wrong kind
@@ -166,9 +165,18 @@ def Script_setting(text: str) -> Setting:
     if key in _LOAD_TIME:
         raise argparse.ArgumentTypeError(f"{key} cannot be set for a run yet: the code reads it when it loads")
     default = SETTABLE[key]
+    parts = [part.strip() for part in raw.split(",") if part.strip()]
     if isinstance(default, tuple):
         kind = type(default[0]) if default else str
-        return Setting(key, tuple(_scalar(key, kind, part.strip()) for part in raw.split(",") if part.strip()))
+        return Setting(key, tuple(_scalar(key, kind, part) for part in parts))
+    if isinstance(default, dict):
+        given = {}
+        for part in parts:
+            name, colon, value = (p.strip() for p in part.partition(":"))
+            if not colon or name not in default:
+                raise argparse.ArgumentTypeError(f"{key} takes name:value pairs of {', '.join(default)}, not {part!r}")
+            given[name] = _scalar(f"{key}'s {name}", type(default[name]), value)
+        return Setting(key, given)
     return Setting(key, _scalar(key, type(default), raw))
 
 
@@ -424,6 +432,8 @@ def Script_argv(parser: argparse.ArgumentParser, args: argparse.Namespace) -> li
 def _text(value) -> str:
     if isinstance(value, Setting):
         return f"{value.key}={_text(value.value)}"
+    if isinstance(value, dict):
+        return ",".join(f"{k}:{v}" for k, v in value.items())
     if isinstance(value, range):
         return f"{value.start}-{value.stop - 1}"
     if isinstance(value, (list, tuple)):

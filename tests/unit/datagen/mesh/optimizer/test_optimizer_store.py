@@ -9,6 +9,7 @@ Step 2: Ensure opening refuses what it cannot trust
     - test_reopening_keeps_the_rows
     - test_read_only_refuses_a_missing_file
     - test_read_only_refuses_an_unmigrated_file
+    - test_an_older_store_gains_the_smoothing_its_runs_used
     - test_a_newer_schema_is_refused
     - test_a_read_only_store_cannot_write
 Step 3: Ensure writes take exactly the tables' columns and keep the links whole
@@ -41,6 +42,7 @@ No mesher or c2d needed: stores live in `tmp_path`, settings come from a stand-i
 """
 
 import hashlib
+import json
 import logging
 import re
 import shutil
@@ -53,6 +55,7 @@ import uuid
 import numpy as np
 import pytest
 
+from src.datagen.constants import SMOOTHING_DEFAULTS
 from src.datagen.geometry.common.schemas import SampleReport
 from src.datagen.meshing.common.schemas import MeshGeoDeviationSummary, MeshQualitySummary, MetricDistribution
 from src.datagen.meshing.optimizer.common.settings import Optim_build_settings
@@ -164,6 +167,16 @@ def test_read_only_refuses_an_unmigrated_file(tmp_path):
 
     with pytest.raises(RuntimeError, match="schema version 0"):
         RunStore.open(tmp_path / "old.sqlite", read_only=True)
+
+
+def test_an_older_store_gains_the_smoothing_its_runs_used(tmp_path, settings, monkeypatch):
+    with monkeypatch.context() as first:
+        first.setattr(store_module, "_MIGRATIONS", store_module._MIGRATIONS[:1])  # the first released schema
+        with RunStore.open(tmp_path / "m.sqlite") as s:
+            s.ensure_settings({k: v for k, v in settings.items() if k != "smoothing_json"})
+
+    with RunStore.open(tmp_path / "m.sqlite") as s:  # migrated on opening
+        assert json.loads(s.settings(settings["settings_id"])["smoothing_json"]) == SMOOTHING_DEFAULTS
 
 
 def test_a_newer_schema_is_refused(tmp_path):

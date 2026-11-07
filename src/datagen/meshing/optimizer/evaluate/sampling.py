@@ -19,7 +19,7 @@ from typing import Optional
 
 from pydantic import BaseModel
 
-from src.datagen.constants import CELL_CEILING, TE_GAP
+from src.datagen.constants import CELL_CEILING, DX_MAX, TE_GAP, THETA_MAX_DEG
 from src.datagen.geometry.common.schemas import SampleReport, ShapeRecord, TETreatment
 from src.datagen.geometry.sample.contour import Contour, Geom_build_contour
 from src.datagen.geometry.sample.fields import SamplingFields
@@ -46,8 +46,16 @@ class SampledInput(BaseModel):
     report: SampleReport
 
 
+def Optim_contour_for(shape: ShapeRecord, settings: dict) -> Optional[Contour]:
+    """`Optim_build_study_contour` under a settings row: its pairing, TE gap and sampler limits."""
+    return Optim_build_study_contour(shape, MeshBackend(settings["backend"]), MeshTopology(settings["topology"]),
+                                     gap=settings["te_gap"], dx_max=settings["dx_max"],
+                                     theta_max_deg=settings["theta_max_deg"])
+
+
 def Optim_build_study_contour(shape: ShapeRecord, backend: MeshBackend, topology: MeshTopology,
-                              gap: float = TE_GAP) -> Optional[Contour]:
+                              gap: float = TE_GAP, dx_max: float = DX_MAX,
+                              theta_max_deg: float = THETA_MAX_DEG) -> Optional[Contour]:
     """
     The contour a study samples, once.
 
@@ -56,6 +64,8 @@ def Optim_build_study_contour(shape: ShapeRecord, backend: MeshBackend, topology
         backend (MeshBackend): The study's mesher
         topology (MeshTopology): Its topology
         gap (float): The study's TE gap [c]
+        dx_max (float): The sampler's longest panel [c]
+        theta_max_deg (float): The sampler's largest turn at a point
 
     Returns:
         Contour: The shape with the pairing's TE, or None if the pairing is not sampled
@@ -67,13 +77,13 @@ def Optim_build_study_contour(shape: ShapeRecord, backend: MeshBackend, topology
     if (backend, topology) not in TE_FOR_PAIRING:
         raise ValueError(f"no TE is known for backend={backend}/topology={topology}")
     te = TE_FOR_PAIRING[(backend, topology)]
-    return None if te is None else Geom_build_contour(shape, te, gap)
+    return None if te is None else Geom_build_contour(shape, te, gap, dx_max, theta_max_deg)
 
 
 def Optim_sample_for_mesher(config: MeshingConfig, contour: Contour, *, airfoil_name: str, chord: float,
                             freestream: Freestream, backend: MeshBackend, topology: MeshTopology,
                             working_dir: str, count_limits: Optional[QualityLimits] = None,
-                            write_vtk: bool = True) -> SampledInput:
+                            write_vtk: bool = True, cell_ceiling: int = CELL_CEILING) -> SampledInput:
     """
     Samples a study's contour with one config's knobs and builds the mesher's input from the points.
 
@@ -89,6 +99,7 @@ def Optim_sample_for_mesher(config: MeshingConfig, contour: Contour, *, airfoil_
         count_limits (QualityLimits | None): Limits the quality summary counts bad cells against;
             None counts against constants.py
         write_vtk (bool): Whether the mesher also writes the diagnostic .vtk
+        cell_ceiling (int): Most surface points x jmax; a c2d config asking for more is rejected
 
     Returns:
         SampledInput: The MeshIn (None if a pre-check rejected the config) and the sample's report
@@ -106,7 +117,7 @@ def Optim_sample_for_mesher(config: MeshingConfig, contour: Contour, *, airfoil_
     if not isinstance(config, SamplingFields):
         raise TypeError(f"{type(config).__name__} carries no sampling knobs")
 
-    max_points = CELL_CEILING // config.jmax if isinstance(config, C2D_MeshingConfig) else None
+    max_points = cell_ceiling // config.jmax if isinstance(config, C2D_MeshingConfig) else None
     sample = Geom_sample(contour, config, max_points=max_points)
     if not sample.accepted:
         return SampledInput(report=sample.report)
@@ -142,7 +153,7 @@ def Optim_sample_for_study(settings: dict, config: MeshingConfig, contour: Conto
     return Optim_sample_for_mesher(config, contour, airfoil_name=Optim_safe_name(airfoil_name), chord=CHORD,
                                    freestream=freestream, backend=MeshBackend(s["backend"]),
                                    topology=MeshTopology(s["topology"]), working_dir=working_dir,
-                                   count_limits=limits, write_vtk=write_vtk)
+                                   count_limits=limits, write_vtk=write_vtk, cell_ceiling=s["cell_ceiling"])
 
 
 def Optim_safe_name(name: str) -> str:

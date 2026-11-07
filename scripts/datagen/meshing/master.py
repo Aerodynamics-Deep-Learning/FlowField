@@ -113,7 +113,8 @@ def _settings(value, where: str, problems: list) -> dict:
         return {}
     out = {}
     for key, raw in value.items():
-        text = ",".join(str(v) for v in raw) if isinstance(raw, (list, tuple)) else str(raw)
+        text = (",".join(f"{k}:{v}" for k, v in raw.items()) if isinstance(raw, dict) else
+                ",".join(str(v) for v in raw) if isinstance(raw, (list, tuple)) else str(raw))
         try:
             setting = engine.Script_setting(f"{key}={text}")
         except argparse.ArgumentTypeError as e:

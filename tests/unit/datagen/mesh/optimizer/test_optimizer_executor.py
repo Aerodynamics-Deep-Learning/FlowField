@@ -15,6 +15,7 @@ Step 2: Ensure the verdict reads the settings row's gates, in a fixed order
     - test_gates_fail_in_order
     - test_the_failure_values_name_the_executors_gates_with_their_numbers
     - test_gates_and_limits_come_from_the_settings_row
+    - test_the_pinned_fields_and_point_cap_come_from_the_settings_row
     - test_the_mesher_gets_the_study_input
 Step 3: Ensure the executor's own mechanics: cache, cleanup, rows the store takes, context
     - test_a_finished_config_is_cached_for_the_ladder
@@ -324,6 +325,20 @@ def test_gates_and_limits_come_from_the_settings_row(tmp_path, monkeypatch, cont
     assert mesher.calls[0].count_limits == QualityLimits(skew_max=0.15, ortho_min=strict["gate_ortho_min"],
                                                          jac_min=strict["gate_jac_min"],
                                                          size_ratio_max=strict["gate_size_ratio_max"])
+
+
+def test_the_pinned_fields_and_point_cap_come_from_the_settings_row(tmp_path, monkeypatch, contour, work):
+    exe = tmp_path / "c2d.exe"
+    exe.write_bytes(b"c2d")
+    monkeypatch.setattr("src.datagen.meshing.optimizer.common.settings.find_tool", lambda key: str(exe))
+    mesher = _Mesher()
+    row = _run(_executor(Optim_build_settings(y_plus=1.0, farfield_radius=30.0), work, [], mesher, monkeypatch),
+               contour).row
+
+    assert (json.loads(row["config_json"])["ypls"], mesher.calls[0].mesh_config.radi) == (1.0, 30.0)
+    short = Optim_build_settings(cell_ceiling=row["s_n_points"] * GOLDEN["jmax"] - 1)  # one point short
+    capped = _run(_executor(short, work, [], _Mesher(), monkeypatch), contour).row
+    assert (capped["status"], capped["s_rejection"]) == ("rejected", "points")
 
 
 def test_the_mesher_gets_the_study_input(settings, contour, work, monkeypatch):

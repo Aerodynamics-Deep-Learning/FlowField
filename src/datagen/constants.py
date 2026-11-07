@@ -26,11 +26,9 @@ CST_NOSE = "lem"
 CST_FIT_TOL = 1e-3
 
 # Longest panel allowed anywhere, so the bound on the mid-chord spacing.
-# A change needs a new SAMPLER_VERSION (geometry/common/constants.py)
 DX_MAX = 0.006
 
-# Largest turn a sampled point may make; sets how fine the spacing on a round TE's caps must be. A change needs
-# a new SAMPLER_VERSION
+# Largest turn a sampled point may make; sets how fine the spacing on a round TE's caps must be
 THETA_MAX_DEG = 15.0
 
 #endregion

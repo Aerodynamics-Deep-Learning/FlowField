@@ -78,7 +78,8 @@ def test_samples_match_their_version():
     current = {}
     for name, cst in _SHAPES.items():
         for te in TETreatment:
-            smp = Geom_sample(Geom_build_contour(as_record(name, cst), te, 0.004), _FIELDS)
+            contour = Geom_build_contour(as_record(name, cst), te, 0.004, dx_max=0.006, theta_max_deg=15.0)
+            smp = Geom_sample(contour, _FIELDS)  # the limits fixed too: a run's own are recorded with its settings
             assert smp.accepted, smp.report.rejection
             current[(name, te.value)] = (len(smp.points), smp.le_idx, float(np.abs(smp.points).sum()))
     pins = f"Pin these in _PINNED:\n{_as_pins(current)}"

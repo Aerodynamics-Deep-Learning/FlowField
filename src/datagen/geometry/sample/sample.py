@@ -33,8 +33,11 @@ def Geom_sample(contour: Contour, fields: SamplingFields, max_points: Optional[i
         Sample: The points, le_idx and report; no points if a pre-check rejected the config
 
     Raises:
+        ValueError: If the knobs ask for a mid-chord spacing over the contour's dx_max
         SamplerAssertionError: If the placed points break a rule the construction guarantees
     """
+    if fields.dx_mid > contour.dx_max:
+        raise ValueError(f"dx_mid {fields.dx_mid:g} is over the sampler's dx_max {contour.dx_max:g}")
     spacing = Geom_target_spacing(contour, fields)
     precheck, precheck_x = Geom_turn_precheck(contour, spacing)
     panels = Geom_stretch_panels(contour, spacing)

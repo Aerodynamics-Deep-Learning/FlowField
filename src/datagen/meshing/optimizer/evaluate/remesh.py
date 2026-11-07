@@ -25,10 +25,9 @@ from src.datagen.geometry.common.schemas import ShapeRecord
 from src.datagen.geometry.manifest.store import GeometryStore
 from src.datagen.meshing.c2d.schemas import C2D_MeshingConfig
 from src.datagen.meshing.common.entry import Common_GenerateMesh
-from src.datagen.meshing.common.schemas import MeshBackend, MeshTopology
 from src.datagen.meshing.optimizer.common.settings import Optim_config_schema_fp, Optim_mesher_sha256
 from src.datagen.meshing.optimizer.evaluate.sampling import (
-    Optim_build_study_contour, Optim_safe_name, Optim_sample_for_study,
+    Optim_contour_for, Optim_safe_name, Optim_sample_for_study,
 )
 from src.datagen.meshing.optimizer.manifest.store import Optim_git_state, Optim_su2_sha256, RunStore
 
@@ -85,8 +84,7 @@ def Optim_remesh(store: RunStore, run_id: str, out_dir, *, with_vtk: bool = Fals
     shape = _load_shape(run["geometry_id"], settings["shape_version"], geometry_db)
     if shape is None:
         raise RemeshRefused(f"run {run_id}: {name} has no stored shape under {settings['shape_version']}")
-    contour = Optim_build_study_contour(shape, MeshBackend(settings["backend"]), MeshTopology(settings["topology"]),
-                                        gap=settings["te_gap"])
+    contour = Optim_contour_for(shape, settings)
     if contour is None:
         raise RemeshRefused(f"run {run_id}: {settings['backend']}/{settings['topology']} is not sampled")
     config = C2D_MeshingConfig(**json.loads(run["config_json"]))

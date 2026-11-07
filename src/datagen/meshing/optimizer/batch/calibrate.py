@@ -4,7 +4,7 @@ the report they are chosen from. Like the CST calibration, it is run by hand and
 constant. Run from the command line by `scripts/datagen/meshing/calibrate.py`.
 
     Rung 1  every airfoil: n* on its full grid and at the narrowest cluster_width, then jmax*, the smallest
-            jmax whose mesh passes the size ratio (a bisection over [JMAX_MIN, JMAX_MAX]); recommends the
+            jmax whose mesh passes the size ratio (a bisection over jmax's search range); recommends the
             golden jmax, whether n*'s cluster_width grid can shrink to one value, and estimates a campaign's
             wall time from the times it measured
     Rung 2  the airfoils rung 1 found over a shape gate at jmax* (the calibration set without rung 1): real
@@ -34,11 +34,11 @@ from typing import NamedTuple, Optional, Sequence
 
 from src.datagen.constants import (
     CAL_GAINS, CAL_GOLDEN_MARGIN, CAL_MAX_LOSS, CAL_ORDINARY_COUNT, CAL_RUNG2_CAP, CAL_RUNG3_CAP, CAL_SET, CAL_WINDOWS,
-    CAL_WITHIN, CLUSTER_WIDTH_MIN, DX_MAX, GOLDEN_JMAX, JMAX_MAX, JMAX_MIN, SLOT_MEMORY_CAP_MB, SMOOTHING_DEFAULTS,
-    WATCHDOG_S, WORKERS,
+    CAL_WITHIN, DX_MAX, GOLDEN_JMAX, SLOT_MEMORY_CAP_MB, WATCHDOG_S, WORKERS,
 )
 from src.datagen.meshing.optimizer.batch.runner import Optim_load_shapes, Optim_run_airfoils
 from src.datagen.meshing.optimizer.common.settings import Optim_build_settings
+from src.datagen.meshing.optimizer.common.space import Knob, Optim_knobs_of
 from src.datagen.meshing.optimizer.evaluate.context import RunContext
 from src.datagen.meshing.optimizer.manifest.store import Optim_git_state, RunStore
 from src.datagen.meshing.optimizer.search.events import LadderOutcome, Optim_failure_values, Optim_ladder_line
@@ -89,9 +89,10 @@ class _Bisect(Ladder):
         floor = Optim_n_star_search(self.contour, {**s, "nstar_json": json.dumps(grid)})
         self.notes.update(n_star_floor=floor.n, n_star_floor_s=floor.seconds)
         self.route.append("bisect")
-        knobs = {**self.nstar.knobs, **SMOOTHING_DEFAULTS}
+        knobs = {**self.nstar.knobs, **json.loads(s["smoothing_json"])}
         meshed: dict[int, dict] = {}
-        lo, hi = JMAX_MIN - 1, JMAX_MAX  # lo fails and hi passes, assumed until meshed
+        jmax = _knob(s, "jmax")
+        lo, hi = jmax.lo - 1, jmax.hi  # lo fails and hi passes, assumed until meshed
         while hi - lo > 1:
             mid = (lo + hi) // 2
             passes = self._size_ratio_passes(knobs, mid, meshed)
@@ -102,7 +103,8 @@ class _Bisect(Ladder):
             passes = self._size_ratio_passes(knobs, hi, meshed)
             if not passes:
                 if passes is False:  # above the range
-                    self.notes.update(jmax_star=None, top_failed=Optim_failure_values(meshed[hi], s))
+                    self.notes.update(jmax_star=None, top_failed=f"no jmax* in [{jmax.lo}, {hi}]: at jmax {hi}, "
+                                                                 f"{Optim_failure_values(meshed[hi], s)}")
                 return
         self.notes.update(jmax_star=hi, jmax_star_passes=bool(meshed[hi]["passed"]))
 
@@ -120,9 +122,12 @@ def _bisect_edge(outcome: LadderOutcome) -> Optional[str]:
     notes = outcome.notes or {}
     if notes.get("bisect_failed"):
         return f"bisection stopped at {notes['bisect_failed']}"
-    if notes.get("top_failed"):
-        return f"no jmax* in [{JMAX_MIN}, {JMAX_MAX}]: at jmax {JMAX_MAX}, {notes['top_failed']}"
-    return _why(outcome)
+    return notes.get("top_failed") or _why(outcome)
+
+
+def _knob(settings: dict, name: str) -> Knob:
+    """A knob's bounds as a settings row recorded them."""
+    return next(k for k in Optim_knobs_of(settings) if k.name == name)
 
 
 class _Descend(Ladder):
@@ -249,8 +254,10 @@ def Optim_calibrate(store: RunStore, rungs: Sequence[int] = (1, 2, 3), names: Op
     run = partial(_run_stage, store=store, work_root=Path(work_root), workers=workers, first=min(rungs),
                   watchdog_s=watchdog_s, cap_mb=cap_mb)
     if 1 in rungs:
-        done[1] = run(1, partial(Optim_run_ladder, ladder_type=_Bisect), load(names), Optim_build_settings(**overrides),
-                      f"n* and jmax* by bisection over [{JMAX_MIN}, {JMAX_MAX}]", edge=_bisect_edge)
+        settings = Optim_build_settings(**overrides)
+        jmax = _knob(settings, "jmax")
+        done[1] = run(1, partial(Optim_run_ladder, ladder_type=_Bisect), load(names), settings,
+                      f"n* and jmax* by bisection over [{jmax.lo}, {jmax.hi}]", edge=_bisect_edge)
     bisections = Optim_bisections(store, done[1]) if 1 in done else []
     recommended = Optim_golden_from(bisections, method) if 1 in done else None
     if golden_jmax is not None:
@@ -331,7 +338,7 @@ class Bisection(NamedTuple):
     n_star: Optional[int]
     n_star_floor: Optional[int]       # at the narrowest cluster_width
     cluster_width: Optional[float]    # where n* landed
-    jmax_star: Optional[int]          # None: above JMAX_MAX, or not found (failed)
+    jmax_star: Optional[int]          # None: above jmax's range, or not found (failed)
     passes_all: Optional[bool]        # every gate passes at jmax*
     failed: Optional[str]             # why there is no jmax*, if not above the range
     mesh_s: dict[int, float]          # each bisection mesh's wall time, by its jmax
@@ -573,8 +580,9 @@ def Optim_rung3_cap(rows: list[Descent], method: Method = Method()) -> Optional[
 def Optim_format_report(store: RunStore, cal: Calibration) -> str:
     """The calibration report: a header, then each rung that was calibrated."""
     commit, dirty = Optim_git_state()
+    dx_max = next(iter(cal.stages.values())).settings["dx_max"] if cal.stages else DX_MAX
     out = ["Mesh-study calibration",
-           f"{datetime.date.today().isoformat()}, code {commit[:12]}{' (dirty)' if dirty else ''}, DX_MAX {DX_MAX:g}"]
+           f"{datetime.date.today().isoformat()}, code {commit[:12]}{' (dirty)' if dirty else ''}, dx_max {dx_max:g}"]
     if cal.stages.keys() & {2, 3}:
         overridden = cal.golden_source == "given" and cal.recommended is not None
         out.append(f"Golden jmax for rungs 2 and 3: {cal.golden_jmax} ({cal.golden_source}"
@@ -596,14 +604,16 @@ def Optim_format_report(store: RunStore, cal: Calibration) -> str:
 
 
 def _format_rung1(rows: list[Bisection], cal: Calibration) -> list[str]:
+    jmax_range = _knob(cal.stages[1].settings, "jmax")
     out = [f"Rung 1: n*, jmax* and the golden jmax (jmax*: the smallest jmax whose mesh passes the size ratio, "
-           f"bisected over [{JMAX_MIN}, {JMAX_MAX}])",
+           f"bisected over [{jmax_range.lo}, {jmax_range.hi}])",
            f"  {'airfoil':22s} {'n*':>5} {'n*@cw0':>6} {'cw':>6} {'jmax*':>6} {'all':>4} {'meshes':>6} "
            f"{'n* s':>6} {'s':>6}  note"]
     for b in rows:
-        jmax = "-" if b.jmax_star is None else (f"<={b.jmax_star}" if b.jmax_star == JMAX_MIN else str(b.jmax_star))
+        jmax = "-" if b.jmax_star is None else (f"<={b.jmax_star}" if b.jmax_star == jmax_range.lo
+                                                 else str(b.jmax_star))
         if b.jmax_star is None and b.failed is None:
-            jmax = f">{JMAX_MAX}"
+            jmax = f">{jmax_range.hi}"
         out.append(f"  {b.name:22s} {_i(b.n_star):>5} {_i(b.n_star_floor):>6} {_f(b.cluster_width, '.3f'):>6} "
                    f"{jmax:>6} {_yes(b.passes_all):>4} {len(b.mesh_s):>6} {_f(b.n_star_s, '.1f'):>6} "
                    f"{_f(b.seconds, '.0f'):>6}  {b.failed or ''}")
@@ -618,10 +628,11 @@ def _rung1_findings(rows: list[Bisection], stage: Stage, golden_jmax: int, metho
     out = []
     found = [b.jmax_star for b in rows if b.jmax_star is not None]
     above = sum(b.jmax_star is None and b.failed is None for b in rows)
+    jmax_max, cw_min = _knob(stage.settings, "jmax").hi, _knob(stage.settings, "cluster_width").lo
     if found:
         golden = Optim_golden_from(rows, method)
         out.append(f"jmax*: min {min(found)}, median {statistics.median(found):g}, max {max(found)} "
-                   f"({len(found)} found, {above} above {JMAX_MAX}, {sum(b.failed is not None for b in rows)} failed)")
+                   f"({len(found)} found, {above} above {jmax_max}, {sum(b.failed is not None for b in rows)} failed)")
         bumps = sorted(j - golden for j in found if j > golden)
         out.append(f"Golden jmax = median rounded up + {method.golden_margin} = {golden}: {len(found) - len(bumps)}/"
                    f"{len(found)} pass the size ratio there"
@@ -639,9 +650,9 @@ def _rung1_findings(rows: list[Bisection], stage: Stage, golden_jmax: int, metho
                    f"({name}); {sum(s > gate for s, _ in skews)}/{len(skews)} over the study's skew gate {gate:g}")
     with_n = [b for b in rows if b.n_star is not None]
     if with_n:
-        narrowest = sum(b.cluster_width == CLUSTER_WIDTH_MIN for b in with_n)
+        narrowest = sum(b.cluster_width == cw_min for b in with_n)
         same = sum(b.n_star_floor == b.n_star for b in with_n)
-        out.append(f"cluster_width: n* landed on the narrowest ({CLUSTER_WIDTH_MIN:g}) for "
+        out.append(f"cluster_width: n* landed on the narrowest ({cw_min:g}) for "
                    f"{narrowest}/{len(with_n)}; n* at the narrowest alone equals the full grid's for "
                    f"{same}/{len(with_n)}" + (": NSTAR_CW_GRID 1 loses nothing" if same == len(with_n) else ""))
         out.append(f"n* time: full grid median {statistics.median(b.n_star_s for b in with_n):.1f} s, "

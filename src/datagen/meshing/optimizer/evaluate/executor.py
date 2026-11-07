@@ -30,7 +30,6 @@ from src.datagen.geometry.sample.contour import Contour
 from src.datagen.meshing.c2d.schemas import C2D_MeshingConfig
 from src.datagen.meshing.common.entry import Common_GenerateMesh
 from src.datagen.meshing.common.schemas import MeshExitFlag
-from src.datagen.meshing.optimizer.common.constants import PINNED
 from src.datagen.meshing.optimizer.evaluate.context import RunContext, StudySetupError
 from src.datagen.meshing.optimizer.evaluate.sampling import Optim_safe_name, Optim_sample_for_study
 from src.datagen.meshing.optimizer.manifest.store import Optim_su2_sha256, Optim_utc_now
@@ -103,7 +102,7 @@ class RunExecutor:
             geometry_id (str): The airfoil's id in the geometry manifest
             airfoil_name (str): Its name; the mesher's files take a filesystem-safe copy
             contour (Contour): The study's contour, from `sampling.Optim_build_study_contour`
-            knobs (dict): The config's searched fields; `PINNED` fills the rest
+            knobs (dict): The config's searched fields; the settings' pinned ones fill the rest
             rung (str): 'golden', 'jmax_bump', 'smoothing', 'mads', 'bisect' or 'manual'
             seq (int): The run's place in its rung
             parent_run_id (str | None): The run this one follows from
@@ -122,7 +121,7 @@ class RunExecutor:
                    host=ctx.host, git_commit=ctx.git_commit, git_dirty=ctx.git_dirty)
         t0 = time.perf_counter()
         try:
-            config = C2D_MeshingConfig(**PINNED, **knobs)
+            config = C2D_MeshingConfig(**json.loads(self.ctx.settings["pinned_json"]), **knobs)
         except ValidationError as e:
             # Knob columns stay NULL: STRICT tables would refuse the very values pydantic did
             asked = json.dumps(knobs, sort_keys=True, default=str)

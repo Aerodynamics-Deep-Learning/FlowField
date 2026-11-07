@@ -10,6 +10,7 @@ Step 2: Ensure the rejections, and that a clamped TE spacing is not one
     - test_turn_rejection
     - test_points_rejection
     - test_clamped_te_is_accepted
+    - test_the_contours_limits_hold_its_samples
 Step 3: Ensure the guarantees hold across the search space
     - test_random_configs_keep_the_rules
 """
@@ -21,7 +22,7 @@ from src.datagen.constants import THETA_MAX_DEG
 from src.datagen.geometry.build.parametrization import Geom_cst_eval
 from src.datagen.geometry.common.constants import SAMPLER_VERSION, SHAPE_VERSION
 from src.datagen.geometry.common.schemas import Rejection, TETreatment
-from src.datagen.geometry.sample.checks import DEV_MAX
+from src.datagen.geometry.sample.checks import DEV_MAX, Geom_dev_max
 from src.datagen.geometry.sample.contour import Geom_build_contour, PinKind
 from src.datagen.geometry.sample.fields import SamplingFields
 from src.datagen.geometry.sample.place import Geom_stations, Geom_stretch_panels, Geom_target_spacing
@@ -112,6 +113,24 @@ def test_clamped_te_is_accepted(name):
 
     assert smp.accepted and smp.report.te_clamped
     assert smp.report.max_turn_deg <= THETA_MAX_DEG
+
+
+def test_the_contours_limits_hold_its_samples():
+    strict = Geom_build_contour(stored_shape("naca4412"), TETreatment.ROUND, G, dx_max=0.004, theta_max_deg=10.0)
+    loose = _contour("naca4412")
+    fields = SamplingFields(dx_mid=0.004, le_ratio=0.02)
+
+    assert (strict.dx_max, strict.theta_max_deg) == (0.004, 10.0) and strict.te_cap_limit < loose.te_cap_limit
+    smp = Geom_sample(strict, fields)  # the turn limit tighter: the caps' spacing and the checks follow it
+    assert smp.accepted and smp.report.max_turn_deg <= 10.0 and smp.report.max_dev <= Geom_dev_max(0.004, 10.0)
+    clamped = SamplingFields(dx_mid=0.004, le_ratio=0.02, te_ratio=1.0)  # the caps' spacing at each one's limit
+    assert Geom_sample(strict, clamped).report.n_required > Geom_sample(loose, clamped).report.n_required
+    turning, coarse_nose = Geom_build_contour(stored_shape("naca4412"), TETreatment.ROUND, G, theta_max_deg=10.0), \
+        SamplingFields(le_ratio=0.5)
+    assert Geom_sample(loose, coarse_nose).accepted  # 15 deg lets the nose's spacing pass; 10 deg does not
+    assert Geom_sample(turning, coarse_nose).report.rejection is Rejection.TURN
+    with pytest.raises(ValueError, match="dx_mid 0.006 is over the sampler's dx_max 0.004"):
+        Geom_sample(strict, FIELDS)  # the knob's top is the contour's, not the constant's
 # endregion
 
 

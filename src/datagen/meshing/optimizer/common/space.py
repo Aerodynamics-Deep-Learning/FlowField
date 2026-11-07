@@ -1,10 +1,9 @@
-from src.datagen.constants import (
-    CLUSTER_WIDTH_MAX, CLUSTER_WIDTH_MIN, DX_MAX, DX_MID_MIN, JMAX_MAX, JMAX_MIN, RATIO_MIN,
-)
 """
 The mesh study's search space: the config fields NOMAD moves, their bounds and scales, and the rungs that
 move them. NOMAD sees log10 of a log knob, so a ratio spanning 500x is searched evenly across it.
 
+    Optim_space               the knob table from its bounds (src/datagen/constants.py's, unless a run sets them)
+    Optim_knobs_of            the table a settings row recorded
     Optim_knobs_for           the knobs a rung searches
     Optim_to_x, Optim_from_x  a knob dict to NOMAD's point and back (undoing the log, rounding integers,
                               clamping)
@@ -15,8 +14,11 @@ move them. NOMAD sees log10 of a log knob, so a ratio spanning 500x is searched 
 
 import json
 import math
-from typing import Literal, NamedTuple, Sequence
+from typing import Literal, NamedTuple, Optional, Sequence
 
+from src.datagen.constants import (
+    CLUSTER_WIDTH_MAX, CLUSTER_WIDTH_MIN, DX_MAX, DX_MID_MIN, JMAX_MAX, JMAX_MIN, RATIO_MIN,
+)
 
 
 class Knob(NamedTuple):
@@ -29,27 +31,50 @@ class Knob(NamedTuple):
     rungs: tuple[int, ...]
 
 
-# The sampling knobs and jmax move only in rung 3; the smoothing knobs, bounded as C2D_MeshingConfig bounds
-# them, in rungs 2 and 3. epse is pinned at 0, so absent
-KNOBS = (
-    Knob("dx_mid", "R", DX_MID_MIN, DX_MAX, "lin", (3,)),
-    Knob("le_ratio", "R", RATIO_MIN, 1.0, "log", (3,)),
-    Knob("te_ratio", "R", RATIO_MIN, 1.0, "log", (3,)),  # above a round TE's cap limit it is clamped: a plateau
-    Knob("cluster_width", "R", CLUSTER_WIDTH_MIN, CLUSTER_WIDTH_MAX, "lin", (3,)),
-    Knob("jmax", "I", JMAX_MIN, JMAX_MAX, "lin", (3,)),
-    Knob("asmt", "I", 5, 80, "lin", (2, 3)),
-    Knob("epsi", "R", 2.0, 40.0, "log", (2, 3)),
-    Knob("funi", "R", 0.005, 0.3, "log", (2, 3)),
-    Knob("alfa", "R", 0.5, 2.0, "lin", (2, 3)),
-)
+def Optim_space(dx_mid_min: float = DX_MID_MIN, dx_max: float = DX_MAX, ratio_min: float = RATIO_MIN,
+                cluster_width_min: float = CLUSTER_WIDTH_MIN, cluster_width_max: float = CLUSTER_WIDTH_MAX,
+                jmax_min: int = JMAX_MIN, jmax_max: int = JMAX_MAX) -> tuple[Knob, ...]:
+    """
+    The knob table. The sampling knobs and jmax move only in rung 3; the smoothing knobs, bounded as
+    C2D_MeshingConfig bounds them, in rungs 2 and 3. epse is pinned at 0, so absent.
+
+    Raises:
+        ValueError: If a range is empty
+    """
+    knobs = (
+        Knob("dx_mid", "R", dx_mid_min, dx_max, "lin", (3,)),
+        Knob("le_ratio", "R", ratio_min, 1.0, "log", (3,)),
+        Knob("te_ratio", "R", ratio_min, 1.0, "log", (3,)),  # above a round TE's cap limit it is clamped: a plateau
+        Knob("cluster_width", "R", cluster_width_min, cluster_width_max, "lin", (3,)),
+        Knob("jmax", "I", jmax_min, jmax_max, "lin", (3,)),
+        Knob("asmt", "I", 5, 80, "lin", (2, 3)),
+        Knob("epsi", "R", 2.0, 40.0, "log", (2, 3)),
+        Knob("funi", "R", 0.005, 0.3, "log", (2, 3)),
+        Knob("alfa", "R", 0.5, 2.0, "lin", (2, 3)),
+    )
+    empty = [k.name for k in knobs if not k.lo < k.hi]
+    if empty:
+        raise ValueError(f"empty search range for {', '.join(empty)}")
+    return knobs
 
 
-def Optim_knobs_for(rung: int) -> tuple[Knob, ...]:
+# The constants' table
+KNOBS = Optim_space()
+
+
+def Optim_knobs_of(settings: dict) -> tuple[Knob, ...]:
+    """The knob table a settings row recorded (`search_space_json`), in table order."""
+    rows = {row["name"]: row for row in json.loads(settings["search_space_json"])}
+    return tuple(Knob(**{**rows[k.name], "rungs": tuple(rows[k.name]["rungs"])}) for k in KNOBS)
+
+
+def Optim_knobs_for(rung: int, settings: Optional[dict] = None) -> tuple[Knob, ...]:
     """
     The knobs a NOMAD rung searches, in table order.
 
     Args:
         rung (int): 2 (smoothing only) or 3 (every knob)
+        settings (dict | None): The settings row whose table to take; the constants' if None
 
     Returns:
         tuple[Knob, ...]: Its knobs
@@ -59,7 +84,7 @@ def Optim_knobs_for(rung: int) -> tuple[Knob, ...]:
     """
     if rung not in (2, 3):
         raise ValueError(f"rung {rung} is not a NOMAD search; only 2 and 3 are")
-    return tuple(k for k in KNOBS if rung in k.rungs)
+    return tuple(k for k in (KNOBS if settings is None else Optim_knobs_of(settings)) if rung in k.rungs)
 
 
 def Optim_to_x(values: dict, knobs: Sequence[Knob]) -> list[float]:
@@ -108,6 +133,6 @@ def Optim_input_types(knobs: Sequence[Knob]) -> str:
     return f"BB_INPUT_TYPE ( {' '.join(k.type for k in knobs)} )"
 
 
-def Optim_space_json() -> str:
+def Optim_space_json(knobs: Sequence[Knob] = KNOBS) -> str:
     """The whole knob table as sorted JSON, recorded in the settings row."""
-    return json.dumps([k._asdict() for k in KNOBS], sort_keys=True)
+    return json.dumps([k._asdict() for k in knobs], sort_keys=True)

@@ -7,7 +7,8 @@ last rung is spent. The campaign runs one ladder at a time per worker.
 
 How it ended comes back as a `LadderOutcome`, and its events are written with `Optim_record`, both in `events`.
 
-The golden run meshes n*'s knobs at golden_jmax with c2d's smoothing defaults, and its verdict routes it:
+The golden run meshes n*'s knobs at golden_jmax with the settings' smoothing defaults (c2d's own unless a run
+sets them), and its verdict routes it:
     passed                      done
     size_ratio, alone or with   rung 1 (jmax_bump): jmax up a step at a time, each bump routed the same
     shape gates                 way (shape gates left alone, rung 2); still size_ratio after the last,
@@ -27,19 +28,18 @@ An error ends the ladder as aborted, its traceback recorded, and is handed to th
 not raised: the caller decides whether it stops anything else. Ctrl-C is recorded too, then raised.
 """
 
+import json
 import time
 import traceback
 import uuid
 from typing import Callable, Optional
 
-from src.datagen.constants import SMOOTHING_DEFAULTS
 from src.datagen.geometry.common.schemas import ShapeRecord
 from src.datagen.meshing.c2d.schemas import C2D_MeshingConfig
-from src.datagen.meshing.common.schemas import MeshBackend, MeshTopology
 from src.datagen.meshing.optimizer.common.space import Optim_knobs_for
 from src.datagen.meshing.optimizer.evaluate.context import RunContext
 from src.datagen.meshing.optimizer.evaluate.executor import Optim_nomad_outputs, RunExecutor
-from src.datagen.meshing.optimizer.evaluate.sampling import Optim_build_study_contour
+from src.datagen.meshing.optimizer.evaluate.sampling import Optim_contour_for
 from src.datagen.meshing.optimizer.manifest.store import Optim_utc_now
 from src.datagen.meshing.optimizer.search.events import LadderOutcome
 from src.datagen.meshing.optimizer.search.mads import Optim_run_mads, RungResult
@@ -129,8 +129,9 @@ class Ladder:
                 step = "mads"  # still size_ratio: smoothing alone moves it only ~1%
         if step == "smoothing":
             self.route.append(step)
-            fixed = {k: v for k, v in knobs.items() if k not in SMOOTHING_DEFAULTS}
-            result = self._search(2, fixed, [SMOOTHING_DEFAULTS], parent=row, budget=s["rung2_budget"],
+            smoothing = json.loads(s["smoothing_json"])
+            fixed = {k: v for k, v in knobs.items() if k not in smoothing}
+            result = self._search(2, fixed, [smoothing], parent=row, budget=s["rung2_budget"],
                                   objective="violation", stop_at_first_pass=True)
             step = "done" if result.best_row is not None else "mads"
         if step == "mads":
@@ -139,8 +140,7 @@ class Ladder:
     def _n_star(self) -> bool:
         """The study contour and n*; False when n* accepted nothing, which fails the ladder."""
         s = self.settings
-        self.contour = Optim_build_study_contour(self.shape, MeshBackend(s["backend"]), MeshTopology(s["topology"]),
-                                                 gap=s["te_gap"])
+        self.contour = Optim_contour_for(self.shape, s)
         self.nstar = Optim_n_star_search(self.contour, s)
         if self.nstar.n is None:
             self.route.append("nstar")  # no surface sampling to mesh
@@ -148,8 +148,8 @@ class Ladder:
         return True
 
     def _golden(self) -> dict:
-        """The golden run: n*'s knobs at golden_jmax with the smoothing defaults. Returns its knobs."""
-        knobs = {**self.nstar.knobs, "jmax": self.settings["golden_jmax"], **SMOOTHING_DEFAULTS}
+        """The golden run: n*'s knobs at golden_jmax with the settings' smoothing defaults. Returns its knobs."""
+        knobs = {**self.nstar.knobs, "jmax": self.settings["golden_jmax"], **json.loads(self.settings["smoothing_json"])}
         self.route.append("golden")
         self.golden = self._run(knobs, "golden", 0)
         return knobs
@@ -160,7 +160,7 @@ class Ladder:
         self.route.append("mads")
         x0s = [golden_knobs]
         if Optim_nomad_outputs(self.golden, "nodes", s) is None:
-            x0s.append(_config_defaults())
+            x0s.append(_config_defaults(s))
         return self._search(3, {}, x0s, parent=parent, budget=s["rung3_budget"], objective="nodes", dominance=True,
                             best_so_far=self.best, plateau=plateau)
 
@@ -204,8 +204,8 @@ class Ladder:
     def _search(self, rung: int, fixed: dict, x0s: list[dict], parent: dict, budget: int, **kw) -> RungResult:
         """A NOMAD rung; its runs follow the golden or bump run whose verdict sent the ladder there."""
         name = self.route[-1]
-        result = Optim_run_mads(self.executor, self._shared(name, parent), fixed, Optim_knobs_for(rung), x0s,
-                                budget=budget, **kw)
+        result = Optim_run_mads(self.executor, self._shared(name, parent), fixed, Optim_knobs_for(rung, self.settings),
+                                x0s, budget=budget, **kw)
         self.nomad[name] = dict(run_flag=result.run_flag, stop_reason=result.stop_reason, ended=result.ended,
                                 seed=self.settings["nomad_seed"], budget=budget, n_calls=result.n_calls,
                                 mesher_runs=result.mesher_runs, x0s=x0s, start=result.start)
@@ -235,7 +235,10 @@ def _route(row: dict) -> str:
     return "mads"
 
 
-def _config_defaults() -> dict:
-    """C2D_MeshingConfig's own defaults for rung 3's knobs: the second start when NOMAD can't take the golden run."""
+def _config_defaults(settings: dict) -> dict:
+    """
+    C2D_MeshingConfig's own defaults for rung 3's knobs, inside the settings' bounds: the second start when NOMAD
+    can't take the golden run.
+    """
     defaults = C2D_MeshingConfig()
-    return {k.name: getattr(defaults, k.name) for k in Optim_knobs_for(3)}
+    return {k.name: min(max(getattr(defaults, k.name), k.lo), k.hi) for k in Optim_knobs_for(3, settings)}

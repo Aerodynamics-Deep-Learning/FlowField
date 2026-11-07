@@ -157,7 +157,7 @@ def test_sampled_configs_share_the_sampling_fields():
         assert {k: repr(config.model_fields[k]) for k in sampling} == {k: repr(v) for k, v in sampling.items()}
     assert not set(sampling) & set(GMSH_CMeshingConfig.model_fields)
     with pytest.raises(ValidationError, match="dx_mid"):
-        _mesh_in(MeshBackend.C2D, MeshTopology.OGRD, mesh_config={"dx_mid": 1.0})  # bounds kept: above DX_MAX
+        _mesh_in(MeshBackend.C2D, MeshTopology.OGRD, mesh_config={"dx_mid": -1.0})  # bounds kept: dx_max is the sampler's
 
 
 def test_sampling_fields_stay_out_of_c2d_options(tmp_path):

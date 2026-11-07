@@ -81,7 +81,7 @@ def test_settings_reach_the_stages_that_read_them(tmp_path):
 
 
 def test_a_settings_mistake_refuses_the_run(tmp_path):
-    config = _config(tmp_path, "settings:\n  nope: 1\n  dx_max: 0.004\n"
+    config = _config(tmp_path, "settings:\n  nope: 1\n  cst_order: 10\n"
                                "machine_check:\n  enabled: false\n"
                                "campaign:\n  enabled: true\n  settings:\n    cal_set: [naca0012]\n"
                                "    gate_skew_max: 0.22\n"
@@ -90,7 +90,7 @@ def test_a_settings_mistake_refuses_the_run(tmp_path):
     with pytest.raises(PlanError) as refused:
         Script_load_config(config)
     assert [(stage, text.split(":")[0]) for stage, text in refused.value.problems] == [
-        ("settings", "no setting 'nope'"), ("settings", "dx_max cannot be set for a run yet"),
+        ("settings", "no setting 'nope'"), ("settings", "cst_order cannot be set for a run yet"),
         ("campaign", "does not read cal_set"), ("remesh", "settings are `name"),
         ("remesh", "gate_skew_max is left to constants.py here but 0.22 in campaign; the re-mesh finds the campaign's "
                    "meshes by their settings, so both must set it alike")]

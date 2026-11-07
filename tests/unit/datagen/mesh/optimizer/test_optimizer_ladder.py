@@ -213,6 +213,13 @@ def test_the_golden_run_is_n_star_at_the_golden_jmax(climb, settings):
     assert call["contour"].gap == settings["te_gap"]
     assert {k: call[k] for k in ("ladder_id", "geometry_id", "airfoil_name")} == \
         {"ladder_id": c.outcome.ladder_id, "geometry_id": "naca0012", "airfoil_name": "naca0012"}
+    # a run's smoothing defaults, sampler limits and bounds: the golden run, its contour and the searches take them
+    own = Optim_build_settings(smoothing_defaults={"alfa": 0.7}, theta_max_deg=12.0, jmax_max=180)
+    c = climb(lambda k: {"q_skew_max": 0.5}, s=own)
+    assert c.calls[0]["knobs"]["alfa"] == 0.7 and c.calls[0]["contour"].theta_max_deg == 12.0
+    (_, _, fixed, knobs, x0s), _ = c.searches[0]  # rung 2 starts from those smoothing defaults
+    assert x0s == [{**SMOOTHING_DEFAULTS, "alfa": 0.7}] and "alfa" not in fixed
+    assert next(k for k in c.searches[1][0][3] if k.name == "jmax").hi == 180  # rung 3's jmax range
 
 
 def test_size_ratio_alone_bumps_jmax_to_a_pass(climb):
@@ -399,7 +406,7 @@ def test_an_error_aborts_the_ladder_and_is_handed_up(climb, monkeypatch, how):
     error = {"contour": ContourError("no room for the round TE"), "setup": StudySetupError("EXECUTABLE_NOT_FOUND"),
              "bug_in_rung_3": RuntimeError("the writer's queue is gone")}[how]
     if how == "contour":
-        monkeypatch.setattr(ladder, "Optim_build_study_contour", _raises(error))
+        monkeypatch.setattr(ladder, "Optim_contour_for", _raises(error))
         world = lambda k: {}
     elif how == "setup":
         world = lambda k: {"status": "crashed", "setup": error}
@@ -451,7 +458,7 @@ def test_ctrl_c_is_recorded_then_raised(climb, settings, tmp_path, monkeypatch):
 @pytest.mark.parametrize("how", ["passed", "contour", "setup"])
 def test_the_outcome_and_events_cross_a_process_boundary(climb, monkeypatch, how):
     if how == "contour":
-        monkeypatch.setattr(ladder, "Optim_build_study_contour", _raises(ContourError("no room for the round TE")))
+        monkeypatch.setattr(ladder, "Optim_contour_for", _raises(ContourError("no room for the round TE")))
     if how == "setup":
         world = lambda k: {"status": "crashed", "setup": StudySetupError("EXECUTABLE_NOT_FOUND")}
     else:

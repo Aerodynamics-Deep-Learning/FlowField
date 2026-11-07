@@ -52,9 +52,9 @@ MIN_DAT_POINTS = 5
 
 #region Sequence 3: the TE a mesher needs, and sampling for it
 
-# Names the contour -> spacing -> checks behind a sample, the constants below and DX_MAX and THETA_MAX_DEG
-# included; bump the revision on any change to it (tests/unit/datagen/geometry/test_geom_sampler_version.py
-# fails until you do)
+# Names the contour -> spacing -> checks behind a sample, the constants below included (dx_max and theta_max_deg
+# are each run's, recorded with its settings); bump the revision on any change to it
+# (tests/unit/datagen/geometry/test_geom_sampler_version.py fails until you do)
 SAMPLER_VERSION = "samp-r2"
 
 # The turn pre-check passes below this share of its limit, so rounding cannot trip the post-check

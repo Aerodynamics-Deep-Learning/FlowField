@@ -1,4 +1,3 @@
-from src.datagen.constants import DX_MAX
 """
 The sampling knobs a mesh config carries (c2d, gmsh O-mesh), defined once here and inherited flat by the
 configs. Imports only pydantic and the constants, so a config pays nothing else for them.
@@ -6,6 +5,7 @@ configs. Imports only pydantic and the constants, so a config pays nothing else 
 
 from pydantic import BaseModel, Field
 
+from src.datagen.constants import DX_MAX
 
 
 class SamplingFields(BaseModel):
@@ -15,8 +15,8 @@ class SamplingFields(BaseModel):
     """
     model_config = {"extra": "forbid"}
 
-    dx_mid: float = Field(DX_MAX, gt=0.0, le=DX_MAX, description="Panel length away from the LE and TE clustering; "
-                          "no panel is longer, so it is bounded by DX_MAX")
+    dx_mid: float = Field(DX_MAX, gt=0.0, description="Panel length away from the LE and TE clustering; no panel is "
+                          "longer, so `Geom_sample` refuses one over the contour's dx_max")
     le_ratio: float = Field(0.025, gt=0.0, le=1.0, description="Panel length at the LE, as a share of dx_mid")
     te_ratio: float = Field(0.05, gt=0.0, le=1.0, description="Panel length at the TE, as a share of dx_mid; held "
                             "under a round TE's cap limit")

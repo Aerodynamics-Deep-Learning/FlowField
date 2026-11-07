@@ -25,7 +25,7 @@ from typing import NamedTuple, Optional
 
 import numpy as np
 
-from src.datagen.constants import THETA_MAX_DEG
+from src.datagen.constants import DX_MAX, THETA_MAX_DEG
 from src.datagen.geometry.build.parametrization import Geom_cst_eval, Geom_cst_slope
 from src.datagen.geometry.common.constants import ARC_TABLE_POINTS, WELD_OFFSET
 from src.datagen.geometry.common.portable import Geom_sin
@@ -99,11 +99,13 @@ class Contour:
     pins: tuple[Pin, ...]                           # in order, first and last included
     weld_x: Optional[float]                         # round only
     caps: Optional[tuple[np.ndarray, np.ndarray]]   # round only: (3, 2) control points, upper then lower
-    te_cap_limit: Optional[float]                   # round only: the longest panel on the caps that turns <= THETA_MAX_DEG
+    te_cap_limit: Optional[float]                   # round only: the longest panel on the caps that turns <= theta_max_deg
     table_s: np.ndarray                             # arc length of the curvature table's points
     table_kappa: np.ndarray                         # |curvature| there, each piece on its own (none across a weld)
     _pieces: tuple                                  # (piece, its parameters, arc length within it) per piece
     _starts: np.ndarray                             # arc length where each piece starts
+    dx_max: float = DX_MAX                          # the sampler's limits on this contour: the longest panel
+    theta_max_deg: float = THETA_MAX_DEG            # and the largest turn at a point
 
     def evaluate(self, s: np.ndarray) -> np.ndarray:
         """
@@ -129,7 +131,8 @@ class Contour:
         return out
 
 
-def Geom_build_contour(shape: ShapeRecord, te: TETreatment, gap: Optional[float] = None) -> Contour:
+def Geom_build_contour(shape: ShapeRecord, te: TETreatment, gap: Optional[float] = None, dx_max: float = DX_MAX,
+                       theta_max_deg: float = THETA_MAX_DEG) -> Contour:
     """
     Gives a stored shape the TE its mesher needs, as one tabulated curve.
 
@@ -137,6 +140,8 @@ def Geom_build_contour(shape: ShapeRecord, te: TETreatment, gap: Optional[float]
         shape (ShapeRecord): The stored shape
         te (TETreatment): The TE the mesher needs
         gap (float): The study's TE gap [c], for a blunt or round TE; ignored for a sharp one
+        dx_max (float): The longest panel a sample of it may have [c]
+        theta_max_deg (float): The largest turn a sampled point may make
 
     Returns:
         Contour: The curve, its pins, and for a round TE its caps and their spacing limit
@@ -161,7 +166,7 @@ def Geom_build_contour(shape: ShapeRecord, te: TETreatment, gap: Optional[float]
         kinds = [PinKind.TIP, PinKind.WELD_UPPER, PinKind.LE, PinKind.WELD_LOWER, PinKind.TIP]
         xys = [(1.0, 0.0), tuple(cap_u.p0), (0.0, 0.0), tuple(cap_l.p0), (1.0, 0.0)]
         caps = tuple(np.array([c.p0, c.p1, c.p2]) for c in (cap_u, cap_l))
-        te_cap_limit = 2 * Geom_sin(math.radians(THETA_MAX_DEG) / 2) / max(cap_u.peak_curvature(),
+        te_cap_limit = 2 * Geom_sin(math.radians(theta_max_deg) / 2) / max(cap_u.peak_curvature(),
                                                                         cap_l.peak_curvature())
     elif te is TETreatment.SHARP:
         spec = [(upper, 1.0, 0.0), (lower, 0.0, 1.0)]
@@ -193,7 +198,7 @@ def Geom_build_contour(shape: ShapeRecord, te: TETreatment, gap: Optional[float]
                    closed=te is not TETreatment.BLUNT, length=offset, pins=pins, weld_x=weld_x, caps=caps,
                    te_cap_limit=te_cap_limit, table_s=_frozen(np.concatenate(table_s)),
                    table_kappa=_frozen(np.concatenate(table_kappa)), _pieces=tuple(pieces),
-                   _starts=_frozen(np.array(starts)))
+                   _starts=_frozen(np.array(starts)), dx_max=dx_max, theta_max_deg=theta_max_deg)
 
 
 def _caps(cst: CSTParams, gap: float, weld_x: float) -> tuple[_Cap, _Cap]:

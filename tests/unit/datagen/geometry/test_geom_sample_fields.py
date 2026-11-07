@@ -21,7 +21,7 @@ def test_defaults():
     assert (f.dx_mid, f.le_ratio, f.te_ratio, f.cluster_width) == (DX_MAX, 0.025, 0.05, 0.05)
 
 
-@pytest.mark.parametrize("field, value", [("dx_mid", 0.0), ("dx_mid", DX_MAX * 1.001), ("le_ratio", 0.0),
+@pytest.mark.parametrize("field, value", [("dx_mid", 0.0), ("le_ratio", 0.0),  # dx_mid's top is the sampler's dx_max
                                           ("le_ratio", 1.01), ("te_ratio", -0.1), ("te_ratio", 1.5),
                                           ("cluster_width", 0.0), ("cluster_width", 0.6), ("n_surface", 400)])
 def test_out_of_bounds_refused(field, value):

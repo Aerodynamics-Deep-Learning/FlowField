@@ -217,10 +217,10 @@ version) or lists other airfoils than the shared manifest, and says how to fix i
 
 Every value that can change is in `src/datagen/constants.py`. A run sets one without editing it: a config's
 `settings:`, or a script's `--set name=value` (repeatable; `--help` lists what each script reads). The value is
-typed as its constant (a tuple comma-separated), and refused before anything runs when it names nothing in the
-file, a stage that does not read it, or two values for one name. A few are read when the code loads (the CST
-order, nose and tolerance, `dx_max`, `theta_max_deg`, the search space's bounds, y+, the farfield radius, the
-smoothing defaults) and cannot be set for a run yet. The PLAN names every value a run set and where it came from:
+typed as its constant (a tuple comma-separated, the smoothing defaults as `alfa:0.7` pairs over the rest), and
+refused before anything runs when it names nothing in the file, a stage that does not read it, or two values for
+one name. The CST order, nose and tolerance cannot be set for a run yet: they name the shapes a manifest stores.
+The PLAN names every value a run set and where it came from:
 
 ```
 [campaign]  [info]  settings: gate_skew_max 0.22 (the settings block; constants.py 0.25)

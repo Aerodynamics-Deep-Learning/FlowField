@@ -149,6 +149,11 @@ _MIGRATIONS = [
     WHERE l.started_at = (SELECT MAX(started_at) FROM ladders l2
                           WHERE l2.geometry_id = l.geometry_id AND l2.settings_id = l.settings_id);
     """,
+    # The golden run's smoothing, settable for a run; the rows before it ran with c2d's own defaults
+    """
+    ALTER TABLE settings ADD COLUMN smoothing_json TEXT NOT NULL
+        DEFAULT '{"alfa": 1.0, "asmt": 40, "epsi": 20.0, "funi": 0.02}';
+    """,
 ]
 
 # The runs table's columns, in its order

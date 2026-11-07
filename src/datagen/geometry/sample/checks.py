@@ -2,11 +2,11 @@
 Sequence 3, step 6: measures of a placed sample, held to the rules its construction guarantees. A broken
 rule is a sampler bug, never a bad config, so it raises.
 
-    panel      no panel longer than dx_mid (so than DX_MAX): each stretch's count was rounded up
-    turn       no point turns more than THETA_MAX_DEG: the pre-check held curvature x spacing under it.
-               A sharp TE's closure point is a corner by design, and skipped
-    deviation  the curve strays from its panels by at most DEV_MAX, the sagitta of a chord of DX_MAX that
-               turns THETA_MAX_DEG on a circle: the two rules above bound every panel by it
+    panel      no panel longer than dx_mid (so than the contour's dx_max): each stretch's count was rounded up
+    turn       no point turns more than the contour's theta_max_deg: the pre-check held curvature x spacing
+               under it. A sharp TE's closure point is a corner by design, and skipped
+    deviation  the curve strays from its panels by at most `Geom_dev_max`, the sagitta of a chord of dx_max that
+               turns theta_max_deg on a circle: the two rules above bound every panel by it
 
 The measures use `common/portable.py`'s arithmetic, so a run's recorded sample figures match on every machine.
 """
@@ -20,7 +20,13 @@ from src.datagen.geometry.common.portable import Geom_atan2, Geom_tan
 from src.datagen.geometry.common.schemas import TETreatment
 from src.datagen.geometry.sample.contour import Contour
 
-DEV_MAX = (DX_MAX / 2) * Geom_tan(math.radians(THETA_MAX_DEG) / 4)
+
+def Geom_dev_max(dx_max: float, theta_max_deg: float) -> float:
+    """The most a sample's curve may stray from its panels: the sagitta of a chord dx_max turning theta_max_deg."""
+    return (dx_max / 2) * Geom_tan(math.radians(theta_max_deg) / 4)
+
+
+DEV_MAX = Geom_dev_max(DX_MAX, THETA_MAX_DEG)  # the constants'
 
 _ALONG = np.arange(1, 6) / 6  # where along each panel the curve is compared with it
 
@@ -67,13 +73,13 @@ def Geom_sample_checks(contour: Contour, s: np.ndarray, points: np.ndarray, dx_m
                     x_at_max_dev=float(points[k_dev:k_dev + 2, 0].mean()),
                     max_panel_ratio=float(np.maximum(panel[1:] / panel[:-1], panel[:-1] / panel[1:]).max()))
 
-    broken = []
+    broken, theta, dev_max = [], contour.theta_max_deg, Geom_dev_max(contour.dx_max, contour.theta_max_deg)
     if measures["max_panel"] > dx_mid * (1 + 1e-6):
         broken.append(f"panel {measures['max_panel']:.3e} > dx_mid {dx_mid:.3e}")
-    if measures["max_turn_deg"] > THETA_MAX_DEG:
-        broken.append(f"turn {measures['max_turn_deg']:.2f} deg > {THETA_MAX_DEG} deg at x {measures['x_at_max_turn']:.5f}")
-    if measures["max_dev"] > DEV_MAX:
-        broken.append(f"deviation {measures['max_dev']:.3e} > DEV_MAX {DEV_MAX:.3e} at x {measures['x_at_max_dev']:.5f}")
+    if measures["max_turn_deg"] > theta:
+        broken.append(f"turn {measures['max_turn_deg']:.2f} deg > {theta} deg at x {measures['x_at_max_turn']:.5f}")
+    if measures["max_dev"] > dev_max:
+        broken.append(f"deviation {measures['max_dev']:.3e} > {dev_max:.3e} at x {measures['x_at_max_dev']:.5f}")
     if broken:
         raise SamplerAssertionError(f"{contour.geometry_id} ({contour.te.value}): " + "; ".join(broken))
     return measures

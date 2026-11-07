@@ -88,7 +88,7 @@ def test_settings_reach_the_campaign(campaign, tmp_path, capsys):
 @pytest.mark.parametrize("args, says", [
     (["--golden-jmax", "150"], "unrecognized arguments"),
     (["--set", "cal_set=a,b"], "campaign does not read cal_set"),
-    (["--set", "dx_max=0.004"], "dx_max cannot be set for a run yet"),
+    (["--set", "cst_order=10"], "cst_order cannot be set for a run yet"),
     (["--set", "nope=1"], "no setting 'nope'"),
     (["--set", "rung2_budget=5.5"], "rung2_budget takes an int, not '5.5'"),
     (["--set", "gate_skew_max"], "a setting is key=value"),
