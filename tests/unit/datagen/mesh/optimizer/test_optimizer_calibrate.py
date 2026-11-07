@@ -50,7 +50,7 @@ from tests.geometry_shapes import stored_shape
 NSTAR = NStarResult(n=400, knobs=dict(dx_mid=DX_MAX, le_ratio=0.62, te_ratio=1.0, cluster_width=0.026), evals=1200,
                     seconds=2.0)
 FLOOR = NStarResult(n=400, knobs=NSTAR.knobs, evals=40, seconds=0.1)
-_CLEAN = dict(entry_flag="SUCCESS", q_neg_cells=0, q_skew_max=0.25, q_ortho_min=0.91, q_jac_min=0.91, q_ar_max=9e3,
+_CLEAN = dict(entry_flag="SUCCESS", q_neg_cells=0, q_skew_max=0.2, q_ortho_min=0.91, q_jac_min=0.91, q_ar_max=9e3,
               q_size_ratio_max=1.2, g_max_mesh_to_input=1e-8, g_max_input_to_mesh=2e-8)
 
 

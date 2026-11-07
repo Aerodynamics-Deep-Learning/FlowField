@@ -104,10 +104,10 @@ def test_ties_go_to_the_finest_nose_then_the_narrowest_cluster(settings, monkeyp
 def test_the_grid_comes_from_the_settings(settings, monkeypatch):
     sampler = _Sampler(lambda f: (None, 400))
     monkeypatch.setattr("src.datagen.meshing.optimizer.search.nstar.Geom_sample", sampler)
-    settings = Optim_build_settings(golden_jmax=150)
+    settings = _sized(Optim_build_settings(golden_jmax=150), 40, 30)  # a full grid, to see its shape
     result = Optim_n_star_search(None, settings)
 
-    assert json.loads(settings["nstar_json"]) == {"le_grid": 40, "cw_grid": 30}
+    assert json.loads(Optim_build_settings()["nstar_json"]) == {"le_grid": 40, "cw_grid": 1}  # the narrowest alone
     assert result.evals == len(sampler.calls) == 1200
     les = sorted({f.le_ratio for f, _ in sampler.calls})
     cws = sorted({f.cluster_width for f, _ in sampler.calls})
@@ -131,7 +131,7 @@ def test_n_stars_knobs_are_a_start_nomad_can_take(settings, monkeypatch, corner)
         return (None, 400) if at else (Rejection.TURN, 300)
 
     monkeypatch.setattr("src.datagen.meshing.optimizer.search.nstar.Geom_sample", _Sampler(verdict))
-    result = Optim_n_star_search(None, settings)
+    result = Optim_n_star_search(None, _sized(settings, 40, 30))  # a full grid, so both corners exist
     rung3 = Optim_knobs_for(3)
     lb, ub = Optim_nomad_bounds(rung3)
     x = Optim_to_x({**result.knobs, "jmax": 147, "asmt": 40, "epsi": 20.0, "funi": 0.02, "alfa": 1.0}, rung3)

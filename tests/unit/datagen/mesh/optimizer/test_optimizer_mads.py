@@ -55,7 +55,7 @@ GOLDEN = {"dx_mid": DX_MAX, "le_ratio": 0.025, "te_ratio": 1.0, "cluster_width":
 BASE = {k: v for k, v in GOLDEN.items() if k not in SMOOTHING_DEFAULTS}  # rung 2's fixed knobs
 SHARED = dict(ladder_id="l1", geometry_id="g1", airfoil_name="naca0012", contour=None, rung="smoothing",
               parent_run_id="p1")
-_CLEAN = dict(entry_flag="SUCCESS", q_neg_cells=0, q_skew_max=0.25, q_ortho_min=0.91, q_jac_min=0.91, q_ar_max=9e3,
+_CLEAN = dict(entry_flag="SUCCESS", q_neg_cells=0, q_skew_max=0.2, q_ortho_min=0.91, q_jac_min=0.91, q_ar_max=9e3,
               q_size_ratio_max=1.2, g_max_mesh_to_input=1e-8, g_max_input_to_mesh=2e-8)
 
 
@@ -140,7 +140,7 @@ def settings(tmp_path, monkeypatch):
     exe = tmp_path / "c2d.exe"
     exe.write_bytes(b"not really c2d")
     monkeypatch.setattr("src.datagen.meshing.optimizer.common.settings.find_tool", lambda key: str(exe))
-    return Optim_build_settings()
+    return Optim_build_settings(gate_skew_max=0.4)  # the worlds' skews are written against a 0.4 gate
 
 
 def _smoothing(executor, x0s=(SMOOTHING_DEFAULTS,), budget=5, **kw):

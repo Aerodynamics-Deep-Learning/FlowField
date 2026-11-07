@@ -30,10 +30,10 @@ CELL_CEILING = 300_000
 
 #region Gates, on the worst cell
 
-# The study's shape gates, stricter than the entry flag's for now, hence provisionary thresholds specified
-GATE_SKEW_MAX = 0.4
-GATE_ORTHO_MIN = 0.75
-GATE_JAC_MIN = 0.75
+# The study's shape gates, what a campaign's mesh must reach; far stricter than the entry flag's (0.85, 0.10, 0.10)
+GATE_SKEW_MAX = 0.22
+GATE_ORTHO_MIN = 0.9
+GATE_JAC_MIN = 0.9
 
 # The entry flag's own
 GATE_AR_MAX = ASPECT_RATIO_LIMIT
@@ -51,8 +51,9 @@ GOLDEN_JMAX = 147
 JMAX_BUMP_STEP = 1
 JMAX_BUMP_MAX = 10
 
-# Finished meshes per NOMAD rung: 2 (smoothing only), 3 (all knobs). Provisional: the calibration sets them
-RUNG2_BUDGET = 30
+# Finished meshes per NOMAD rung: 2 (smoothing only), 3 (all knobs). Rung 2's from the 2026-11-07 calibration
+# (41 meshes to s1223's first pass at skew 0.22); rung 3's provisional
+RUNG2_BUDGET = 50
 RUNG3_BUDGET = 100
 
 # Rung 3 ends once its last RUNG3_PATIENCE c2d runs cut the best's nodes by less than this share of them.
@@ -66,7 +67,7 @@ MAX_BB_EVAL_FACTOR = 10
 NOMAD_SEED = 1
 
 # Bump by hand on any change to the ladder's flow logic
-LADDER_VERSION = "ladder-r2"
+LADDER_VERSION = "ladder-r3"
 
 #endregion
 
@@ -90,9 +91,10 @@ JMAX_MAX = 200
 
 #region n*, the sampler-only search for the fewest surface points
 
-# le_ratio log-spaced over [RATIO_MIN, 1] x cluster_width over its range; no finer search past the grid
+# le_ratio log-spaced over [RATIO_MIN, 1] x cluster_width over its range; no finer search past the grid.
+# cluster_width's grid is its narrowest alone: n* landed there on all 158 airfoils (2026-11-07 calibration)
 NSTAR_LE_GRID = 40
-NSTAR_CW_GRID = 30
+NSTAR_CW_GRID = 1
 
 #endregion
 

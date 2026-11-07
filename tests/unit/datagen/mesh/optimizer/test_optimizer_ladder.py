@@ -8,6 +8,7 @@ Step 1: Ensure the golden run, and each rung its verdict routes the ladder to
     - test_bumps_follow_the_settings_then_go_to_rung_3
     - test_shape_gates_alone_go_to_rung_2
     - test_a_bump_failing_on_shape_goes_to_rung_2_from_that_bump
+    - test_size_ratio_with_shape_gates_bumps_first_then_goes_to_rung_2
     - test_no_smoothing_pass_goes_to_rung_3
     - test_anything_else_goes_to_rung_3
 Step 2: Ensure the ladder row: the route, counts, NOMAD searches and best, and the events
@@ -55,7 +56,7 @@ SAMPLED = ("dx_mid", "le_ratio", "te_ratio", "cluster_width", "jmax")
 # C2D_MeshingConfig's defaults: rung 3's second start
 DEFAULTS = {"dx_mid": DX_MAX, "le_ratio": 0.025, "te_ratio": 0.05, "cluster_width": 0.05, "jmax": 200,
             **SMOOTHING_DEFAULTS}
-_CLEAN = dict(entry_flag="SUCCESS", q_neg_cells=0, q_skew_max=0.25, q_ortho_min=0.91, q_jac_min=0.91, q_ar_max=9e3,
+_CLEAN = dict(entry_flag="SUCCESS", q_neg_cells=0, q_skew_max=0.2, q_ortho_min=0.91, q_jac_min=0.91, q_ar_max=9e3,
               q_size_ratio_max=1.2, g_max_mesh_to_input=1e-8, g_max_input_to_mesh=2e-8)
 
 
@@ -270,6 +271,20 @@ def test_a_bump_failing_on_shape_goes_to_rung_2_from_that_bump(climb):
     assert all(r["jmax"] == 148 and r["parent_run_id"] == bump["run_id"] for r in c.rung("smoothing"))
 
 
+def test_size_ratio_with_shape_gates_bumps_first_then_goes_to_rung_2(climb):
+    def world(k):
+        fault = {"q_skew_max": 0.5} if _at_default_smoothing(k) else {}
+        return {**fault, "q_size_ratio_max": 1.3} if k["jmax"] < 149 else fault
+
+    c = climb(world)
+
+    assert c.runs[0]["failed_gates"] == ["skew", "size_ratio"]
+    assert [r["failed_gates"] for r in c.rung("jmax_bump")] == [["skew", "size_ratio"], ["skew"]]
+    assert c.outcome.route == ["golden", "jmax_bump", "smoothing"] and c.outcome.status == "passed"
+    last = c.rung("jmax_bump")[-1]
+    assert all(r["jmax"] == 149 and r["parent_run_id"] == last["run_id"] for r in c.rung("smoothing"))
+
+
 def test_no_smoothing_pass_goes_to_rung_3(climb):
     c = climb(_only_golden({"q_skew_max": 0.5}))
 
@@ -282,13 +297,13 @@ def test_no_smoothing_pass_goes_to_rung_3(climb):
 
 
 @pytest.mark.parametrize("fault, gates, second_start", [
-    ({"q_skew_max": 0.5, "q_size_ratio_max": 1.3}, ["skew", "size_ratio"], False),
+    ({"q_size_ratio_max": 1.3, "g_max_mesh_to_input": 0.01}, ["size_ratio", "geo_dev"], False),
     ({"g_max_mesh_to_input": 0.01}, ["geo_dev"], False),
     ({"q_ar_max": 2e7}, ["aspect_ratio"], False),
     ({"entry_flag": "CONVERSION_FAIL"}, ["conversion"], True),
     ({"status": "mesher_failed"}, ["mesher_failed"], True),
     ({"status": "crashed"}, ["crashed"], True),
-], ids=["shape_and_size_ratio", "geo_dev", "aspect_ratio", "conversion", "mesher_failed", "crashed"])
+], ids=["size_ratio_and_geo_dev", "geo_dev", "aspect_ratio", "conversion", "mesher_failed", "crashed"])
 def test_anything_else_goes_to_rung_3(climb, fault, gates, second_start):
     c = climb(_only_golden(fault))
     (args, kw), = c.searches

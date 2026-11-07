@@ -79,7 +79,7 @@ def Optim_failure_values(row: dict, settings: dict) -> str:
             column, limit, above, spec = _WORST[gate]
             out.append(f"{gate} {row[column]:{spec}} {'>' if above else '<'} {settings[limit]:g}")
         elif gate == "inverted":
-            out.append(f"inverted: {row['q_neg_cells'] or 0} cells, jac min {row['q_jac_min']:.3f}")
+            out.append(f"inverted: {row['q_neg_cells'] or 0} cells (jac min {row['q_jac_min']:.3f})")
         elif gate == "geo_dev":
             geo = row["g_max_mesh_to_input"]
             out.append("geo_dev unmeasured" if geo is None else

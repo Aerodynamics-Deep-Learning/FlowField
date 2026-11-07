@@ -44,7 +44,7 @@ from tests.geometry_shapes import SHAPE_NAMES, stored_shape
 GOLDEN = {"dx_mid": DX_MAX, "le_ratio": 0.025, "te_ratio": 1.0, "cluster_width": 0.026, "jmax": 147,
           **SMOOTHING_DEFAULTS}
 _SU2 = b"NDIME= 2\r\nNPOIN= 1\r\n0 0 0\r\n"
-_QUALITY = MeshQualitySummary(ncell=68_328, neg=0, max_skew=0.25, min_ortho=0.91, min_jac=0.91, max_ar=9e3,
+_QUALITY = MeshQualitySummary(ncell=68_328, neg=0, max_skew=0.2, min_ortho=0.91, min_jac=0.91, max_ar=9e3,
                               max_size_ratio=1.2, acceptable=True)
 _GEO = MeshGeoDeviationSummary(n_boundary_nodes=468, max_dev_mesh_to_input=1e-8, max_dev_input_to_mesh=2e-8,
                                rms_dev_mesh_to_input=1e-9, rms_dev_input_to_mesh=2e-9, chord=1.0, acceptable=True)

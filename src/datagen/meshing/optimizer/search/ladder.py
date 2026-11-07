@@ -9,9 +9,10 @@ How it ended comes back as a `LadderOutcome`, and its events are written with `O
 
 The golden run meshes n*'s knobs at golden_jmax with c2d's smoothing defaults, and its verdict routes it:
     passed                      done
-    size_ratio alone            rung 1 (jmax_bump): jmax up a step at a time, each bump routed the same
-                                way; still size_ratio after the last, rung 3 (smoothing alone moves the
-                                size ratio only ~1%; rung 3 searches it with jmax)
+    size_ratio, alone or with   rung 1 (jmax_bump): jmax up a step at a time, each bump routed the same
+    shape gates                 way (shape gates left alone, rung 2); still size_ratio after the last,
+                                rung 3 (smoothing alone moves the size ratio only ~1%; rung 3 searches it
+                                with jmax)
     shape gates alone           rung 2 (smoothing): NOMAD over the smoothing knobs to the first pass, the
                                 rest of the routed config fixed; no pass, rung 3
     anything else, or no mesh   rung 3 (mads): NOMAD over every knob for the fewest nodes, with dominance,
@@ -44,7 +45,7 @@ from src.datagen.meshing.optimizer.search.events import LadderOutcome
 from src.datagen.meshing.optimizer.search.mads import Optim_run_mads, RungResult
 from src.datagen.meshing.optimizer.search.nstar import NStarResult, Optim_n_star_search
 
-# The gates smoothing can fix; a run failing only these goes to rung 2
+# The gates smoothing can fix; a run failing only these goes to rung 2, with the size ratio too to rung 1 first
 SHAPE_GATES = frozenset({"inverted", "skew", "ortho", "jac"})
 
 
@@ -227,10 +228,10 @@ def _route(row: dict) -> str:
     failed = row["failed_gates"]
     if not failed:
         return "done"
-    if failed == ["size_ratio"]:
-        return "jmax_bump"
     if SHAPE_GATES.issuperset(failed):
         return "smoothing"
+    if "size_ratio" in failed and SHAPE_GATES.issuperset(set(failed) - {"size_ratio"}):
+        return "jmax_bump"  # jmax fixes the size ratio; the shape gates left, rung 2 has them
     return "mads"
 
 

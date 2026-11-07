@@ -40,8 +40,8 @@ def test_two_airfoils_pass_in_slots_and_a_rerun_skips_them(tmp_path):
         ladders = store._conn.execute("SELECT airfoil_name, status, route, geometry_id, settings_id FROM ladders "
                                       "ORDER BY airfoil_name").fetchall()
         nodes = [store.run(store.best(gid, sid))["num_nodes"] for _, _, _, gid, sid in ladders]
-    assert [(name, status, json.loads(route)) for name, status, route, *_ in ladders] == [
-        ("naca0012", "passed", ["golden"]), ("naca0040", "passed", ["golden"])]
+    assert [(name, status, json.loads(route)[0]) for name, status, route, *_ in ladders] == [
+        ("naca0012", "passed", "golden"), ("naca0040", "passed", "golden")]  # by whatever rungs the gates ask
     assert all(50_000 < n < 75_000 for n in nodes) and "Airfoils: 2 passed" in summary
 
     assert _campaign(db).endswith("Nothing left to run.")  # a resume: both finished under these settings

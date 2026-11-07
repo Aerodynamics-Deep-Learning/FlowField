@@ -54,7 +54,8 @@ CALIBRATION_SET = ("s1223", "s1210", "mid012r", "e376", "goe531", "naca0040", "e
 ORDINARY_COUNT = 5
 ORDINARY_SEED = 1
 
-# Rung 2's skew gate: under most golden runs' worst skew (median 0.243), so rung 2 has work
+# Rung 2's skew gate, apart from GATE_SKEW_MAX so each can be varied alone: under most golden runs' worst skew
+# (median 0.243), so rung 2 has work
 SKEW_GATE = 0.22
 
 # Meshes rung 3 and rung 2 may spend

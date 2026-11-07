@@ -13,6 +13,7 @@ Step 1: Ensure every outcome becomes the right row, and only setup failures rais
 Step 2: Ensure the verdict reads the settings row's gates, in a fixed order
     - test_each_gate_fails_alone
     - test_gates_fail_in_order
+    - test_the_failure_values_name_the_executors_gates_with_their_numbers
     - test_gates_and_limits_come_from_the_settings_row
     - test_the_mesher_gets_the_study_input
 Step 3: Ensure the executor's own mechanics: cache, cleanup, rows the store takes, context
@@ -63,6 +64,7 @@ from src.datagen.meshing.optimizer.evaluate.context import RunContext, StudySetu
 from src.datagen.meshing.optimizer.evaluate.executor import Optim_failed_gates, Optim_nomad_outputs, RunExecutor
 from src.datagen.meshing.optimizer.evaluate.sampling import Optim_build_study_contour
 from src.datagen.meshing.optimizer.manifest.store import RUN_COLUMNS, RunStore
+from src.datagen.meshing.optimizer.search.events import Optim_failure_values
 from tests.geometry_shapes import stored_shape
 
 GOLDEN = {"dx_mid": DX_MAX, "le_ratio": 0.025, "te_ratio": 1.0, "cluster_width": 0.026, "jmax": 147,
@@ -79,7 +81,7 @@ def _dist(**kw):
 
 def _quality(**kw):
     """A summary that clears every study gate, with `kw` on top."""
-    base = dict(ncell=68_328, neg=0, max_skew=0.25, min_ortho=0.91, min_jac=0.91, max_ar=9e3, max_size_ratio=1.2,
+    base = dict(ncell=68_328, neg=0, max_skew=0.2, min_ortho=0.91, min_jac=0.91, max_ar=9e3, max_size_ratio=1.2,
                 acceptable=True, skew_dist=_dist(p50=0.006), ortho_dist=_dist(), jac_dist=_dist(),
                 size_ratio_dist=_dist(x=2.2, y=-16.6, dwall=16.7))
     return MeshQualitySummary(**{**base, **kw})
@@ -168,7 +170,7 @@ def test_a_passing_mesh_is_recorded_whole(settings, contour, work, monkeypatch):
     assert rows == [row] and not result.cached
     assert set(row) <= set(RUN_COLUMNS)
     assert (row["status"], row["passed"], row["failed_gates"], row["entry_flag"]) == ("meshed", 1, [], "SUCCESS")
-    assert (row["num_nodes"], row["num_cells"], row["q_neg_cells"], row["q_skew_max"]) == (68_796, 68_328, 0, 0.25)
+    assert (row["num_nodes"], row["num_cells"], row["q_neg_cells"], row["q_skew_max"]) == (68_796, 68_328, 0, 0.2)
     assert (row["q_skew_p50"], row["q_sr_x"], row["q_sr_dwall"]) == (0.006, 2.2, 16.7)
     assert (row["g_max_input_to_mesh"], row["g_n_boundary_nodes"]) == (2e-8, 468)
     assert row["su2_sha256"] == hashlib.sha256(_SU2.replace(b"\r\n", b"\n")).hexdigest()
@@ -282,22 +284,39 @@ def test_each_gate_fails_alone(settings, contour, work, monkeypatch, gate, meshe
 
 
 def test_gates_fail_in_order(settings):
-    row = dict(entry_flag="CONVERSION_FAIL", q_neg_cells=0, q_jac_min=-0.2, q_skew_max=0.9, q_ortho_min=0.8,
+    row = dict(entry_flag="CONVERSION_FAIL", q_neg_cells=0, q_jac_min=-0.2, q_skew_max=0.9, q_ortho_min=0.95,
                q_ar_max=1e3, q_size_ratio_max=2.0, g_max_mesh_to_input=None)
 
     assert Optim_failed_gates(row, settings) == ["conversion", "inverted", "skew", "jac", "size_ratio", "geo_dev"]
+
+
+def test_the_failure_values_name_the_executors_gates_with_their_numbers(settings):
+    row = dict(_meshed_row(entry_flag="CONVERSION_FAIL", q_neg_cells=3, q_jac_min=-0.2, q_skew_max=0.9,
+                           q_ortho_min=0.5, q_ar_max=2e7, q_size_ratio_max=1.3, g_max_mesh_to_input=3e-3,
+                           g_max_input_to_mesh=4e-3))
+    row["failed_gates"] = Optim_failed_gates(row, settings)  # every gate
+
+    said = Optim_failure_values(row, settings).split(", ")
+    assert [part.split(" ")[0].rstrip(":") for part in said] == row["failed_gates"]  # the executor's, in order
+    assert said[1:4] == ["inverted: 3 cells (jac min -0.200)", f"skew 0.900 > {settings['gate_skew_max']:g}",
+                         f"ortho 0.500 < {settings['gate_ortho_min']:g}"]
+    assert said[-1] == f"geo_dev 4.00e-03 > {settings['gate_geo_dev_max']:g}"
+    assert Optim_failure_values({**row, "g_max_mesh_to_input": None, "failed_gates": '["geo_dev"]'}, settings) == \
+        "geo_dev unmeasured"  # the stored JSON as well as a list
+    assert Optim_failure_values({**row, "status": "mesher_failed"}, settings) == "mesher_failed"
 
 
 def test_gates_and_limits_come_from_the_settings_row(tmp_path, monkeypatch, contour, work):
     exe = tmp_path / "c2d.exe"
     exe.write_bytes(b"c2d")
     monkeypatch.setattr("src.datagen.meshing.optimizer.common.settings.find_tool", lambda key: str(exe))
-    strict = Optim_build_settings(gate_skew_max=0.2)  # the default summary's 0.25 now fails
+    strict = Optim_build_settings(gate_skew_max=0.15)  # the default summary's 0.2 now fails
     mesher = _Mesher()
     row = _run(_executor(strict, work, [], mesher, monkeypatch), contour).row
 
     assert row["failed_gates"] == ["skew"]
-    assert mesher.calls[0].count_limits == QualityLimits(skew_max=0.2, ortho_min=0.75, jac_min=0.75,
+    assert mesher.calls[0].count_limits == QualityLimits(skew_max=0.15, ortho_min=strict["gate_ortho_min"],
+                                                         jac_min=strict["gate_jac_min"],
                                                          size_ratio_max=strict["gate_size_ratio_max"])
 
 
@@ -390,15 +409,16 @@ def _meshed_row(**kw):
 def test_nomad_outputs_for_a_meshed_row(settings):
     out = Optim_nomad_outputs(_meshed_row(), "nodes", settings)
 
+    s = settings
     assert out == pytest.approx([
-        468 * 147,                         # OBJ: (n - 1) * jmax
-        -0.1, 469 * 147 / 300_000 - 1,     # EBs: turn margin, cell ceiling
-        0.2 / 0.4 - 1, 1 - 0.9 / 0.75,     # PBs: skew, ortho
-        1 - 0.6 / 0.75,                    #      jac, violated
-        -2.302585, 0.0,                    #      ln(AR / 1e7), ln(SR / 1.25), on the gate
-        2e-4 / 2.5e-3 - 1,                 #      geometric deviation, the worse direction
+        468 * 147,                                              # OBJ: (n - 1) * jmax
+        -0.1, 469 * 147 / 300_000 - 1,                          # EBs: turn margin, cell ceiling
+        0.2 / s["gate_skew_max"] - 1, 1 - 0.9 / s["gate_ortho_min"],  # PBs: skew, ortho
+        1 - 0.6 / s["gate_jac_min"],                            #      jac, violated
+        -2.302585, 0.0,                                         #      ln(AR / 1e7), ln(SR / 1.25), on the gate
+        2e-4 / 2.5e-3 - 1,                                      #      geometric deviation, the worse direction
     ], abs=1e-6)
-    assert Optim_nomad_outputs(_meshed_row(), "violation", settings)[0] == pytest.approx(1 - 0.6 / 0.75)
+    assert Optim_nomad_outputs(_meshed_row(), "violation", settings)[0] == pytest.approx(1 - 0.6 / s["gate_jac_min"])
 
 
 @pytest.mark.parametrize("knobs, rejection", [
