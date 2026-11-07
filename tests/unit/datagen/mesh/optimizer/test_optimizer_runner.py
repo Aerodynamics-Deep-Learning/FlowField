@@ -45,11 +45,11 @@ from pathlib import Path
 import pytest
 
 import src.datagen.meshing.optimizer.batch.runner as runner
+from src.datagen.constants import WATCHDOG_S
 from src.datagen.geometry.common.paths import Geom_paths
 from src.datagen.meshing.c2d.run import C2D_generate_mesh
 from src.datagen.meshing.optimizer.batch.runner import BatchStopped, Optim_load_shapes, Optim_run_airfoils, SlotLost
 from src.datagen.meshing.optimizer.batch.slots import MemoryState, Optim_slot_platform
-from src.datagen.meshing.optimizer.common.constants import WATCHDOG_S
 from src.datagen.meshing.optimizer.common.settings import Optim_build_settings
 from src.datagen.meshing.optimizer.evaluate.context import RunContext, StudySetupError
 from src.datagen.meshing.optimizer.manifest.store import RunStore

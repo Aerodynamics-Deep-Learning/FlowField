@@ -25,8 +25,9 @@ from typing import NamedTuple, Optional
 
 import numpy as np
 
+from src.datagen.constants import THETA_MAX_DEG
 from src.datagen.geometry.build.parametrization import Geom_cst_eval, Geom_cst_slope
-from src.datagen.geometry.common.constants import ARC_TABLE_POINTS, THETA_MAX_DEG, WELD_OFFSET
+from src.datagen.geometry.common.constants import ARC_TABLE_POINTS, WELD_OFFSET
 from src.datagen.geometry.common.portable import Geom_sin
 from src.datagen.geometry.common.schemas import CSTParams, ShapeRecord, TETreatment
 

@@ -19,7 +19,8 @@ from pydantic import BaseModel
 from scipy.interpolate import CubicSpline
 
 from .add import _fit_and_gate, _prepare
-from src.datagen.geometry.common.constants import CST_FIT_TOL, CST_NOSE, CST_ORDER, CURVE_POINTS
+from src.datagen.constants import CST_FIT_TOL, CST_NOSE, CST_ORDER
+from src.datagen.geometry.common.constants import CURVE_POINTS
 from .parametrization import Geom_cst_contour, Geom_curve_distance
 from src.datagen.geometry.common.paths import Geom_git_version, Geom_source_label
 from src.datagen.geometry.common.schemas import CSTParams, Family, Nose, RejectReason

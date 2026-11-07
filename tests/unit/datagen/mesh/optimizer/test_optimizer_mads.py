@@ -42,8 +42,7 @@ from types import SimpleNamespace
 import PyNomad
 import pytest
 
-from src.datagen.geometry.common.constants import DX_MAX
-from src.datagen.meshing.optimizer.common.constants import SMOOTHING_DEFAULTS
+from src.datagen.constants import DX_MAX, SMOOTHING_DEFAULTS
 from src.datagen.meshing.optimizer.common.settings import Optim_build_settings
 from src.datagen.meshing.optimizer.common.space import Optim_knobs_for
 from src.datagen.meshing.optimizer.evaluate.context import StudySetupError

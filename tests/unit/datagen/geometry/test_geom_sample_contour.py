@@ -22,8 +22,9 @@ import pickle
 import numpy as np
 import pytest
 
+from src.datagen.constants import THETA_MAX_DEG
 from src.datagen.geometry.build.parametrization import Geom_cst_eval, Geom_cst_slope
-from src.datagen.geometry.common.constants import CST_N1, CST_N2, THETA_MAX_DEG
+from src.datagen.geometry.common.constants import CST_N1, CST_N2
 from src.datagen.geometry.common.schemas import CSTParams, TETreatment
 from src.datagen.geometry.sample.contour import ContourError, Geom_build_contour, PinKind
 from tests.geometry_shapes import SHAPE_NAMES as _SHAPES, as_record as _record, stored_shape as _shape

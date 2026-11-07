@@ -35,9 +35,8 @@ from datetime import date
 
 import pytest
 
-from src.datagen.geometry.common.constants import DX_MAX
+from src.datagen.constants import DX_MAX, GOLDEN_JMAX, JMAX_MAX, JMAX_MIN, SMOOTHING_DEFAULTS
 from src.datagen.meshing.optimizer.batch import calibrate as cal
-from src.datagen.meshing.optimizer.common.constants import GOLDEN_JMAX, JMAX_MAX, JMAX_MIN, SMOOTHING_DEFAULTS
 from src.datagen.meshing.optimizer.common.settings import Optim_build_settings
 from src.datagen.meshing.optimizer.evaluate.context import RunContext
 from src.datagen.meshing.optimizer.evaluate.executor import Optim_failed_gates, RunResult
@@ -197,7 +196,7 @@ def test_jmax_star_failing_another_gate_is_noted_not_logged(stubs, tmp_path, mon
 @pytest.mark.parametrize("found, golden", [([139, 142, 150], 147), ([139, 142], 146), ([None, None], None)])
 def test_the_golden_jmax_is_the_median_plus_the_margin(found, golden):
     rows = [_bisection(j, {}) for j in found]
-    assert cal.Optim_golden_from(rows) == golden  # the median rounded up, + GOLDEN_MARGIN
+    assert cal.Optim_golden_from(rows) == golden  # the median rounded up, + CAL_GOLDEN_MARGIN
 
 
 def test_the_campaign_estimate_times_n_star_the_golden_mesh_and_its_bumps():
@@ -290,8 +289,8 @@ def test_a_failed_golden_run_is_no_best_to_beat(stubs, tmp_path, monkeypatch):
 
 
 def test_the_plateau_pick_takes_the_fewest_meshes_within_the_loss(monkeypatch):
-    monkeypatch.setattr(cal, "WINDOWS", (2, 4))
-    monkeypatch.setattr(cal, "GAINS", (0.01,))
+    monkeypatch.setattr(cal, "CAL_WINDOWS", (2, 4))
+    monkeypatch.setattr(cal, "CAL_GAINS", (0.01,))
     stalls = cal.Descent("a", "passed", 400, 1000, True, [1000, 900, 900, 900, 900, 850], [0, 1, 2, 3, 4, 5], None)
     never = cal.Descent("b", "failed", 400, 1000, False, [None, None, None], [0, 1, 2], None)
 
@@ -299,9 +298,9 @@ def test_the_plateau_pick_takes_the_fewest_meshes_within_the_loss(monkeypatch):
     assert [(p.window, p.meshes) for p in table] == [(2, 3 + 2), (4, 5 + 2)]  # no pass: the cap, never a stop
     assert table[0].worst_loss == pytest.approx(900 / 850 - 1) and table[1].worst_loss == 0.0
     assert cal.Optim_pick_plateau(table).window == 4  # 2 stops before the last gain: too much given up
-    monkeypatch.setattr(cal, "MAX_LOSS", 0.1)
+    monkeypatch.setattr(cal, "CAL_MAX_LOSS", 0.1)
     assert cal.Optim_pick_plateau(table).window == 2  # now both qualify: the fewest meshes
-    monkeypatch.setattr(cal, "MAX_LOSS", -1.0)
+    monkeypatch.setattr(cal, "CAL_MAX_LOSS", -1.0)
     assert cal.Optim_pick_plateau(table) is None
 
 
@@ -324,12 +323,12 @@ def test_the_budgets_round_up_to_ten():
 
 # region Step 4
 def test_the_ordinary_airfoils_are_drawn_the_same_way():
-    names = [*cal.CALIBRATION_SET, *(f"foil{i}" for i in range(12))]
+    names = [*cal.CAL_SET, *(f"foil{i}" for i in range(12))]
     drawn = cal.Optim_ordinary_airfoils(names)
 
     assert drawn == cal.Optim_ordinary_airfoils(list(reversed(names))) == sorted(drawn)
-    assert len(drawn) == cal.ORDINARY_COUNT and not set(drawn) & set(cal.CALIBRATION_SET)
-    assert cal.Optim_ordinary_airfoils([*cal.CALIBRATION_SET, "only"]) == ["only"]
+    assert len(drawn) == cal.CAL_ORDINARY_COUNT and not set(drawn) & set(cal.CAL_SET)
+    assert cal.Optim_ordinary_airfoils([*cal.CAL_SET, "only"]) == ["only"]
 
 
 def test_a_calibration_runs_every_rung_and_reports_it(stubs, tmp_path, monkeypatch, caplog):
@@ -340,7 +339,7 @@ def test_a_calibration_runs_every_rung_and_reports_it(stubs, tmp_path, monkeypat
                                      workers=1, work_root=tmp_path / "work")
         text = cal.Optim_format_report(store, result)
 
-        assert (result.golden_jmax, result.golden_source) == (140 + cal.GOLDEN_MARGIN, "rung 1")  # jmax* 140
+        assert (result.golden_jmax, result.golden_source) == (140 + cal.CAL_GOLDEN_MARGIN, "rung 1")  # jmax* 140
         assert result.recommended == result.golden_jmax
         r2, r3 = result.stages[2].settings, result.stages[3].settings
         assert (r2["gate_skew_max"], r2["rung2_budget"], r2["rung3_budget"]) == (cal.SKEW_GATE, 5, 0)

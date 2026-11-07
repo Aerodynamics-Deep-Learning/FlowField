@@ -16,11 +16,11 @@ import json
 import time
 from typing import NamedTuple, Optional
 
+from src.datagen.constants import CLUSTER_WIDTH_MAX, CLUSTER_WIDTH_MIN, RATIO_MIN
 from src.datagen.geometry.common.portable import Geom_exp, Geom_log
 from src.datagen.geometry.sample.contour import Contour
 from src.datagen.geometry.sample.fields import SamplingFields
 from src.datagen.geometry.sample.sample import Geom_sample
-from src.datagen.meshing.optimizer.common.constants import CLUSTER_WIDTH_MAX, CLUSTER_WIDTH_MIN, RATIO_MIN
 
 
 class NStarResult(NamedTuple):

@@ -11,16 +11,14 @@ id. Two runs share a settings_id exactly when none of them differs.
 import hashlib
 import json
 
-from src.datagen.geometry.common.constants import (
-    DX_MAX, PRECHECK_MARGIN, SAMPLER_VERSION, SHAPE_VERSION, THETA_MAX_DEG,
+from src.datagen.constants import (
+    CELL_CEILING, DESIGN_RE, DX_MAX, GATE_AR_MAX, GATE_GEO_DEV_MAX, GATE_JAC_MIN, GATE_ORTHO_MIN,
+    GATE_SIZE_RATIO_MAX, GATE_SKEW_MAX, GOLDEN_JMAX, JMAX_BUMP_MAX, JMAX_BUMP_STEP, NOMAD_SEED, NSTAR_CW_GRID,
+    NSTAR_LE_GRID, RUNG2_BUDGET, RUNG3_BUDGET, RUNG3_MIN_GAIN, RUNG3_PATIENCE, TE_GAP_DEFAULT, THETA_MAX_DEG,
 )
+from src.datagen.geometry.common.constants import PRECHECK_MARGIN, SAMPLER_VERSION, SHAPE_VERSION
 from src.datagen.meshing.c2d.schemas import C2D_MeshingConfig
-from src.datagen.meshing.optimizer.common.constants import (
-    BACKEND, CELL_CEILING, DESIGN_RE, GATE_AR_MAX, GATE_GEO_DEV_MAX, GATE_JAC_MIN, GATE_ORTHO_MIN,
-    GATE_SIZE_RATIO_MAX, GATE_SKEW_MAX, GOLDEN_JMAX, JMAX_BUMP_MAX, JMAX_BUMP_STEP, LADDER_VERSION,
-    MAX_BB_EVAL_FACTOR, NOMAD_SEED, NSTAR_CW_GRID, NSTAR_LE_GRID, PINNED, RUNG2_BUDGET, RUNG3_BUDGET,
-    RUNG3_MIN_GAIN, RUNG3_PATIENCE, TE_GAP_DEFAULT, TOPOLOGY,
-)
+from src.datagen.meshing.optimizer.common.constants import BACKEND, LADDER_VERSION, MAX_BB_EVAL_FACTOR, PINNED, TOPOLOGY
 from src.datagen.meshing.optimizer.common.space import KNOBS, Optim_space_json
 from src.datagen.utils.tools import find_tool
 

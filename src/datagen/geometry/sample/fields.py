@@ -1,3 +1,4 @@
+from src.datagen.constants import DX_MAX
 """
 The sampling knobs a mesh config carries (c2d, gmsh O-mesh), defined once here and inherited flat by the
 configs. Imports only pydantic and the constants, so a config pays nothing else for them.
@@ -5,7 +6,6 @@ configs. Imports only pydantic and the constants, so a config pays nothing else 
 
 from pydantic import BaseModel, Field
 
-from src.datagen.geometry.common.constants import DX_MAX
 
 
 class SamplingFields(BaseModel):

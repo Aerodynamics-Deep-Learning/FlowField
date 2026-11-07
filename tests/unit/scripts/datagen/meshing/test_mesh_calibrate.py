@@ -15,9 +15,9 @@ from pathlib import Path
 import pytest
 
 from scripts.datagen.meshing import calibrate as mesh_calibrate
+from src.datagen.constants import CAL_RUNG2_CAP, CAL_RUNG3_CAP, WORKERS
 from src.datagen.geometry.common.paths import Geom_paths
-from src.datagen.meshing.optimizer.batch.calibrate import RUNG2_CAP, RUNG3_CAP, CalibrationFiles
-from src.datagen.meshing.optimizer.common.constants import WORKERS
+from src.datagen.meshing.optimizer.batch.calibrate import CalibrationFiles
 
 
 def _known(names, db=None):
@@ -53,7 +53,7 @@ def test_the_options_reach_the_calibration(calibrate, tmp_path, data_root, capsy
     left_out = calibrate[1][0]
     assert left_out.name == "mesh_calibrate" and left_out.parent.parent == data_root / "scratchpad"  # its run folder
     assert calibrate == [(out, [1, 3], ["naca0012", "s1223"], 150, 30, 10, 2, manifest, work),
-                         (left_out, [1, 2, 3], None, None, RUNG3_CAP, RUNG2_CAP, WORKERS, Geom_paths().db, None)]
+                         (left_out, [1, 2, 3], None, None, CAL_RUNG3_CAP, CAL_RUNG2_CAP, WORKERS, Geom_paths().db, None)]
     printed = capsys.readouterr().out
     assert "the report" not in printed and "r.txt; every run: r.sqlite" in printed  # the findings came per rung
 # endregion

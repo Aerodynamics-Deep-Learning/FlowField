@@ -17,9 +17,8 @@ import math
 
 import pytest
 
-from src.datagen.geometry.common.constants import DX_MAX
+from src.datagen.constants import DX_MAX, GOLDEN_JMAX, RATIO_MIN, SMOOTHING_DEFAULTS
 from src.datagen.meshing.c2d.schemas import C2D_MeshingConfig
-from src.datagen.meshing.optimizer.common.constants import GOLDEN_JMAX, RATIO_MIN, SMOOTHING_DEFAULTS
 from src.datagen.meshing.optimizer.common.space import (
     KNOBS, Optim_from_x, Optim_input_types, Optim_knobs_for, Optim_nomad_bounds, Optim_space_json, Optim_to_x,
 )

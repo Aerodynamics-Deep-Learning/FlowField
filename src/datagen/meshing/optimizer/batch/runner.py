@@ -37,11 +37,12 @@ from multiprocessing.connection import wait
 from pathlib import Path
 from typing import Callable, Optional, Sequence
 
+from src.datagen.constants import SLOT_MEMORY_CAP_MB, WATCHDOG_S
 from src.datagen.geometry.common.constants import SHAPE_VERSION
 from src.datagen.geometry.common.schemas import ShapeRecord
 from src.datagen.geometry.manifest.store import GeometryStore
 from src.datagen.meshing.optimizer.batch.slots import Optim_slot_platform, SlotPlatform
-from src.datagen.meshing.optimizer.common.constants import ABORT_STREAK_MIN, SLOT_MEMORY_CAP_MB, WATCHDOG_S
+from src.datagen.meshing.optimizer.common.constants import ABORT_STREAK_MIN
 from src.datagen.meshing.optimizer.evaluate.context import RunContext, StudySetupError
 from src.datagen.meshing.optimizer.manifest.store import Optim_utc_now, RunStore
 from src.datagen.meshing.optimizer.search.events import LadderOutcome, Optim_ladder_line, Optim_record

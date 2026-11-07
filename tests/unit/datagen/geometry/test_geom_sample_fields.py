@@ -10,7 +10,7 @@ Step 1: Ensure the defaults and bounds
 import pytest
 from pydantic import ValidationError
 
-from src.datagen.geometry.common.constants import DX_MAX
+from src.datagen.constants import DX_MAX
 from src.datagen.geometry.sample.fields import SamplingFields
 
 

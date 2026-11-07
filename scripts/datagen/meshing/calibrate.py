@@ -25,9 +25,9 @@ from pathlib import Path
 from scripts.datagen.engine import (
     GEOMETRY_DB, Output, OutputKind, Script_check_names, Script_main, Script_names, Stage, UsageError,
 )
-from src.datagen.meshing.optimizer.batch.calibrate import RUNG2_CAP, RUNG3_CAP, Optim_run_calibration
+from src.datagen.constants import CAL_RUNG2_CAP, CAL_RUNG3_CAP, WORKERS
+from src.datagen.meshing.optimizer.batch.calibrate import Optim_run_calibration
 from src.datagen.meshing.optimizer.batch.runner import Optim_load_shapes
-from src.datagen.meshing.optimizer.common.constants import WORKERS
 from src.datagen.meshing.optimizer.common.paths import CALIBRATION_DIR
 
 
@@ -51,10 +51,10 @@ def build_parser() -> argparse.ArgumentParser:
                                                               "rung's own)")
     parser.add_argument("--golden-jmax", type=int,
                         help="rungs 2 and 3's golden jmax, over rung 1's (default: rung 1's, else the constant)")
-    parser.add_argument("--rung3-cap", type=int, default=RUNG3_CAP,
-                        help=f"rung 3's budget while it is calibrated (default {RUNG3_CAP})")
-    parser.add_argument("--rung2-cap", type=int, default=RUNG2_CAP,
-                        help=f"rung 2's budget while it is calibrated (default {RUNG2_CAP})")
+    parser.add_argument("--rung3-cap", type=int, default=CAL_RUNG3_CAP,
+                        help=f"rung 3's budget while it is calibrated (default {CAL_RUNG3_CAP})")
+    parser.add_argument("--rung2-cap", type=int, default=CAL_RUNG2_CAP,
+                        help=f"rung 2's budget while it is calibrated (default {CAL_RUNG2_CAP})")
     parser.add_argument("--workers", type=int, default=WORKERS, help=f"worker processes (default {WORKERS})")
     parser.add_argument("--geometry-db", type=Path, help="the geometry manifest (default: the repo's, `shared`)")
     parser.add_argument("--work-root", type=Path, help="where runs mesh (default: a temporary folder)")

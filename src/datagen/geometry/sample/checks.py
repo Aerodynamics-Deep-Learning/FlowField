@@ -15,7 +15,7 @@ import math
 
 import numpy as np
 
-from src.datagen.geometry.common.constants import DX_MAX, THETA_MAX_DEG
+from src.datagen.constants import DX_MAX, THETA_MAX_DEG
 from src.datagen.geometry.common.portable import Geom_atan2, Geom_tan
 from src.datagen.geometry.common.schemas import TETreatment
 from src.datagen.geometry.sample.contour import Contour

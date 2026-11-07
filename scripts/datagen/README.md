@@ -45,7 +45,7 @@ scripts/datagen/
 ```
 
 The two calibrations measure; they never change a constant. Their reports tell you what to change in
-`src/datagen/geometry/common/constants.py` or `src/datagen/meshing/optimizer/common/constants.py`.
+`src/datagen/constants.py`, where every value that can change lives.
 
 ## 3. The scripts
 

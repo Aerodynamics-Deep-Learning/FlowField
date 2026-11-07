@@ -15,10 +15,10 @@ The campaign and the manifest are stand-ins; the campaign is tested in the optim
 import pytest
 
 from scripts.datagen.meshing import campaign as mesh_campaign
+from src.datagen.constants import WORKERS
 from src.datagen.geometry.common.paths import Geom_paths
 from src.datagen.meshing.optimizer.batch.campaign import CampaignResult
 from src.datagen.meshing.optimizer.batch.runner import BatchStopped
-from src.datagen.meshing.optimizer.common.constants import WORKERS
 
 
 def _known(names, db=None):

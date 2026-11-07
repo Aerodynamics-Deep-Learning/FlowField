@@ -13,7 +13,7 @@ import os
 
 import pytest
 
-from src.datagen.geometry.common.constants import DX_MAX
+from src.datagen.constants import DX_MAX
 from src.datagen.geometry.common.paths import Geom_paths
 from src.datagen.meshing.c2d.run import C2D_find_exe
 from src.datagen.meshing.common.schemas import MeshBackend, MeshTopology

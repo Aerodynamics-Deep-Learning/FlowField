@@ -17,8 +17,9 @@ Step 3: Ensure the guarantees hold across the search space
 import numpy as np
 import pytest
 
+from src.datagen.constants import THETA_MAX_DEG
 from src.datagen.geometry.build.parametrization import Geom_cst_eval
-from src.datagen.geometry.common.constants import SAMPLER_VERSION, SHAPE_VERSION, THETA_MAX_DEG
+from src.datagen.geometry.common.constants import SAMPLER_VERSION, SHAPE_VERSION
 from src.datagen.geometry.common.schemas import Rejection, TETreatment
 from src.datagen.geometry.sample.checks import DEV_MAX
 from src.datagen.geometry.sample.contour import Geom_build_contour, PinKind

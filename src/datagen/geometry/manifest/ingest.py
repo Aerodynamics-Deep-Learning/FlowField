@@ -27,9 +27,10 @@ from collections import Counter
 from pathlib import Path
 from typing import Optional
 
+from src.datagen.constants import CST_FIT_TOL
 from src.datagen.geometry.build.add import Geom_add_airfoil, Geom_identify
 from src.datagen.geometry.build.checks import Geom_check_suspect_point
-from src.datagen.geometry.common.constants import CST_FIT_TOL, FAMILY_MATCH_TOL, SHAPE_VERSION
+from src.datagen.geometry.common.constants import FAMILY_MATCH_TOL, SHAPE_VERSION
 from src.datagen.geometry.common.io import GeometryFormatError, Geom_write_dat
 from src.datagen.geometry.common.paths import GeometryPaths, Geom_git_version, Geom_paths, Geom_source_label
 from src.datagen.geometry.common.schemas import (

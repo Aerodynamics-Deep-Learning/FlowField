@@ -14,11 +14,8 @@ import json
 
 import pytest
 
-from src.datagen.geometry.common.constants import DX_MAX
+from src.datagen.constants import CLUSTER_WIDTH_MIN, DX_MAX, NSTAR_CW_GRID, NSTAR_LE_GRID, SMOOTHING_DEFAULTS
 from src.datagen.meshing.c2d.run import C2D_find_exe
-from src.datagen.meshing.optimizer.common.constants import (
-    CLUSTER_WIDTH_MIN, NSTAR_CW_GRID, NSTAR_LE_GRID, SMOOTHING_DEFAULTS,
-)
 from src.datagen.meshing.optimizer.common.settings import Optim_build_settings
 from src.datagen.meshing.optimizer.evaluate.context import RunContext
 from src.datagen.meshing.optimizer.manifest.store import RunStore

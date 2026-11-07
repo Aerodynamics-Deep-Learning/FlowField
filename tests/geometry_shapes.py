@@ -9,10 +9,11 @@ from functools import cache
 
 import numpy as np
 
+from src.datagen.constants import DX_MAX
 from src.datagen.geometry.build.families import Geom_family_coords
 from src.datagen.geometry.build.normalize import Geom_close_te, Geom_normalize
 from src.datagen.geometry.build.parametrization import Geom_cst_fit, Geom_cst_te_wedge
-from src.datagen.geometry.common.constants import CST_N1, CST_N2, DX_MAX, SHAPE_VERSION
+from src.datagen.geometry.common.constants import CST_N1, CST_N2, SHAPE_VERSION
 from src.datagen.geometry.common.schemas import Closure, CSTParams, Family, ShapeRecord
 from src.datagen.geometry.sample.fields import SamplingFields
 

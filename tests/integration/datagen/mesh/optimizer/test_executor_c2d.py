@@ -11,10 +11,9 @@ deterministic, so the two `.su2` hashes must match, which is what a later re-mes
 
 import pytest
 
-from src.datagen.geometry.common.constants import DX_MAX
+from src.datagen.constants import DX_MAX, SMOOTHING_DEFAULTS
 from src.datagen.meshing.c2d.run import C2D_find_exe
 from src.datagen.meshing.common.schemas import MeshBackend, MeshTopology
-from src.datagen.meshing.optimizer.common.constants import SMOOTHING_DEFAULTS
 from src.datagen.meshing.optimizer.common.settings import Optim_build_settings
 from src.datagen.meshing.optimizer.evaluate.context import RunContext
 from src.datagen.meshing.optimizer.evaluate.executor import RunExecutor

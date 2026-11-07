@@ -20,8 +20,9 @@ Step 3: Ensure each gate rejects with its reason, keeping what was measured (a f
 import numpy as np
 import pytest
 
+from src.datagen.constants import CST_FIT_TOL, CST_ORDER
 from src.datagen.geometry.build.add import Geom_add_airfoil, Geom_identify
-from src.datagen.geometry.common.constants import CST_FIT_TOL, CST_ORDER, FAMILY_MATCH_TOL, NORM_N_POINTS
+from src.datagen.geometry.common.constants import FAMILY_MATCH_TOL, NORM_N_POINTS
 from src.datagen.geometry.build.families import Geom_family_id, _family_contour
 from src.datagen.geometry.common.io import Geom_coords_hash, Geom_write_dat
 from src.datagen.geometry.common.schemas import Closure, Family, RejectReason

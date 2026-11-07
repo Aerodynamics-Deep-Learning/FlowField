@@ -30,11 +30,11 @@ from functools import partial
 from pathlib import Path
 from typing import NamedTuple, Optional, Sequence
 
-from src.datagen.geometry.common.constants import DX_MAX
-from src.datagen.meshing.optimizer.batch.runner import Optim_load_shapes, Optim_run_airfoils
-from src.datagen.meshing.optimizer.common.constants import (
-    CLUSTER_WIDTH_MIN, GOLDEN_JMAX, JMAX_MAX, JMAX_MIN, SMOOTHING_DEFAULTS, WORKERS,
+from src.datagen.constants import (
+    CAL_GAINS, CAL_GOLDEN_MARGIN, CAL_MAX_LOSS, CAL_ORDINARY_COUNT, CAL_RUNG2_CAP, CAL_RUNG3_CAP, CAL_SET, CAL_WINDOWS,
+    CAL_WITHIN, CLUSTER_WIDTH_MIN, DX_MAX, GOLDEN_JMAX, JMAX_MAX, JMAX_MIN, SMOOTHING_DEFAULTS, WORKERS,
 )
+from src.datagen.meshing.optimizer.batch.runner import Optim_load_shapes, Optim_run_airfoils
 from src.datagen.meshing.optimizer.common.settings import Optim_build_settings
 from src.datagen.meshing.optimizer.evaluate.context import RunContext
 from src.datagen.meshing.optimizer.manifest.store import Optim_git_state, RunStore
@@ -45,34 +45,12 @@ from src.datagen.meshing.optimizer.search.nstar import Optim_n_star_search
 
 logger = logging.getLogger(__name__)
 
-# The hard cases: the most surface points (s1223, s1210, mid012r), the highest jmax* (e376, goe531) and the
-# lowest (naca0040), Emre's worst lift losses (e423, fx69pr281), a thin and a typical section
-CALIBRATION_SET = ("s1223", "s1210", "mid012r", "e376", "goe531", "naca0040", "e423", "fx69pr281", "naca0006",
-                   "naca4412")
-
-# Rung 3's ordinary airfoils, drawn from the rest: the same ones every run
-ORDINARY_COUNT = 5
+# Rung 3's ordinary airfoils are drawn with this seed: the same ones every run
 ORDINARY_SEED = 1
 
 # Rung 2's skew gate, apart from GATE_SKEW_MAX so each can be varied alone: under most golden runs' worst skew
 # (median 0.243), so rung 2 has work
 SKEW_GATE = 0.22
-
-# Meshes rung 3 and rung 2 may spend
-RUNG3_CAP = 300
-RUNG2_CAP = 100
-
-# Golden jmax = median jmax* + this
-GOLDEN_MARGIN = 5
-
-# Rung 3's replay: every (window, min_gain) pair, and the most a pair may give up on any airfoil against its
-# cap's best
-WINDOWS = (10, 15, 20, 30, 50)
-GAINS = (0.0025, 0.005, 0.01)
-MAX_LOSS = 0.005
-
-# Close to the final best, for the rung-3 cap
-WITHIN = 0.01
 
 # A rung's start and end in the log
 _RUNG_START = "----- START rung {} of 3 -----"
@@ -172,7 +150,7 @@ class CalibrationFiles(NamedTuple):
 
 
 def Optim_run_calibration(out_dir, rungs: Sequence[int] = (1, 2, 3), names: Optional[Sequence[str]] = None,
-                          golden_jmax: Optional[int] = None, rung3_cap: int = RUNG3_CAP, rung2_cap: int = RUNG2_CAP,
+                          golden_jmax: Optional[int] = None, rung3_cap: int = CAL_RUNG3_CAP, rung2_cap: int = CAL_RUNG2_CAP,
                           workers: int = WORKERS, geometry_db=None, work_root=None) -> CalibrationFiles:
     """
     A dated calibration: every run into `<out_dir>/<date>.sqlite`, the report into `<out_dir>/<date>.txt`.
@@ -205,7 +183,7 @@ def Optim_run_calibration(out_dir, rungs: Sequence[int] = (1, 2, 3), names: Opti
 
 
 def Optim_calibrate(store: RunStore, rungs: Sequence[int] = (1, 2, 3), names: Optional[Sequence[str]] = None,
-                    golden_jmax: Optional[int] = None, rung3_cap: int = RUNG3_CAP, rung2_cap: int = RUNG2_CAP,
+                    golden_jmax: Optional[int] = None, rung3_cap: int = CAL_RUNG3_CAP, rung2_cap: int = CAL_RUNG2_CAP,
                     workers: int = WORKERS, work_root=None, geometry_db=None) -> Calibration:
     """
     Calibrates the rungs asked for, every run recorded in `store`.
@@ -254,14 +232,14 @@ def Optim_calibrate(store: RunStore, rungs: Sequence[int] = (1, 2, 3), names: Op
     if 2 in rungs:
         settings = Optim_build_settings(golden_jmax=golden_jmax, gate_skew_max=SKEW_GATE, rung2_budget=rung2_cap,
                                         rung3_budget=0)
-        done[2] = run(2, Optim_run_ladder, load(names or CALIBRATION_SET), settings,
+        done[2] = run(2, Optim_run_ladder, load(names or CAL_SET), settings,
                       f"smoothing searches at skew gate {SKEW_GATE:g}, budget {rung2_cap}, golden jmax {golden_jmax}")
         rows = Optim_smoothings(store, done[2])
         routed = [s for s in rows if s.meshes is not None]
         _end_rung(done[2], f"{len(routed)}/{len(rows)} entered rung 2, {sum(s.passed for s in routed)} passed",
                   _rung2_findings(rows))
     if 3 in rungs:
-        chosen = names or [*CALIBRATION_SET, *Optim_ordinary_airfoils([n for n, _ in load()])]
+        chosen = names or [*CAL_SET, *Optim_ordinary_airfoils([n for n, _ in load()])]
         settings = Optim_build_settings(golden_jmax=golden_jmax, rung3_budget=rung3_cap)
         done[3] = run(3, partial(Optim_run_ladder, ladder_type=_Descend), load(chosen), settings,
                       f"downward searches from the golden run (jmax {golden_jmax}) to {rung3_cap} c2d runs each",
@@ -290,9 +268,9 @@ def _end_rung(stage: Stage, headline: str, findings: list[str]) -> None:
 
 
 def Optim_ordinary_airfoils(names: Sequence[str]) -> list[str]:
-    """`ORDINARY_COUNT` airfoils outside the calibration set, the same ones for the same names."""
-    rest = sorted(set(names) - set(CALIBRATION_SET))
-    return sorted(random.Random(ORDINARY_SEED).sample(rest, min(ORDINARY_COUNT, len(rest))))
+    """`CAL_ORDINARY_COUNT` airfoils outside the calibration set, the same ones for the same names."""
+    rest = sorted(set(names) - set(CAL_SET))
+    return sorted(random.Random(ORDINARY_SEED).sample(rest, min(CAL_ORDINARY_COUNT, len(rest))))
 
 #endregion
 
@@ -333,9 +311,9 @@ def Optim_bisections(store: RunStore, stage: Stage) -> list[Bisection]:
 
 
 def Optim_golden_from(rows: list[Bisection]) -> Optional[int]:
-    """The golden jmax: the median jmax* (rounded up) + `GOLDEN_MARGIN`; None with no jmax* at all."""
+    """The golden jmax: the median jmax* (rounded up) + `CAL_GOLDEN_MARGIN`; None with no jmax* at all."""
     found = [b.jmax_star for b in rows if b.jmax_star is not None]
-    return math.ceil(statistics.median(found)) + GOLDEN_MARGIN if found else None
+    return math.ceil(statistics.median(found)) + CAL_GOLDEN_MARGIN if found else None
 
 
 class CampaignEstimate(NamedTuple):
@@ -513,8 +491,8 @@ class PlateauRow(NamedTuple):
 
 def Optim_plateau_table(rows: list[Descent]) -> list[PlateauRow]:
     table = []
-    for window in WINDOWS:
-        for gain in GAINS:
+    for window in CAL_WINDOWS:
+        for gain in CAL_GAINS:
             meshes, seconds, losses = 0, 0.0, []
             for d in rows:
                 k = Optim_replay(d.nodes, window, gain)
@@ -527,14 +505,14 @@ def Optim_plateau_table(rows: list[Descent]) -> list[PlateauRow]:
 
 
 def Optim_pick_plateau(table: list[PlateauRow]) -> Optional[PlateauRow]:
-    """The fewest meshes among the pairs giving up at most `MAX_LOSS` on every airfoil; ties to the cautious."""
-    qualified = [p for p in table if p.worst_loss <= MAX_LOSS]
+    """The fewest meshes among the pairs giving up at most `CAL_MAX_LOSS` on every airfoil; ties to the cautious."""
+    qualified = [p for p in table if p.worst_loss <= CAL_MAX_LOSS]
     return min(qualified, key=lambda p: (p.meshes, -p.window, p.min_gain)) if qualified else None
 
 
 def Optim_rung3_cap(rows: list[Descent]) -> Optional[int]:
-    """The most c2d runs any airfoil took to get within `WITHIN` of its best, rounded up to 10."""
-    needed = [m for m in (Optim_meshes_within(d.nodes, WITHIN) for d in rows) if m is not None]
+    """The most c2d runs any airfoil took to get within `CAL_WITHIN` of its best, rounded up to 10."""
+    needed = [m for m in (Optim_meshes_within(d.nodes, CAL_WITHIN) for d in rows) if m is not None]
     return _round_up(max(needed)) if needed else None
 
 #endregion
@@ -595,7 +573,7 @@ def _rung1_findings(rows: list[Bisection], stage: Stage, golden_jmax: int) -> li
         out.append(f"jmax*: min {min(found)}, median {statistics.median(found):g}, max {max(found)} "
                    f"({len(found)} found, {above} above {JMAX_MAX}, {sum(b.failed is not None for b in rows)} failed)")
         bumps = sorted(j - golden for j in found if j > golden)
-        out.append(f"Golden jmax = median rounded up + {GOLDEN_MARGIN} = {golden}: {len(found) - len(bumps)}/"
+        out.append(f"Golden jmax = median rounded up + {CAL_GOLDEN_MARGIN} = {golden}: {len(found) - len(bumps)}/"
                    f"{len(found)} pass the size ratio there"
                    + (f"; the rest need {', '.join(map(str, bumps))} bumps" if bumps else ""))
         out.append(f"jmax* also passes every other gate on {sum(bool(b.passes_all) for b in rows)}/{len(found)}")
@@ -671,7 +649,7 @@ def _format_rung3(rows: list[Descent], jmax_star: dict, cal: Calibration) -> lis
            f"  {'airfoil':22s} {'golden':>8} {'best':>8} {'saving':>7} {'by jmax*':>8} {'to 1%':>6} {'to best':>7} "
            f"{'s to 1%':>8} {'s best':>7}  note"]
     for d in rows:
-        within, best_at = Optim_meshes_within(d.nodes, WITHIN), Optim_meshes_within(d.nodes, 0.0)
+        within, best_at = Optim_meshes_within(d.nodes, CAL_WITHIN), Optim_meshes_within(d.nodes, 0.0)
         saving = at_jmax = None
         if d.golden_passed and d.final is not None:
             saving = 1 - d.final / d.golden_nodes
@@ -705,10 +683,10 @@ def _rung3_findings(rows: list[Descent], table: list[PlateauRow]) -> list[str]:
         if savings else "none (no golden run passed)")
     pick = Optim_pick_plateau(table)
     return [saving,
-            f"Plateau pick (fewest meshes giving up at most {_pct(MAX_LOSS, 1)} on every airfoil): "
+            f"Plateau pick (fewest meshes giving up at most {_pct(CAL_MAX_LOSS, 1)} on every airfoil): "
             + (f"window {pick.window}, min_gain {pick.min_gain:g}, {pick.meshes} meshes, {pick.seconds / 60:.1f} min"
                if pick else "none qualifies"),
-            f"Rung-3 cap (the most meshes any airfoil took to within {_pct(WITHIN, 0)} of its best, rounded up "
+            f"Rung-3 cap (the most meshes any airfoil took to within {_pct(CAL_WITHIN, 0)} of its best, rounded up "
             f"to 10): {_i(Optim_rung3_cap(rows))}"]
 
 

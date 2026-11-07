@@ -25,6 +25,7 @@ import json
 
 import pytest
 
+from src.datagen import constants as D
 from src.datagen.meshing.c2d.schemas import C2D_MeshingConfig, C2D_Topology
 from src.datagen.meshing.common import constants as common
 from src.datagen.meshing.common.schemas import MeshBackend, MeshTopology
@@ -134,26 +135,26 @@ def test_pinned_fields_keep_their_config_defaults():
 
     assert set(unread) == {"nwke", "fdst", "fwkl", "fwki", "stp1", "stp2", "nrmt", "nrmb"}
     assert unread == {name: getattr(defaults, name) for name in unread}
-    C2D_MeshingConfig(**C.PINNED, **C.SMOOTHING_DEFAULTS)  # the pinned values validate
+    C2D_MeshingConfig(**C.PINNED, **D.SMOOTHING_DEFAULTS)  # the pinned values validate
 
 
 def test_constants_match_what_they_claim():
     defaults = C2D_MeshingConfig()
     re_top = next(m.le for m in Freestream.model_fields["Re"].metadata if hasattr(m, "le"))
 
-    assert C.SMOOTHING_DEFAULTS == {name: getattr(defaults, name) for name in C.SMOOTHING_DEFAULTS}
+    assert D.SMOOTHING_DEFAULTS == {name: getattr(defaults, name) for name in D.SMOOTHING_DEFAULTS}
     assert {k: v for k, v in C.PINNED.items() if k != "topo"} == {
         k: getattr(defaults, k) for k in C.PINNED if k != "topo"}  # topo defaults to None, filled per run
     assert C.PINNED["topo"] == C2D_Topology.OGRD.value
     assert (C.BACKEND, C.TOPOLOGY) == (MeshBackend.C2D.value, MeshTopology.OGRD.value)
-    assert C.DESIGN_RE == re_top
-    assert (C.GATE_AR_MAX, C.GATE_SIZE_RATIO_MAX, C.GATE_GEO_DEV_MAX) == (
+    assert D.DESIGN_RE == re_top
+    assert (D.GATE_AR_MAX, D.GATE_SIZE_RATIO_MAX, D.GATE_GEO_DEV_MAX) == (
         common.ASPECT_RATIO_LIMIT, common.SIZE_RATIO_LIMIT, common.GEO_DEV_LIMIT)
-    assert C.JMAX_MIN <= C.GOLDEN_JMAX <= C.JMAX_MAX
+    assert D.JMAX_MIN <= D.GOLDEN_JMAX <= D.JMAX_MAX
 
 
 def test_sampling_keeps_its_names():
-    assert (sampling.TE_GAP_DEFAULT, sampling.CELL_CEILING) == (C.TE_GAP_DEFAULT, C.CELL_CEILING)
+    assert (sampling.TE_GAP_DEFAULT, sampling.CELL_CEILING) == (D.TE_GAP_DEFAULT, D.CELL_CEILING)
 
 
 def test_config_schema_fp_is_stable():

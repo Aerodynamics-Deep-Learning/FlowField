@@ -49,7 +49,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from src.datagen.geometry.common.constants import DX_MAX
+from src.datagen.constants import DX_MAX, SMOOTHING_DEFAULTS
 from src.datagen.geometry.sample.checks import SamplerAssertionError
 from src.datagen.meshing.c2d.schemas import C2D_ExitFlag, C2D_MeshingConfig
 from src.datagen.meshing.common import entry
@@ -57,7 +57,7 @@ from src.datagen.meshing.common.schemas import (
     MeshBackend, MeshExitFlag, MeshGeoDeviationSummary, MeshQualitySummary, MeshTopology, MetricDistribution,
     QualityLimits,
 )
-from src.datagen.meshing.optimizer.common.constants import PINNED, SMOOTHING_DEFAULTS
+from src.datagen.meshing.optimizer.common.constants import PINNED
 from src.datagen.meshing.optimizer.common.settings import Optim_build_settings, Optim_config_schema_fp
 from src.datagen.meshing.optimizer.evaluate import executor as executor_module
 from src.datagen.meshing.optimizer.evaluate.context import RunContext, StudySetupError

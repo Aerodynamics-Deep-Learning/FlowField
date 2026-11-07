@@ -39,9 +39,8 @@ import uuid
 
 import pytest
 
-from src.datagen.geometry.common.constants import DX_MAX
+from src.datagen.constants import DX_MAX, SMOOTHING_DEFAULTS
 from src.datagen.geometry.sample.contour import ContourError
-from src.datagen.meshing.optimizer.common.constants import SMOOTHING_DEFAULTS
 from src.datagen.meshing.optimizer.common.settings import Optim_build_settings
 from src.datagen.meshing.optimizer.evaluate.context import RunContext, StudySetupError
 from src.datagen.meshing.optimizer.evaluate.executor import Optim_failed_gates, RunResult

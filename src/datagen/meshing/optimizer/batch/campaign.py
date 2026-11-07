@@ -16,8 +16,8 @@ import time
 from collections import Counter
 from typing import Callable, NamedTuple, Optional, Sequence
 
+from src.datagen.constants import WORKERS
 from src.datagen.meshing.optimizer.batch.runner import BatchStopped, Optim_load_shapes, Optim_run_airfoils
-from src.datagen.meshing.optimizer.common.constants import WORKERS
 from src.datagen.meshing.optimizer.common.settings import Optim_build_settings
 from src.datagen.meshing.optimizer.evaluate.context import RunContext
 from src.datagen.meshing.optimizer.manifest.store import RunStore

@@ -21,13 +21,12 @@ from types import SimpleNamespace
 
 import pytest
 
-from src.datagen.geometry.common.constants import DX_MAX
+from src.datagen.constants import CLUSTER_WIDTH_MAX, CLUSTER_WIDTH_MIN, DX_MAX, RATIO_MIN
 from src.datagen.geometry.common.schemas import Rejection
 from src.datagen.geometry.sample.checks import SamplerAssertionError
 from src.datagen.geometry.sample.fields import SamplingFields
 from src.datagen.geometry.sample.sample import Geom_sample
 from src.datagen.meshing.common.schemas import MeshBackend, MeshTopology
-from src.datagen.meshing.optimizer.common.constants import CLUSTER_WIDTH_MAX, CLUSTER_WIDTH_MIN, RATIO_MIN
 from src.datagen.meshing.optimizer.common.settings import Optim_build_settings
 from src.datagen.meshing.optimizer.common.space import Optim_knobs_for, Optim_nomad_bounds, Optim_to_x
 from src.datagen.meshing.optimizer.evaluate.sampling import Optim_build_study_contour

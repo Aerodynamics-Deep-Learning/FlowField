@@ -1,3 +1,6 @@
+from src.datagen.constants import (
+    CLUSTER_WIDTH_MAX, CLUSTER_WIDTH_MIN, DX_MAX, DX_MID_MIN, JMAX_MAX, JMAX_MIN, RATIO_MIN,
+)
 """
 The mesh study's search space: the config fields NOMAD moves, their bounds and scales, and the rungs that
 move them. NOMAD sees log10 of a log knob, so a ratio spanning 500x is searched evenly across it.
@@ -14,10 +17,6 @@ import json
 import math
 from typing import Literal, NamedTuple, Sequence
 
-from src.datagen.geometry.common.constants import DX_MAX
-from src.datagen.meshing.optimizer.common.constants import (
-    CLUSTER_WIDTH_MAX, CLUSTER_WIDTH_MIN, DX_MID_MIN, JMAX_MAX, JMAX_MIN, RATIO_MIN,
-)
 
 
 class Knob(NamedTuple):

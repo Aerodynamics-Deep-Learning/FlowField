@@ -14,7 +14,8 @@ from typing import Optional
 import numpy as np
 
 from .checks import Geom_check_family_match, Geom_check_fit, Geom_check_thickness
-from src.datagen.geometry.common.constants import CST_FIT_TOL, CST_NOSE, CST_ORDER, NORM_N_POINTS
+from src.datagen.constants import CST_FIT_TOL, CST_NOSE, CST_ORDER
+from src.datagen.geometry.common.constants import NORM_N_POINTS
 from .families import Geom_family_coords, Geom_family_id, Geom_parse_family
 from src.datagen.geometry.common.io import GeometryFormatError, Geom_as_written, Geom_coords_hash, Geom_read_dat
 from .normalize import Geom_close_te, Geom_normalize

@@ -19,9 +19,9 @@ from pathlib import Path
 from scripts.datagen.engine import (
     GEOMETRY_DB, Output, OutputKind, Script_check_names, Script_main, Script_names, Stage, UsageError,
 )
+from src.datagen.constants import WORKERS
 from src.datagen.meshing.optimizer.batch.campaign import Optim_campaign_summary, Optim_run_campaign
 from src.datagen.meshing.optimizer.batch.runner import Optim_load_shapes
-from src.datagen.meshing.optimizer.common.constants import WORKERS
 from src.datagen.meshing.optimizer.common.paths import MESHING_DB
 from src.datagen.meshing.optimizer.manifest.store import RunStore
 

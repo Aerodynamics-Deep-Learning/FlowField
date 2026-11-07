@@ -22,7 +22,8 @@ import math
 import numpy as np
 from scipy.optimize import lsq_linear
 
-from src.datagen.geometry.common.constants import CST_N1, CST_N2, CST_NOSE, CST_ORDER, CURVE_POINTS
+from src.datagen.constants import CST_NOSE, CST_ORDER
+from src.datagen.geometry.common.constants import CST_N1, CST_N2, CURVE_POINTS
 from src.datagen.geometry.common.schemas import CSTParams, FitMetrics, Nose
 
 

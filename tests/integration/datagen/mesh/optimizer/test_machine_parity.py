@@ -24,17 +24,17 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from src.datagen.geometry.common.constants import DX_MAX, SAMPLER_VERSION, SHAPE_VERSION
+from src.datagen.constants import (
+    CAL_SET, CELL_CEILING, CLUSTER_WIDTH_MAX, CLUSTER_WIDTH_MIN, DX_MAX, NSTAR_CW_GRID, NSTAR_LE_GRID, RATIO_MIN,
+    SMOOTHING_DEFAULTS,
+)
+from src.datagen.geometry.common.constants import SAMPLER_VERSION, SHAPE_VERSION
 from src.datagen.geometry.common.paths import Geom_paths
 from src.datagen.geometry.sample.fields import SamplingFields
 from src.datagen.geometry.sample.sample import Geom_sample
 from src.datagen.meshing.c2d.run import C2D_find_exe
 from src.datagen.meshing.common.schemas import MeshBackend, MeshTopology
-from src.datagen.meshing.optimizer.batch.calibrate import CALIBRATION_SET
 from src.datagen.meshing.optimizer.batch.runner import Optim_load_shapes
-from src.datagen.meshing.optimizer.common.constants import (
-    CELL_CEILING, CLUSTER_WIDTH_MAX, CLUSTER_WIDTH_MIN, NSTAR_CW_GRID, NSTAR_LE_GRID, RATIO_MIN, SMOOTHING_DEFAULTS,
-)
 from src.datagen.meshing.optimizer.common.settings import Optim_build_settings, Optim_mesher_sha256
 from src.datagen.meshing.optimizer.evaluate.context import RunContext
 from src.datagen.meshing.optimizer.evaluate.executor import RunExecutor
@@ -48,7 +48,7 @@ CONFIGS = ({"dx_mid": DX_MAX, "le_ratio": 0.025, "te_ratio": 1.0, "cluster_width
            {"dx_mid": 0.004, "le_ratio": 0.3, "te_ratio": 0.2, "cluster_width": 0.25},
            {"dx_mid": 0.002, "le_ratio": 0.01, "te_ratio": 0.05, "cluster_width": 0.1})
 JMAX = 147
-MESHED = CALIBRATION_SET  # the most surface points, the highest and lowest jmax*, the worst lift losses
+MESHED = CAL_SET  # the most surface points, the highest and lowest jmax*, the worst lift losses
 
 
 def _nstar_grid_hash() -> str:

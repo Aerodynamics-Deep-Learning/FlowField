@@ -1,9 +1,12 @@
 """
-Fixed values the geometry pipeline builds and gates airfoils with.
+Fixed values the geometry pipeline builds and gates airfoils with; the ones that can change (the CST order,
+nose and fit tolerance, the sampler's limits) are in `src/datagen/constants.py`.
 
-Imports nothing. A change to anything in the shape block changes the stored shapes, so it must come
+Imports only that. A change to anything in the shape block changes the stored shapes, so it must come
 with a new `SHAPE_VERSION`.
 """
+
+from src.datagen.constants import CST_ORDER
 
 #region CST shape
 
@@ -11,27 +14,15 @@ with a new `SHAPE_VERSION`.
 CST_N1 = 0.5
 CST_N2 = 1.0
 
-# Bernstein order, one for every airfoil so the ML input length is fixed. From the calibration of
-# 2026-10-14 (report/calibration/): higher orders fit the points better but overshoot between them on
-# sparse files (3 files at 8, 13 at 10, 38 at 12)
-CST_ORDER = 8
-
-# How the nose is fitted, a `schemas.Nose` value: one radius plus Kulfan's LE term passes 158 of 180
-# within 1e-3 at order 8, two radii (a curvature jump) 150, one radius alone 87
-CST_NOSE = "lem"
-
-# Names the normalize -> close -> fit -> render pipeline behind a stored shape; bump the revision on any
-# change to it (tests/unit/datagen/geometry/test_geom_shape_version.py fails until you do)
+# Names the normalize -> close -> fit -> render pipeline behind a stored shape, CST_ORDER and CST_NOSE
+# included; bump the revision on any change to it (tests/unit/datagen/geometry/test_geom_shape_version.py
+# fails until you do)
 SHAPE_VERSION = f"cst{CST_ORDER}-r1"
 
 
 #endregion
 
 #region Gates
-
-# Worst perpendicular distance from a root point to its fitted CST, chord units. Set above where good fits
-# land at order 8 (formula NACAs <= 1.2e-4, median 4.6e-4); passes 158 of 180
-CST_FIT_TOL = 1e-3
 
 # Worst distance from a family file's points to its formula shape: catches a misread name, not digitization noise
 FAMILY_MATCH_TOL = 1e-2
@@ -61,15 +52,10 @@ MIN_DAT_POINTS = 5
 
 #region Sequence 3: the TE a mesher needs, and sampling for it
 
-# Names the contour -> spacing -> checks behind a sample, constants below included; bump the revision on
-# any change to it (tests/unit/datagen/geometry/test_geom_sampler_version.py fails until you do)
+# Names the contour -> spacing -> checks behind a sample, the constants below and DX_MAX and THETA_MAX_DEG
+# included; bump the revision on any change to it (tests/unit/datagen/geometry/test_geom_sampler_version.py
+# fails until you do)
 SAMPLER_VERSION = "samp-r2"
-
-# Longest panel allowed anywhere, so the bound on the mid-chord spacing. Provisional, pending the SU2 sweeps
-DX_MAX = 0.006
-
-# Largest turn a sampled point may make; sets how fine the spacing on a round TE's caps must be
-THETA_MAX_DEG = 15.0
 
 # The turn pre-check passes below this share of its limit, so rounding cannot trip the post-check
 PRECHECK_MARGIN = 0.995

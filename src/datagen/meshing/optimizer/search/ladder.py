@@ -32,10 +32,10 @@ import traceback
 import uuid
 from typing import Callable, Optional
 
+from src.datagen.constants import SMOOTHING_DEFAULTS
 from src.datagen.geometry.common.schemas import ShapeRecord
 from src.datagen.meshing.c2d.schemas import C2D_MeshingConfig
 from src.datagen.meshing.common.schemas import MeshBackend, MeshTopology
-from src.datagen.meshing.optimizer.common.constants import SMOOTHING_DEFAULTS
 from src.datagen.meshing.optimizer.common.space import Optim_knobs_for
 from src.datagen.meshing.optimizer.evaluate.context import RunContext
 from src.datagen.meshing.optimizer.evaluate.executor import Optim_nomad_outputs, RunExecutor

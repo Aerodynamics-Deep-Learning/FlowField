@@ -19,7 +19,8 @@ import math
 import numpy as np
 import pytest
 
-from src.datagen.geometry.common.constants import PRECHECK_MARGIN, THETA_MAX_DEG
+from src.datagen.constants import THETA_MAX_DEG
+from src.datagen.geometry.common.constants import PRECHECK_MARGIN
 from src.datagen.geometry.common.schemas import TETreatment
 from src.datagen.geometry.sample.contour import Geom_build_contour, PinKind
 from src.datagen.geometry.sample.fields import SamplingFields

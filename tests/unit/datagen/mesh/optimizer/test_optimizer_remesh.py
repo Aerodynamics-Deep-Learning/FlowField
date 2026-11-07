@@ -27,13 +27,13 @@ from types import SimpleNamespace
 
 import pytest
 
-from src.datagen.geometry.common.constants import DX_MAX, SHAPE_VERSION
+from src.datagen.constants import DX_MAX, SMOOTHING_DEFAULTS
+from src.datagen.geometry.common.constants import SHAPE_VERSION
 from src.datagen.meshing.common.schemas import (
     MeshBackend, MeshExitFlag, MeshGeoDeviationSummary, MeshQualitySummary, MeshTopology,
 )
 from src.datagen.meshing.optimizer.batch import remesh as batch_remesh
 from src.datagen.meshing.optimizer.batch.quality import Optim_remesh_quality
-from src.datagen.meshing.optimizer.common.constants import SMOOTHING_DEFAULTS
 from src.datagen.meshing.optimizer.common.settings import Optim_build_settings, Optim_config_schema_fp
 from src.datagen.meshing.optimizer.evaluate import executor as executor_module
 from src.datagen.meshing.optimizer.evaluate import remesh as remesh_module

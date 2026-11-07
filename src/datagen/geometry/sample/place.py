@@ -17,7 +17,8 @@ from typing import NamedTuple, Optional
 
 import numpy as np
 
-from src.datagen.geometry.common.constants import PRECHECK_MARGIN, THETA_MAX_DEG
+from src.datagen.constants import THETA_MAX_DEG
+from src.datagen.geometry.common.constants import PRECHECK_MARGIN
 from src.datagen.geometry.common.portable import Geom_exp, Geom_sin
 from src.datagen.geometry.common.schemas import TETreatment
 from src.datagen.geometry.sample.contour import Contour, PinKind

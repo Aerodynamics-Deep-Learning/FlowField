@@ -10,10 +10,9 @@ fails and the search has something to do. Its budget is 3, the start included.
 
 import pytest
 
-from src.datagen.geometry.common.constants import DX_MAX
+from src.datagen.constants import DX_MAX, SMOOTHING_DEFAULTS
 from src.datagen.meshing.c2d.run import C2D_find_exe
 from src.datagen.meshing.common.schemas import MeshBackend, MeshTopology
-from src.datagen.meshing.optimizer.common.constants import SMOOTHING_DEFAULTS
 from src.datagen.meshing.optimizer.common.settings import Optim_build_settings
 from src.datagen.meshing.optimizer.common.space import Optim_knobs_for
 from src.datagen.meshing.optimizer.evaluate.context import RunContext

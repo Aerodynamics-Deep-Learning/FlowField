@@ -5,7 +5,8 @@ reason empty when ok.
 
 import numpy as np
 
-from src.datagen.geometry.common.constants import CST_FIT_TOL, CURVE_POINTS, FAMILY_MATCH_TOL, SUSPECT_ISOLATION
+from src.datagen.constants import CST_FIT_TOL
+from src.datagen.geometry.common.constants import CURVE_POINTS, FAMILY_MATCH_TOL, SUSPECT_ISOLATION
 from .parametrization import Geom_cst_eval, Geom_cst_te_wedge, Geom_curve_distance, _bernstein
 from src.datagen.geometry.common.schemas import CSTParams, FitMetrics
 

@@ -14,8 +14,8 @@ import math
 import numpy as np
 import pytest
 
+from src.datagen.constants import DX_MAX, THETA_MAX_DEG
 from src.datagen.geometry.build.parametrization import Geom_curve_distance
-from src.datagen.geometry.common.constants import DX_MAX, THETA_MAX_DEG
 from src.datagen.geometry.common.schemas import TETreatment
 from src.datagen.geometry.sample.checks import DEV_MAX, Geom_sample_checks, SamplerAssertionError
 from src.datagen.geometry.sample.contour import Geom_build_contour
