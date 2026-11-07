@@ -11,10 +11,12 @@ Step 2: Ensure a campaign resumes: the finished are skipped, the aborted and the
     - test_nothing_left_to_run
 Step 3: Ensure the summary reads the batch back from the store
     - test_the_summary_counts_the_batch
+    - test_the_summary_counts_the_golden_failures_by_gate
     - test_a_stopped_campaign_says_so
 
 Runs here with one worker and a stand-in ladder over the repo's geometry manifest; the runner and the store are
-real. The stand-in passes at its golden run unless its airfoil is named in `_ABORTING` or `_SETUP`.
+real. The stand-in passes at its golden run unless its airfoil is named in `_ABORTING` or `_SETUP`, or in
+`_GOLDEN_SKEW`, whose golden run fails skew before a rung-3 pass.
 """
 
 import uuid
@@ -34,6 +36,7 @@ _NODES = {"naca0012": 58_000, "naca4412": 61_000, "e376": 66_000}
 _ABORTING: set = set()
 _ABORTING_ONCE: set = set()
 _SETUP: set = set()
+_GOLDEN_SKEW: dict = {}
 
 
 def _ladder(name, shape, ctx, emit):
@@ -47,12 +50,17 @@ def _ladder(name, shape, ctx, emit):
         emit(("ladder_end", ladder_id, dict(status="aborted", error_text=f"{type(error).__name__}: {error}",
                                             finished_at=Optim_utc_now())))
         return LadderOutcome(ladder_id, "aborted", ["golden"], None, error)
-    run = dict(run_id=str(uuid.uuid4()), ladder_id=ladder_id, rung="golden", seq=0, status="meshed", passed=1,
-               num_nodes=_NODES[name], config_schema_fp="fp", entry_flag="SUCCESS", started_at=Optim_utc_now(), **shared)
-    emit(("run", run))
-    emit(("ladder_end", ladder_id, dict(status="passed", final_rung="golden", route=["golden"], meshes_golden=1,
-                                        finished_at=Optim_utc_now())))
-    return LadderOutcome(ladder_id, "passed", ["golden"], run, None)
+    skew = _GOLDEN_SKEW.get(name)  # its golden run fails skew; rung 3 passes
+    route = ["golden", "mads"] if skew else ["golden"]
+    for rung in route:
+        run = dict(run_id=str(uuid.uuid4()), ladder_id=ladder_id, rung=rung, seq=0, status="meshed",
+                   passed=int(rung == route[-1]), failed_gates=["skew"] if rung != route[-1] else [],
+                   q_skew_max=skew if rung != route[-1] else 0.2, num_nodes=_NODES[name], config_schema_fp="fp",
+                   entry_flag="SUCCESS", started_at=Optim_utc_now(), **shared)
+        emit(("run", run))
+    emit(("ladder_end", ladder_id, dict(status="passed", final_rung=route[-1], route=route, meshes_golden=1,
+                                        meshes_mads=len(route) - 1, finished_at=Optim_utc_now())))
+    return LadderOutcome(ladder_id, "passed", route, run, None)
 
 
 @pytest.fixture(autouse=True)
@@ -65,6 +73,7 @@ def stand_ins(tmp_path, monkeypatch):
     _ABORTING.clear()
     _ABORTING_ONCE.clear()
     _SETUP.clear()
+    _GOLDEN_SKEW.clear()
 
 
 @pytest.fixture
@@ -164,6 +173,14 @@ def test_the_summary_counts_the_batch(store):
                          "Retried: 2",
                          "  aborted e376: RuntimeError: stand-in failure",
                          "Run the campaign again to retry what is left."]
+
+
+def test_the_summary_counts_the_golden_failures_by_gate(store):
+    _GOLDEN_SKEW.update(naca4412=0.26, e376=0.271)
+    lines = Optim_campaign_summary(store, _campaign(store, "naca0012", "naca4412", "e376")).splitlines()
+
+    assert "Passed at: mads 2, golden 1" in lines
+    assert "Golden failed on 2 of 3: skew 2 (0.260-0.271, worst e376)" in lines
 
 
 def test_a_stopped_campaign_says_so(store):

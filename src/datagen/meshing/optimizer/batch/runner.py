@@ -44,7 +44,7 @@ from src.datagen.meshing.optimizer.batch.slots import Optim_slot_platform, SlotP
 from src.datagen.meshing.optimizer.common.constants import ABORT_STREAK_MIN, SLOT_MEMORY_CAP_MB, WATCHDOG_S
 from src.datagen.meshing.optimizer.evaluate.context import RunContext, StudySetupError
 from src.datagen.meshing.optimizer.manifest.store import Optim_utc_now, RunStore
-from src.datagen.meshing.optimizer.search.events import LadderOutcome, Optim_failure_values, Optim_record
+from src.datagen.meshing.optimizer.search.events import LadderOutcome, Optim_ladder_line, Optim_record
 
 logger = logging.getLogger(__name__)
 
@@ -149,8 +149,9 @@ class _Turns:
         self.tries = [0] * len(self.airfoils)
         self.outcomes: list = [None] * len(self.airfoils)
         self.streak, self.streak_max = 0, max(workers, ABORT_STREAK_MIN)
-        self.done, self.tenths = 0, 0
+        self.done = 0
         self.t0 = time.perf_counter()
+        self.progress = Progress(len(self.airfoils))
 
     def next(self) -> Optional[int]:
         """The next airfoil's index, retries after every first turn; None when none is left."""
@@ -202,34 +203,29 @@ class _Turns:
             if line:
                 logger.warning("%s: %s in %.0f s", name, line, seconds)
         elif outcome.status == "failed" or "mads" in outcome.route:
+            runs = self.store.runs(outcome.ladder_id) if outcome.ladder_id else []
             logger.log(logging.WARNING if outcome.status == "failed" else logging.INFO, "%s: %s in %.0f s", name,
-                       self._ended(outcome), seconds)
-        self._progress()
+                       Optim_ladder_line(outcome, runs, self.settings), seconds)
+        self.progress.update(self.done)
 
-    def _ended(self, outcome) -> str:
-        """How a ladder ended: its route, best, c2d runs, and why its golden run did not pass."""
-        best = outcome.best_row or {}
-        text = f"{outcome.status} via {' > '.join(outcome.route) or '-'}"
-        text += f", {best['num_nodes']:,} nodes" if best.get("num_nodes") else ""
-        runs = self.store.runs(outcome.ladder_id) if outcome.ladder_id else []
-        text += f", {sum(r['entry_flag'] is not None for r in runs)} c2d runs"
-        golden = next((r for r in runs if r["rung"] == "golden"), None)
-        if golden is not None and not golden["passed"]:
-            text += f"; golden failed: {Optim_failure_values(golden, self.settings)}"
-        elif outcome.route == ["nstar"]:
-            text += "; n* accepted no grid point"
-        return text
 
-    def _progress(self) -> None:
-        """A line each time another tenth of the airfoils is done, with the rate and when the rest should end."""
-        n = len(self.airfoils)
-        tenths = 10 * self.done // n
-        if tenths <= self.tenths or self.done == n:
+class Progress:
+    """A log line each time another tenth of `total` items is done: how many, the rate, when the rest should end."""
+
+    def __init__(self, total: int, unit: str = "airfoils"):
+        self.total, self.unit = total, unit
+        self.tenths = 0
+        self.t0 = time.perf_counter()
+
+    def update(self, done: int) -> None:
+        tenths = 10 * done // max(self.total, 1)
+        if tenths <= self.tenths or done >= self.total:
             return
         self.tenths = tenths
-        rate = self.done / max(time.perf_counter() - self.t0, 1e-9) * 60
-        ends = datetime.datetime.now() + datetime.timedelta(minutes=(n - self.done) / rate)
-        logger.info("%d/%d (%d%%), %.1f/min, ends ~%s", self.done, n, 100 * self.done // n, rate, f"{ends:%H:%M}")
+        rate = done / max(time.perf_counter() - self.t0, 1e-9) * 60
+        ends = datetime.datetime.now() + datetime.timedelta(minutes=(self.total - done) / rate)
+        logger.info("%d/%d %s (%d%%), %.1f %s/min, ends ~%s", done, self.total, self.unit, 100 * done // self.total,
+                    rate, self.unit, f"{ends:%H:%M}")
 
 
 class _Ladder:

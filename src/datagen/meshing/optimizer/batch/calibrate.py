@@ -38,7 +38,7 @@ from src.datagen.meshing.optimizer.common.constants import (
 from src.datagen.meshing.optimizer.common.settings import Optim_build_settings
 from src.datagen.meshing.optimizer.evaluate.context import RunContext
 from src.datagen.meshing.optimizer.manifest.store import Optim_git_state, RunStore
-from src.datagen.meshing.optimizer.search.events import LadderOutcome, Optim_failure_values
+from src.datagen.meshing.optimizer.search.events import LadderOutcome, Optim_failure_values, Optim_ladder_line
 from src.datagen.meshing.optimizer.search.ladder import Ladder, Optim_run_ladder
 from src.datagen.meshing.optimizer.search.mads import Optim_plateau_reached
 from src.datagen.meshing.optimizer.search.nstar import Optim_n_star_search
@@ -136,6 +136,13 @@ class _Descend(Ladder):
             return
         golden_knobs = self._golden()
         self._full_search(golden_knobs, parent=self.golden, plateau=None)
+
+
+def _descend_edge(store: RunStore, settings: dict, outcome: LadderOutcome) -> Optional[str]:
+    """Rung 3's log line, only for an airfoil without a pass: every one reaches rung 3 here by design."""
+    if outcome.status != "failed":
+        return None
+    return Optim_ladder_line(outcome, store.runs(outcome.ladder_id) if outcome.ladder_id else [], settings)
 
 #endregion
 
@@ -257,7 +264,8 @@ def Optim_calibrate(store: RunStore, rungs: Sequence[int] = (1, 2, 3), names: Op
         chosen = names or [*CALIBRATION_SET, *Optim_ordinary_airfoils([n for n, _ in load()])]
         settings = Optim_build_settings(golden_jmax=golden_jmax, rung3_budget=rung3_cap)
         done[3] = run(3, partial(Optim_run_ladder, ladder_type=_Descend), load(chosen), settings,
-                      f"downward searches from the golden run (jmax {golden_jmax}) to {rung3_cap} c2d runs each")
+                      f"downward searches from the golden run (jmax {golden_jmax}) to {rung3_cap} c2d runs each",
+                      edge=partial(_descend_edge, store, settings))
         rows = Optim_descents(store, done[3])
         _end_rung(done[3], f"{len(rows)} airfoils, {sum(len(d.nodes) - 1 for d in rows)} c2d runs",
                   _rung3_findings(rows, Optim_plateau_table(rows)))

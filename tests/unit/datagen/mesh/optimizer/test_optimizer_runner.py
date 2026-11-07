@@ -316,12 +316,14 @@ def test_the_log_has_progress_and_only_the_edge_cases(ctx, store, caplog, monkey
         Optim_run_airfoils(task, _airfoils(*names), ctx, store, 1)
 
     said = [(r.levelname, r.getMessage()) for r in caplog.records]
-    assert [m.split(" (")[0] for _, m in said if "/min, ends ~" in m] == [f"{k}/10" for k in range(1, 10)]
+    progress = [m for _, m in said if "/min, ends ~" in m]
+    assert [m.split(" (")[0] for m in progress] == [f"{k}/10 airfoils" for k in range(1, 10)]
+    assert all(" airfoils/min, " in m for m in progress)
     lines = [(level, m.rsplit(" in ", 1)[0]) for level, m in said if m.startswith(("golden", "mads", "plain"))]
-    assert lines == [  # a golden pass says nothing; the climb and the failure their golden runs' numbers
-        ("INFO", f"mads: passed via golden > mads, 50,000 nodes, 2 c2d runs; golden failed: skew 0.500 > "
+    assert lines == [  # a golden pass says nothing; the climb why its golden run went straight to rung 3
+        ("INFO", f"mads: passed in rung 3, 50,000 nodes, 2 c2d runs; the golden run: skew 0.500 > "
                  f"{ctx.settings['gate_skew_max']:g}"),
-        ("WARNING", "plain: failed via plain, 0 c2d runs")]
+        ("WARNING", "plain: failed after plain, 0 c2d runs")]
     warned = []
     monkeypatch.setattr(runner, "_warn_memory", lambda *args: warned.append(args))
     Optim_run_airfoils(task, _airfoils("x", "y"), ctx, store, 2, warn_memory=False)

@@ -21,6 +21,7 @@ from src.datagen.meshing.optimizer.common.constants import WORKERS
 from src.datagen.meshing.optimizer.common.settings import Optim_build_settings
 from src.datagen.meshing.optimizer.evaluate.context import RunContext
 from src.datagen.meshing.optimizer.manifest.store import RunStore
+from src.datagen.meshing.optimizer.search.events import Optim_failures_by_gate
 from src.datagen.meshing.optimizer.search.ladder import Optim_run_ladder
 
 logger = logging.getLogger(__name__)
@@ -88,7 +89,7 @@ def Optim_run_campaign(store: RunStore, names: Optional[Sequence[str]] = None, w
 def Optim_campaign_summary(store: RunStore, result: CampaignResult) -> str:
     """
     A campaign's summary, read from the store: each airfoil's last ladder in the batch, the best meshes'
-    nodes, c2d runs per rung, and what to rerun.
+    nodes, where they passed, the golden runs' failures by gate, c2d runs per rung, and what to rerun.
 
     Args:
         store (RunStore): The store the campaign wrote
@@ -119,6 +120,11 @@ def Optim_campaign_summary(store: RunStore, result: CampaignResult) -> str:
     finals = Counter(ladder["final_rung"] for ladder in last.values() if ladder["status"] == "passed")
     if finals:
         out.append("Passed at: " + ", ".join(f"{rung} {n}" for rung, n in finals.most_common()))
+    goldens = [(ladder["airfoil_name"], run) for ladder in last.values() for run in store.runs(ladder["ladder_id"])
+               if run["rung"] == "golden"]
+    failed = [(name, run) for name, run in goldens if not run["passed"]]
+    if failed:
+        out.append(f"Golden failed on {len(failed)} of {len(goldens)}: " + ", ".join(Optim_failures_by_gate(failed)))
     meshes = {rung: sum(ladder[column] or 0 for ladder in ladders) for rung, column in _MESH_COLUMNS}
     out.append("c2d runs: " + ", ".join(f"{rung} {n}" for rung, n in meshes.items())
                + f" ({sum(meshes.values())} in all, retries included)")

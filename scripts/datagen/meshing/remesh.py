@@ -8,8 +8,9 @@ an airfoil's mesh is its best run under the current settings; by --run, any run 
 
 Left out, --out is a folder in the scratchpad (meshes are never kept in a committed place); --db is the repo's run
 store, `shared`, unless a campaign in the same run made one. Airfoils run one after another; one that cannot be
-re-meshed is reported and the rest go on. The run store is only read, so this can run beside a campaign. Exit code
-0 when every mesh was delivered, else 1.
+re-meshed is warned of and the rest go on. By name, the delivered meshes' quality against the gates follows, as a
+table and as histograms in `<out>/quality.png`. The run store is only read, so this can run beside a campaign. Exit
+code 0 when every mesh was delivered, else 1.
 """
 
 import argparse
@@ -19,6 +20,7 @@ from pathlib import Path
 from scripts.datagen.engine import (
     GEOMETRY_DB, Input, Output, OutputKind, Script_check_names, Script_main, Script_names, Stage, UsageError,
 )
+from src.datagen.meshing.optimizer.batch.quality import Optim_remesh_quality
 from src.datagen.meshing.optimizer.batch.remesh import Optim_remesh_airfoils, Optim_remesh_run
 from src.datagen.meshing.optimizer.batch.runner import Optim_load_shapes
 from src.datagen.meshing.optimizer.common.paths import MESHING_DB
@@ -50,21 +52,25 @@ def run(args: argparse.Namespace) -> int:
         store = RunStore.open(args.db, read_only=True)
     except FileNotFoundError as e:
         raise UsageError(str(e)) from None
+    quality = []
     with store:
         if args.run:
             if store.run(args.run) is None:
                 raise UsageError(f"no run {args.run} in {store.path}")
             outcomes = [Optim_remesh_run(store, args.run, args.out, with_vtk=args.vtk, geometry_db=args.geometry_db)]
-        else:
+        else:  # each one not delivered is warned of as it happens
             outcomes = Optim_remesh_airfoils(store, args.airfoils, args.out, with_vtk=args.vtk,
                                              geometry_db=args.geometry_db)
+            quality = Optim_remesh_quality(store, outcomes, args.out)
 
-    delivered = sum(o.remeshed is not None for o in outcomes)
-    print(f"Re-meshed {delivered} of {len(outcomes)} into {args.out.resolve()}")
-    for o in outcomes:
-        if o.remeshed is None:
-            print(f"  {o.name}: {o.error}")
-    return 0 if delivered == len(outcomes) else 1
+    missing = [o for o in outcomes if o.remeshed is None]
+    print(f"Re-meshed {len(outcomes) - len(missing)} of {len(outcomes)} into {args.out.resolve()}"
+          + (f"; not delivered: {', '.join(o.name for o in missing)}" if missing else ""))
+    if args.run and missing:
+        print(f"  {missing[0].name}: {missing[0].error}")
+    for line in quality:
+        print(line)
+    return 0 if not missing else 1
 
 
 STAGE = Stage(

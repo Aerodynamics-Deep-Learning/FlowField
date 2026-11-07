@@ -14,7 +14,6 @@ machine, a dirty tree) is caught by the hash. The run store is only read.
 
 import contextlib
 import json
-import logging
 import os
 import shutil
 import socket
@@ -32,8 +31,6 @@ from src.datagen.meshing.optimizer.evaluate.sampling import (
     Optim_build_study_contour, Optim_safe_name, Optim_sample_for_study,
 )
 from src.datagen.meshing.optimizer.manifest.store import Optim_git_state, Optim_su2_sha256, RunStore
-
-logger = logging.getLogger(__name__)
 
 
 class Remeshed(NamedTuple):
@@ -126,7 +123,6 @@ def Optim_remesh(store: RunStore, run_id: str, out_dir, *, with_vtk: bool = Fals
         if made:
             with contextlib.suppress(OSError):  # only an empty folder goes: one this call made, nothing delivered
                 out_dir.rmdir()
-    logger.info("%s: run %s re-meshed, %s nodes, hash verified", name, run_id[:8], f"{run['num_nodes']:,}")
     return Remeshed(run_id, name, str(su2_path), str(vtk_path) if vtk_path else None, run["num_nodes"], sha)
 
 

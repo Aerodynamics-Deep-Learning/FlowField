@@ -9,8 +9,10 @@ Step 1: Ensure a stored run is rebuilt from the executor's own input and deliver
     - test_a_killed_remeshs_folder_is_cleared_first
 Step 2: Ensure a run this code cannot rebuild is refused before anything meshes
     - test_a_run_that_cannot_be_rebuilt_is_refused_before_meshing
-Step 3: Ensure the right runs are picked, and what could not be delivered is reported while the rest go on
+Step 3: Ensure the right runs are picked, what could not be delivered is warned of while the rest go on, and the
+delivered meshes' quality is tabled and drawn (`meshing.optimizer.batch.quality`)
     - test_each_best_is_delivered_and_the_rest_reported
+    - test_the_delivered_meshes_quality_is_tabled_and_drawn
     - test_the_airfoils_go_on_past_one_that_cannot_be_delivered
     - test_any_meshed_run_is_remeshed_by_its_id
 
@@ -30,6 +32,7 @@ from src.datagen.meshing.common.schemas import (
     MeshBackend, MeshExitFlag, MeshGeoDeviationSummary, MeshQualitySummary, MeshTopology,
 )
 from src.datagen.meshing.optimizer.batch import remesh as batch_remesh
+from src.datagen.meshing.optimizer.batch.quality import Optim_remesh_quality
 from src.datagen.meshing.optimizer.common.constants import SMOOTHING_DEFAULTS
 from src.datagen.meshing.optimizer.common.settings import Optim_build_settings, Optim_config_schema_fp
 from src.datagen.meshing.optimizer.evaluate import executor as executor_module
@@ -38,7 +41,7 @@ from src.datagen.meshing.optimizer.evaluate.context import RunContext
 from src.datagen.meshing.optimizer.evaluate.executor import RunExecutor
 from src.datagen.meshing.optimizer.evaluate.remesh import Optim_remesh, Remeshed, RemeshMismatch, RemeshRefused
 from src.datagen.meshing.optimizer.evaluate.sampling import Optim_build_study_contour
-from src.datagen.meshing.optimizer.manifest.store import RunStore
+from src.datagen.meshing.optimizer.manifest.store import Optim_utc_now, RunStore
 from tests.geometry_shapes import SHAPE_NAMES, stored_shape
 
 GOLDEN = {"dx_mid": DX_MAX, "le_ratio": 0.025, "te_ratio": 1.0, "cluster_width": 0.026, "jmax": 147,
@@ -222,7 +225,7 @@ def _delivered(outcomes):
     return [(o.name, o.remeshed is not None) for o in outcomes]
 
 
-def test_each_best_is_delivered_and_the_rest_reported(study):
+def test_each_best_is_delivered_and_the_rest_reported(study, caplog):
     with RunStore.open(study.db, read_only=True) as store:
         named = batch_remesh.Optim_remesh_airfoils(store, ["naca0012", "naca4412"], study.out)
         every = batch_remesh.Optim_remesh_airfoils(store, None, study.out)
@@ -230,9 +233,32 @@ def test_each_best_is_delivered_and_the_rest_reported(study):
             batch_remesh.Optim_remesh_airfoils(store, ["naca9999"], study.out)
 
     assert _delivered(named) == [("naca0012", True), ("naca4412", False)]
-    assert named[1].error.startswith("no best run under settings")
+    assert named[1].error.startswith("no best run: never finished a campaign ladder under these settings")
+    assert f"naca4412: not re-meshed, {named[1].error}" in [r.getMessage() for r in caplog.records
+                                                           if r.levelname == "WARNING"]  # as it happens
     assert os.listdir(study.out) == ["naca0012"] and os.listdir(study.out / "naca0012") == ["naca0012.su2"]
     assert len(every) == len(SHAPE_NAMES) and [d for _, d in _delivered(every)].count(True) == 1
+
+    with RunStore.open(study.db) as store:  # a campaign ladder that ended with no mesh passing
+        store.start_ladder(dict(ladder_id="l", settings_id=study.ctx.settings["settings_id"], batch_id="batch",
+                                geometry_id="naca4412", airfoil_name="naca4412", status="running",
+                                started_at=Optim_utc_now()))
+        store.finish_ladder("l", dict(status="failed", finished_at=Optim_utc_now()))
+        [failed] = batch_remesh.Optim_remesh_airfoils(store, ["naca4412"], study.out)
+    assert failed.error == "no best run: its campaign ladder failed, no mesh passed under these settings"
+
+
+def test_the_delivered_meshes_quality_is_tabled_and_drawn(study):
+    with RunStore.open(study.db, read_only=True) as store:
+        outcomes = batch_remesh.Optim_remesh_airfoils(store, ["naca0012", "naca4412"], study.out)
+        lines = Optim_remesh_quality(store, outcomes, study.out)
+        assert Optim_remesh_quality(store, outcomes[1:], study.out) == []  # nothing delivered, nothing drawn
+
+    gate = study.ctx.settings["gate_skew_max"]
+    assert lines[0] == "Quality of the 1 delivered meshes, each mesh's worst cell:"  # naca4412 left out
+    assert lines[2].split() == ["skew", "<=", f"{gate:g}", "0.2000", "0.2000", "naca0012"]
+    assert len(lines) == 2 + 6 + 1 and lines[-1] == f"Histograms: {study.out / 'quality.png'}"
+    assert (study.out / "quality.png").read_bytes().startswith(b"\x89PNG")
 
 
 def test_the_airfoils_go_on_past_one_that_cannot_be_delivered(study):

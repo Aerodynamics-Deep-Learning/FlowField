@@ -64,7 +64,7 @@ from src.datagen.meshing.optimizer.evaluate.context import RunContext, StudySetu
 from src.datagen.meshing.optimizer.evaluate.executor import Optim_failed_gates, Optim_nomad_outputs, RunExecutor
 from src.datagen.meshing.optimizer.evaluate.sampling import Optim_build_study_contour
 from src.datagen.meshing.optimizer.manifest.store import RUN_COLUMNS, RunStore
-from src.datagen.meshing.optimizer.search.events import Optim_failure_values
+from src.datagen.meshing.optimizer.search.events import Optim_failure_values, Optim_violation
 from tests.geometry_shapes import stored_shape
 
 GOLDEN = {"dx_mid": DX_MAX, "le_ratio": 0.025, "te_ratio": 1.0, "cluster_width": 0.026, "jmax": 147,
@@ -304,6 +304,12 @@ def test_the_failure_values_name_the_executors_gates_with_their_numbers(settings
     assert Optim_failure_values({**row, "g_max_mesh_to_input": None, "failed_gates": '["geo_dev"]'}, settings) == \
         "geo_dev unmeasured"  # the stored JSON as well as a list
     assert Optim_failure_values({**row, "status": "mesher_failed"}, settings) == "mesher_failed"
+
+    # the log's closest mesh is rung 2's own score, the worst penalty NOMAD is told
+    for quality in ({}, {"q_size_ratio_max": 1.2513}, {"q_ortho_min": 0.85}, {"g_max_mesh_to_input": None}):
+        meshed = _meshed_row(**quality)
+        assert Optim_violation(meshed, settings) == Optim_nomad_outputs(meshed, "violation", settings)[0]
+    assert Optim_violation({**row, "status": "rejected"}, settings) is None
 
 
 def test_gates_and_limits_come_from_the_settings_row(tmp_path, monkeypatch, contour, work):

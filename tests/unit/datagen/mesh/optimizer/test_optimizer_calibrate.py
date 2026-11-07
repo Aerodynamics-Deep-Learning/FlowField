@@ -51,6 +51,7 @@ from tests.geometry_shapes import stored_shape
 NSTAR = NStarResult(n=400, knobs=dict(dx_mid=DX_MAX, le_ratio=0.62, te_ratio=1.0, cluster_width=0.026), evals=1200,
                     seconds=2.0)
 FLOOR = NStarResult(n=400, knobs=NSTAR.knobs, evals=40, seconds=0.1)
+_RUNNER = "src.datagen.meshing.optimizer.batch.runner"
 _CLEAN = dict(entry_flag="SUCCESS", q_neg_cells=0, q_skew_max=0.2, q_ortho_min=0.91, q_jac_min=0.91, q_ar_max=9e3,
               q_size_ratio_max=1.2, g_max_mesh_to_input=1e-8, g_max_input_to_mesh=2e-8)
 
@@ -333,6 +334,7 @@ def test_the_ordinary_airfoils_are_drawn_the_same_way():
 
 def test_a_calibration_runs_every_rung_and_reports_it(stubs, tmp_path, monkeypatch, caplog):
     _world(monkeypatch, lambda k: {**_nodes(k), **_skew_off_defaults(k)})
+    caplog.set_level(logging.INFO, logger=_RUNNER)
     with RunStore.open(tmp_path / "cal.sqlite") as store, caplog.at_level(logging.INFO, logger=cal.__name__):
         result = cal.Optim_calibrate(store, (1, 2, 3), ["naca0012", "naca4412"], rung3_cap=10, rung2_cap=5,
                                      workers=1, work_root=tmp_path / "work")
@@ -346,8 +348,8 @@ def test_a_calibration_runs_every_rung_and_reports_it(stubs, tmp_path, monkeypat
         labels = {row[0] for row in store._conn.execute("SELECT label FROM settings")}
         assert labels == {"calibration rung 1", "calibration rung 2", "calibration rung 3"}
     logged = [r.getMessage() for r in caplog.records if r.name == cal.__name__]
-    assert not any("bisect" in r.getMessage() for r in caplog.records  # skew 0.3 at jmax*: rung 2's, unlogged
-                   if r.name == "src.datagen.meshing.optimizer.batch.runner")
+    per_airfoil = [r.getMessage() for r in caplog.records if r.name == _RUNNER and r.getMessage().startswith("naca")]
+    assert per_airfoil == []  # rung 1's skew 0.3 at jmax* is rung 2's work, rung 3's passes its design: no lines
     assert [m.split("  ")[0] for m in logged if m.startswith("-----")] == [
         f"----- {edge} rung {rung} of 3 -----" for rung in (1, 2, 3) for edge in ("START", "END")]
     for finding in ("size ratio one jmax below jmax*", "worst skew at jmax*", "passing skew: ",

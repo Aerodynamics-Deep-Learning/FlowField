@@ -57,9 +57,9 @@ stage is the script's name in configs and logs.
 | `meshing.machine_check` | `machine_check` | runs the parity test; `--rewrite` writes the parity reference here instead | the shared manifest, c2d | the stamp (`--rewrite`: `machine_parity.json`) | ~1 min |
 | `geometry.calibrate <folder>` | `geometry_calibrate` | fits every file at CST orders 4-12 for choosing the CST constants | the `.dat` folder | `--out`: a report file | ~1 min for 190 files |
 | `geometry.ingest [folder]` | `geometry_ingest` | adds the folder's airfoils to a manifest; without a folder, brings stored ones to the current shape version | the `.dat` folder | `--data-root`: a data folder (manifest, raw copies, reports) | ~15 s for 190 files |
-| `meshing.calibrate` | `mesh_calibrate` | measures the numbers the ladder's rungs run on | `--geometry-db` | `--out`: a folder, `<date>.txt` and `<date>.sqlite` | rungs 1-3 ~1.5-2 h on 6 workers (estimated) |
-| `meshing.campaign` | `campaign` | the ladder over every airfoil not finished under the current constants | `--geometry-db` | `--db`: a run store | ~12 min for 158 airfoils on 6 workers |
-| `meshing.remesh` | `remesh` | rebuilds best runs (`--airfoils`, `--all`) or one run (`--run`), each checked against its stored hash | `--db`, `--geometry-db` | `--out`: a folder per airfoil | ~5 s an airfoil |
+| `meshing.calibrate` | `mesh_calibrate` | measures the numbers the ladder's rungs run on | `--geometry-db` | `--out`: a folder, `<date>.txt` and `<date>.sqlite` | ~1 h for 158 airfoils on 6 workers (rung 1 ~12 min, rung 2 ~6, rung 3 ~41) |
+| `meshing.campaign` | `campaign` | the ladder over every airfoil not finished under the current constants | `--geometry-db` | `--db`: a run store | ~10 min for 158 airfoils on 6 workers, most of it the few that reach rung 3 |
+| `meshing.remesh` | `remesh` | rebuilds best runs (`--airfoils`, `--all`) or one run (`--run`), each checked against its stored hash | `--db`, `--geometry-db` | `--out`: a folder per airfoil, and `quality.png` | ~3 s an airfoil |
 
 Exit codes, for every script and the master:
 
@@ -169,11 +169,15 @@ has its own `----- START rung N of 3 -----` and `----- END rung N of 3 -----`, t
 The stages log statistics and edge cases; every table goes to its report file, named at the end:
 
 - **ingest**: the counts, the fit statistics, one line per rejection and duplicate, a `!` per suspect point;
-- **CST calibration**: the per-configuration and formula-family tables, the airfoils whose surfaces cross or whose
-  fit strays; the per-airfoil table is in the report;
-- **campaign and mesh calibration**: a progress line every tenth of the airfoils (`16/158 (10%), 6.8/min, ends
-  ~05:52`), and a line of its own only for an airfoil that aborted, failed or reached rung 3, with its golden run's
-  failed gates against their limits (`golden failed: skew 0.262 > 0.22, size_ratio 1.2502 > 1.25`).
+- **CST calibration**: one table, the ingest's configuration and its neighbours at the fit tolerance, and the
+  airfoils whose surfaces cross or whose fit strays; every configuration and every airfoil are in the report;
+- **campaign and mesh calibration**: a progress line every tenth of the airfoils (`16/158 airfoils (10%), 6.8
+  airfoils/min, ends ~05:52`), and a line of its own only for an airfoil that aborted, failed or reached rung 3,
+  saying where each rung before stopped short (`e376: passed in rung 3, 68,820 nodes, 120 c2d runs; rung 2: no pass
+  in 50 meshes at jmax 148, closest size_ratio 1.2513 > 1.25`). The calibration's rung 1 logs only an airfoil
+  without jmax*, its rung 3 only one without a pass; the campaign's summary counts the golden runs' failures by gate;
+- **re-mesh**: the same progress line, a `!` per airfoil not delivered saying why, then the delivered meshes'
+  quality against each gate (limit, median, worst), with a histogram per gate in `<out>/quality.png`.
 
 ```
 21:30:12 [run] [plan]               [info]  ===== PLAN =====  master dx003, started 2026-11-06 21:30:12 on Ege_Laptop, code 68ae03b

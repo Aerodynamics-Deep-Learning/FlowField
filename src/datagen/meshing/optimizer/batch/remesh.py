@@ -4,18 +4,21 @@ delivered only once it hashes to what its run stored (`evaluate/remesh.py`). By 
 best run under the current settings; by run id, any run that meshed, best or not. Run from the command line by
 `scripts/datagen/meshing/remesh.py`.
 
-Airfoils run one after another; one that cannot be re-meshed is reported and the rest go on. The run store
-is only read, so this can run beside a campaign.
+Airfoils run one after another, with a progress line every tenth; one that cannot be re-meshed is warned of
+as it happens and the rest go on. The run store is only read, so this can run beside a campaign.
 """
 
+import logging
 from pathlib import Path
 from typing import NamedTuple, Optional, Sequence
 
-from src.datagen.meshing.optimizer.batch.runner import Optim_load_shapes
+from src.datagen.meshing.optimizer.batch.runner import Optim_load_shapes, Progress
 from src.datagen.meshing.optimizer.common.settings import Optim_build_settings
 from src.datagen.meshing.optimizer.evaluate.remesh import Optim_remesh, Remeshed, RemeshMismatch, RemeshRefused
 from src.datagen.meshing.optimizer.evaluate.sampling import Optim_safe_name
 from src.datagen.meshing.optimizer.manifest.store import RunStore
+
+logger = logging.getLogger(__name__)
 
 
 class RemeshOutcome(NamedTuple):
@@ -44,13 +47,23 @@ def Optim_remesh_airfoils(store: RunStore, names: Optional[Sequence[str]], out_r
         ValueError: If a name has no stored shape, before anything is meshed
     """
     settings_id = Optim_build_settings()["settings_id"]
-    outcomes = []
-    for name, shape in Optim_load_shapes(names, geometry_db):
+    shapes = Optim_load_shapes(names, geometry_db)
+    finished = store.finished_airfoils(settings_id)
+    progress, outcomes = Progress(len(shapes)), []
+    for name, shape in shapes:
         run_id = store.best(shape.geometry_id, settings_id)
-        if run_id is None:
-            outcomes.append(RemeshOutcome(name, None, f"no best run under settings {settings_id}"))
+        if run_id is not None:
+            outcome = _remesh_one(store, name, run_id, out_root, with_vtk, geometry_db)
+        elif shape.geometry_id in finished:
+            outcome = RemeshOutcome(name, None, "no best run: its campaign ladder failed, no mesh passed under "
+                                                "these settings")
         else:
-            outcomes.append(_remesh_one(store, name, run_id, out_root, with_vtk, geometry_db))
+            outcome = RemeshOutcome(name, None, f"no best run: never finished a campaign ladder under these settings "
+                                                f"({settings_id[:8]})")
+        if outcome.error:
+            logger.warning("%s: not re-meshed, %s", name, outcome.error)
+        outcomes.append(outcome)
+        progress.update(len(outcomes))
     return outcomes
 
 

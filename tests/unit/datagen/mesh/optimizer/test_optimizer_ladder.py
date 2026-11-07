@@ -23,6 +23,9 @@ Step 3: Ensure what ends a ladder early is recorded, then handed up
     - test_the_outcome_and_events_cross_a_process_boundary
     - test_an_unknown_event_is_refused
     - test_a_ladder_subclass_climbs_its_own_way_and_is_reported_alike
+Step 4: Ensure a batch's log says where each rung stopped short, and counts failures by gate
+    - test_the_log_line_says_where_each_rung_stopped_short
+    - test_failures_are_counted_by_gate_with_their_range_and_worst
 
 n* is stubbed and the executor is a stand-in whose rows come from a formula of the knobs, judged by the
 real verdict, with the real one's cache and dominance; NOMAD, the contour and the store are real. The
@@ -44,7 +47,9 @@ from src.datagen.meshing.optimizer.evaluate.context import RunContext, StudySetu
 from src.datagen.meshing.optimizer.evaluate.executor import Optim_failed_gates, RunResult
 from src.datagen.meshing.optimizer.manifest.store import RunStore
 from src.datagen.meshing.optimizer.search import ladder
-from src.datagen.meshing.optimizer.search.events import LadderOutcome, Optim_record
+from src.datagen.meshing.optimizer.search.events import (
+    LadderOutcome, Optim_failures_by_gate, Optim_ladder_line, Optim_record,
+)
 from src.datagen.meshing.optimizer.search.ladder import Optim_run_ladder
 from src.datagen.meshing.optimizer.search.nstar import NStarResult
 from tests.geometry_shapes import stored_shape
@@ -493,4 +498,49 @@ def test_a_ladder_subclass_climbs_its_own_way_and_is_reported_alike(climb):
     c = climb(lambda k: {}, ladder_type=failing)
     assert c.outcome.status == "aborted" and str(c.outcome.error) == "a calibration bug"
     assert c.outcome.notes == {"golden_nodes": 399 * 147}  # what it measured before the error is kept
+# endregion
+
+
+# region Step 4
+def _row(rung, failed=(), jmax=148, status="meshed", **quality):
+    return {**_CLEAN, **quality, "rung": rung, "status": status, "jmax": jmax,
+            "entry_flag": None if status == "rejected" else "SUCCESS", "passed": int(status == "meshed" and not failed),
+            "failed_gates": failed if isinstance(failed, str) else list(failed)}
+
+
+def test_the_log_line_says_where_each_rung_stopped_short():
+    s = Optim_build_settings()
+    sr, skew, geo = (f"{s[k]:g}" for k in ("gate_size_ratio_max", "gate_skew_max", "gate_geo_dev_max"))
+    # golden fails skew and size ratio, a bump leaves skew, rung 2 never passes, rung 3 does
+    rung2 = [_row("smoothing", ["skew"], q_skew_max=0.3), _row("smoothing", ["size_ratio"], q_size_ratio_max=1.2513),
+             _row("smoothing", ["size_ratio"], q_size_ratio_max=1.27)]
+    best = _row("mads", jmax=155, num_nodes=68_820)
+    runs = [_row("golden", ["skew", "size_ratio"], 147, q_skew_max=0.27, q_size_ratio_max=1.2502),
+            _row("jmax_bump", ["skew"], q_skew_max=0.27), *rung2, _row("mads", status="rejected"), best]
+    climbed = LadderOutcome("l", "passed", ["golden", "jmax_bump", "smoothing", "mads"], best, None)
+    assert Optim_ladder_line(climbed, runs, s) == (  # the closest by worst violation; rejections ran no c2d
+        f"passed in rung 3, 68,820 nodes, 6 c2d runs; rung 2: no pass in 3 meshes at jmax 148, closest size_ratio "
+        f"1.2513 > {sr}")
+    # golden straight to rung 3, which fails: both say why
+    runs = [_row("golden", ["geo_dev"], 147, g_max_mesh_to_input=3e-3), _row("mads", ["skew"], q_skew_max=0.26)]
+    assert Optim_ladder_line(LadderOutcome("l", "failed", ["golden", "mads"], None, None), runs, s) == (
+        f"failed after rung 3, 2 c2d runs; the golden run: geo_dev 3.00e-03 > {geo}; rung 3: no pass in 1 mesh, "
+        f"closest skew 0.260 > {skew}")
+    # bumps that run out
+    runs = [_row("golden", ["size_ratio"], 147, q_size_ratio_max=1.27),
+            *(_row("jmax_bump", ["size_ratio"], j, q_size_ratio_max=1.26) for j in (148, 149)),
+            best := _row("mads", jmax=160, num_nodes=70_000)]
+    assert Optim_ladder_line(LadderOutcome("l", "passed", ["golden", "jmax_bump", "mads"], best, None), runs, s) == (
+        f"passed in rung 3, 70,000 nodes, 4 c2d runs; rung 1: no pass by jmax 149, size_ratio 1.2600 > {sr}")
+    assert Optim_ladder_line(LadderOutcome("l", "failed", ["nstar"], None, None), [], s) == \
+        "failed: n* accepted no grid point"
+
+
+def test_failures_are_counted_by_gate_with_their_range_and_worst():
+    runs = [("a", _row("golden", ["skew"], q_skew_max=0.26)),
+            ("b", _row("golden", ["skew", "size_ratio"], q_skew_max=0.271, q_size_ratio_max=1.2502)),
+            ("c", _row("golden", '["ortho"]', q_ortho_min=0.85)),  # as stored
+            ("d", _row("golden", status="mesher_failed"))]
+    assert Optim_failures_by_gate(runs) == ["skew 2 (0.260-0.271, worst b)", "size_ratio 1 (1.2502-1.2502, worst b)",
+                                            "ortho 1 (0.850-0.850, worst c)", "mesher_failed 1"]
 # endregion

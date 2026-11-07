@@ -2,7 +2,7 @@
 Tests for `scripts.datagen.meshing.remesh`, the re-mesh's command line, i.e.:
 
 Step 1: Ensure the options pick the runs, the folder is the scratchpad's when left out, what was not delivered is
-printed, and the exit code says if all were
+named, the quality follows a re-mesh by name, and the exit code says if all were
     - test_the_airfoils_best_runs_are_asked_for
     - test_one_run_is_asked_for_by_its_id
 Step 2: Ensure a mistake in what was asked stops it before anything meshes
@@ -68,6 +68,7 @@ def remesh(monkeypatch):
 
     monkeypatch.setattr(mesh_remesh, "Optim_remesh_airfoils", airfoils)
     monkeypatch.setattr(mesh_remesh, "Optim_remesh_run", one)
+    monkeypatch.setattr(mesh_remesh, "Optim_remesh_quality", lambda store, outcomes, out: ["the quality table"])
     monkeypatch.setattr(mesh_remesh, "Optim_load_shapes", _known)
     monkeypatch.setattr(mesh_remesh, "RunStore", SimpleNamespace(open=lambda path, read_only: _Store()))
     return calls
@@ -81,8 +82,8 @@ def test_the_airfoils_best_runs_are_asked_for(remesh, db, tmp_path, data_root, c
 
     assert mesh_remesh.main(["--airfoils", "naca4412,naca0012", "--out", str(out), "--vtk", "--db", str(db),
                              "--geometry-db", str(manifest)]) == 1
-    printed = capsys.readouterr().out
-    assert f"Re-meshed 1 of 2 into {out}" in printed and "  naca4412: run r2 hashes to" in printed
+    printed = capsys.readouterr().out  # why naca4412 was not delivered, the batch warns of as it happens
+    assert f"Re-meshed 1 of 2 into {out}; not delivered: naca4412" in printed and "the quality table" in printed
     assert mesh_remesh.main(["--all", "--out", str(out), "--db", str(db)]) == 1
     assert mesh_remesh.main(["--airfoils", "naca0012", "--db", str(db)]) == 0  # every one delivered
     left_out = remesh[2][2]
@@ -97,7 +98,8 @@ def test_one_run_is_asked_for_by_its_id(remesh, db, tmp_path, capsys):
 
     assert mesh_remesh.main(["--run", "r1", "--out", str(out), "--vtk", "--db", str(db)]) == 0
     assert remesh == [("run", "r1", out, {"with_vtk": True, "geometry_db": Geom_paths().db})]
-    assert "Re-meshed 1 of 1" in capsys.readouterr().out
+    printed = capsys.readouterr().out
+    assert "Re-meshed 1 of 1" in printed and "the quality table" not in printed  # one run: no histograms
 # endregion
 
 
