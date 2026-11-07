@@ -5,7 +5,8 @@ What every datagen script shares, and the run it makes (scripts/datagen/README.m
              names one), each stage's options parsed by its own parser, every output decided (left out: the run
              folder's <stage>/; given: new or existing; `shared`: the committed one), this run's outputs handed to
              later stages' inputs, each stage's own checks, the warnings; any problem refuses the whole run
-    log      one log, `log.log` in the run's folder beside a copy of the config, written and fsynced line by line;
+    log      one log, `log.log` in the run's folder beside the config's copy (`config_<time>.yaml`, one per run),
+             written and fsynced line by line;
              every line `HH:MM:SS [run|cmd] [plan|<stage>|summary] [info|!|!!|error] text`, the blocks opened by
              `===== PLAN =====`, `===== START <stage> =====` / `===== END <stage> =====` and `===== SUMMARY =====`
     run      a script's one stage in this process, so a debugger stops in it; the master's stages each as a
@@ -38,7 +39,7 @@ CHILD_ENV = "FLOWFIELD_STAGE_CHILD"
 SHARED = "shared"
 INTERRUPTED = 130
 LOG_NAME = "log.log"
-CONFIG_NAME = "config.yaml"
+CONFIG_NAME = "config_{:%Y-%m-%d_%H%M%S}.yaml"  # the config's copy, named by the run's start
 HELP_TAIL = ("Through this script: the run gets a new folder in data/scratchpad/ holding its log (log.log) and every "
              "output left out; `shared` names the committed store.")
 
@@ -178,7 +179,7 @@ def Script_plan(name: str, requested: Sequence[tuple[Stage, Sequence[str]]], *, 
     """
     started = started or datetime.datetime.now()
     problems, notes, plans, made = [], [], [], {}
-    folder = _run_folder(name, started, folder, config, notes, problems)
+    folder = _run_folder(name, started, folder, notes, problems)
     for stage, argv in requested:
         parser = stage.build_parser()
         parser.error = _refuse
@@ -218,7 +219,7 @@ def _refuse(message: str):
     raise _Refused(message)
 
 
-def _run_folder(name, started, folder, config, notes, problems) -> Path:
+def _run_folder(name, started, folder, notes, problems) -> Path:
     """The run's folder: the one named, else a new one in the scratchpad."""
     if folder is None:
         base = DATA_ROOT / "scratchpad" / f"{started:%Y-%m-%d_%H%M%S}_{name}"
@@ -232,9 +233,8 @@ def _run_folder(name, started, folder, config, notes, problems) -> Path:
     if path.is_file():
         problems.append(("plan", f"folder: {_show(path)} is a file, not a folder"))
     elif path.exists():
-        replaced = f", replaces its {CONFIG_NAME}" if config is not None else ""
-        notes.append(("plan", "!", f"run folder: {_show(path)} exists; this run adds to its {LOG_NAME}{replaced} and "
-                                   f"writes the outputs left out into it"))
+        notes.append(("plan", "!", f"run folder: {_show(path)} exists; this run adds to its {LOG_NAME} and writes the "
+                                   f"outputs left out into it"))
     else:
         notes.append(("plan", "info", f"run folder: {_show(path)} (new)"))
     return path
@@ -480,11 +480,11 @@ def Script_execute(plan: RunPlan, *, in_process: bool) -> int:
     Returns:
         int: 0, the failing stage's exit code, or 130 on Ctrl-C
     """
-    log = _open(plan)
+    log, copy = _open(plan)
     run = Run(plan, log)
     t_run, ran, code = time.monotonic(), [], 0
     try:
-        _header(run, plan)
+        _header(run, plan, copy)
         for i, sp in enumerate(plan.stages):
             name, rest = sp.stage.name, [s.stage.name for s in plan.stages[i + 1:]]
             run.say(name, "info", f"{_marker('START', name)}  " + " ".join(["python -m", sp.stage.module,
@@ -518,24 +518,29 @@ def Script_execute(plan: RunPlan, *, in_process: bool) -> int:
         log.close()
 
 
-def _open(plan: RunPlan) -> RunLog:
-    """The run's folder made, the config copied into it, its log opened."""
+def _open(plan: RunPlan) -> tuple[RunLog, Optional[Path]]:
+    """The run's folder made, the config copied into it beside earlier runs' copies, its log opened."""
     plan.folder.mkdir(parents=True, exist_ok=True)
-    copy = plan.folder / CONFIG_NAME
-    if plan.config is not None and Path(plan.config).resolve() != copy.resolve():
+    copy = None
+    if plan.config is not None:
+        name, n = CONFIG_NAME.format(plan.started), 1
+        copy = plan.folder / name
+        while copy.exists():  # a run into the same folder in the same second
+            n += 1
+            copy = plan.folder / f"{name[:-len('.yaml')]}_{n}.yaml"
         shutil.copyfile(plan.config, copy)
-    return RunLog(plan.folder / LOG_NAME)
+    return RunLog(plan.folder / LOG_NAME), copy
 
 
 def _marker(*words: str) -> str:
     return f"===== {' '.join(words)} ====="
 
 
-def _header(run: Run, plan: RunPlan) -> None:
+def _header(run: Run, plan: RunPlan, copy: Optional[Path]) -> None:
     run.say("plan", "info", f"{_marker('PLAN')}  {plan.title}, started {plan.started:%Y-%m-%d %H:%M:%S} on "
                             f"{socket.gethostname()}, code {_code_version()}")
-    if plan.config is not None:
-        run.say("plan", "info", f"config {plan.config}, copied into the run folder as {CONFIG_NAME}")
+    if copy is not None:
+        run.say("plan", "info", f"config {plan.config}, copied into the run folder as {copy.name}")
     if plan.stages or plan.off:
         run.say("plan", "info", "stages " + " -> ".join(sp.stage.name for sp in plan.stages)
                 + (f" (off: {', '.join(plan.off)})" if plan.off else ""))
@@ -621,12 +626,12 @@ def Script_refuse(name: str, problems: Sequence[tuple[str, str]], *, title: Opti
     """Logs a refused run, with its config's copy, into a new scratchpad folder (never a named one); returns 2."""
     started = started or datetime.datetime.now()
     notes = []
-    folder = _run_folder(name, started, None, config, notes, [])
+    folder = _run_folder(name, started, None, notes, [])
     plan = RunPlan(title or name, started, folder, [], [], config, notes)
-    log = _open(plan)
+    log, copy = _open(plan)
     run = Run(plan, log)
     try:
-        _header(run, plan)
+        _header(run, plan, copy)
         for stage, text in problems:
             run.say(stage, "error", text)
         run.say("summary", "error", f"{_marker('SUMMARY')}  refused, nothing was run: {len(problems)} problem"
@@ -665,9 +670,13 @@ def _as_child(stage: Stage, argv: Sequence[str]) -> int:
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s", datefmt="%H:%M:%S",
                         force=True)
+    real, sys.stdout = sys.stdout, _Lines(logging.getLogger(stage.name).info)  # one stream to the master, in order
     try:
         return stage.run(args)
     except UsageError as e:
         parser.error(str(e))
+    finally:
+        sys.stdout.finish()
+        sys.stdout = real
 
 #endregion

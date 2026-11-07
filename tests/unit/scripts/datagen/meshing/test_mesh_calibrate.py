@@ -1,7 +1,7 @@
 """
 Tests for `scripts.datagen.meshing.calibrate`, the ladder calibration's command line, i.e.:
 
-Step 1: Ensure the options reach the calibration, its folder the scratchpad's when left out, and it is printed
+Step 1: Ensure the options reach the calibration, its folder the run folder's when left out, and its files named
     - test_the_options_reach_the_calibration
 Step 2: Ensure a mistake in what was asked stops it before anything meshes
     - test_a_mistake_is_a_usage_error
@@ -55,7 +55,7 @@ def test_the_options_reach_the_calibration(calibrate, tmp_path, data_root, capsy
     assert calibrate == [(out, [1, 3], ["naca0012", "s1223"], 150, 30, 10, 2, manifest, work),
                          (left_out, [1, 2, 3], None, None, RUNG3_CAP, RUNG2_CAP, WORKERS, Geom_paths().db, None)]
     printed = capsys.readouterr().out
-    assert "the report" in printed and "Written to r.txt and r.sqlite" in printed
+    assert "the report" not in printed and "r.txt; every run: r.sqlite" in printed  # the findings came per rung
 # endregion
 
 

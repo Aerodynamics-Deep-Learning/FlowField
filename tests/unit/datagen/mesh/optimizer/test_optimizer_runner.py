@@ -25,6 +25,8 @@ Step 5: Ensure a setup error, aborts in a row and Ctrl-C stop the batch, leaving
 Step 6: Ensure the limits hold together: the watchdog outlasts c2d's own timeout, a tight machine is warned of
     - test_the_watchdog_outlasts_c2ds_own_timeout
     - test_a_pool_too_big_for_memory_is_warned
+Step 7: Ensure the log says how far a batch is and only what needs a look
+    - test_the_log_has_progress_and_only_the_edge_cases
 
 The task is `runner_tasks.task`, a ladder of two runs whose airfoil's name says how it goes, kept in a module of its
 own so a worker starts as light as the runner. The slots, the pool and the store are real; only the watchdog's
@@ -32,6 +34,7 @@ wait is not sat through, the runner's clock moved past it instead.
 """
 
 import inspect
+import logging
 import os
 import shutil
 import time
@@ -296,4 +299,25 @@ def test_a_pool_too_big_for_memory_is_warned(caplog):
     assert "not capped in memory" in warnings[0]
     assert "up to 12288 MB" in warnings[1] and "1000 MB of RAM" in warnings[1]
     assert "500 MB can be committed" in warnings[2]
+# endregion
+
+
+# region Step 7
+def test_the_log_has_progress_and_only_the_edge_cases(ctx, store, caplog, monkeypatch):
+    names = [f"golden{i}" for i in range(8)] + ["mads", "plain"]  # 'plain' fails, as the task's other names do
+
+    with caplog.at_level(logging.INFO, logger=runner.__name__):
+        Optim_run_airfoils(task, _airfoils(*names), ctx, store, 1)
+
+    said = [(r.levelname, r.getMessage()) for r in caplog.records]
+    assert [m.split(" (")[0] for _, m in said if "/min, ends ~" in m] == [f"{k}/10" for k in range(1, 10)]
+    lines = [(level, m.rsplit(" in ", 1)[0]) for level, m in said if m.startswith(("golden", "mads", "plain"))]
+    assert lines == [  # a golden pass says nothing; the climb and the failure their golden runs' numbers
+        ("INFO", f"mads: passed via golden > mads, 50,000 nodes, 2 c2d runs; golden failed: skew 0.500 > "
+                 f"{ctx.settings['gate_skew_max']:g}"),
+        ("WARNING", "plain: failed via plain, 0 c2d runs")]
+    warned = []
+    monkeypatch.setattr(runner, "_warn_memory", lambda *args: warned.append(args))
+    Optim_run_airfoils(task, _airfoils("x", "y"), ctx, store, 2, warn_memory=False)
+    assert warned == []  # a caller running several batches warns once
 # endregion

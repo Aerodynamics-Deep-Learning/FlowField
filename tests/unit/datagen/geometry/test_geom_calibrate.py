@@ -7,13 +7,13 @@ Step 1: Ensure every file is fitted at every configuration, or its rejection kep
     - test_strays
 Step 2: Ensure the report, and that a calibration writes it
     - test_format_calibration
-    - test_a_calibration_writes_its_report
+    - test_a_calibration_writes_its_report_and_returns_it_without_the_per_airfoil_table
 """
 
 import pytest
 
 from src.datagen.geometry.build.calibrate import (
-    CalibrationFit, Geom_calibrate, Geom_format_calibration, Geom_run_calibration,
+    CalibrationFit, Geom_calibrate, Geom_format_calibration, Geom_run_calibration, _orders,
 )
 from src.datagen.geometry.build.families import _family_contour
 from src.datagen.geometry.common.io import Geom_write_dat
@@ -67,11 +67,16 @@ def test_format_calibration(folder):
     assert "broken.dat" in text and "format" in text
     assert "Formula families only (1 shapes" in text
     assert any(line.startswith("naca2412.dat") for line in text.splitlines())
+    assert "Surfaces cross at nose lem: 0" in text  # orders 4 and 6 hold no CST_ORDER: no strays line
+    assert _orders([6, 10, 11, 12]) == "orders 6, 10-12" and _orders([8]) == "order 8"
 
 
-def test_a_calibration_writes_its_report(folder, tmp_path):
+def test_a_calibration_writes_its_report_and_returns_it_without_the_per_airfoil_table(folder, tmp_path):
     out = tmp_path / "report" / "calibration.txt"  # its folder made on the way
-    text = Geom_run_calibration(folder, out, orders=range(4, 6), workers=1)
+    shown = Geom_run_calibration(folder, out, orders=range(4, 6), workers=1)
 
-    assert out.read_text(encoding="utf-8") == text and text.startswith("CST calibration of")
+    report = out.read_text(encoding="utf-8")
+    assert report.startswith(shown) and shown.startswith("CST calibration of")  # the table is all it leaves out
+    assert "Per airfoil, max_dev" in report and "Per airfoil" not in shown
+    assert "Surfaces cross at nose lem: " in shown
 # endregion

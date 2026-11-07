@@ -21,7 +21,9 @@ stops it. A dry run does everything but write, against the manifest as it stands
 import datetime
 import secrets
 import shutil
+import statistics
 import traceback
+from collections import Counter
 from pathlib import Path
 from typing import Optional
 
@@ -372,18 +374,7 @@ def Geom_format_summary(summary: IngestSummary) -> str:
     Returns:
         str: The summary text
     """
-    rejected = [i.reason for i in summary.items if i.status is ItemStatus.REJECTED]
-    by_reason = ", ".join(f"{r} {rejected.count(r)}" for r in sorted(set(rejected)))
-    reshaped = summary.count(ItemStatus.RESHAPED)
-    out = [f"Geometry ingest {summary.ingest_id}" + (" (dry run, nothing written)" if summary.dry_run else ""),
-           f"started {summary.started_at}, code {summary.git_commit}, shape version {summary.shape_version}",
-           f"source  {summary.source_root or '(none: stored airfoils only)'}",
-           f"{len(summary.items)} files: {summary.count(ItemStatus.ADDED)} added, "
-           + (f"{reshaped} reshaped, " if reshaped else "")
-           + f"{summary.count(ItemStatus.DUPLICATE)} duplicate, {summary.count(ItemStatus.REJECTED)} rejected"
-           + (f" ({by_reason})" if by_reason else ""),
-           "",
-           f"{'status':9} {'reason':15} {'fit max':>8} {'src dev':>8} {'closure':8} source"]
+    out = _head(summary) + ["", f"{'status':9} {'reason':15} {'fit max':>8} {'src dev':>8} {'closure':8} source"]
     for item in summary.items:
         res = item.result
         fitted = res is not None and res.fit is not None
@@ -392,3 +383,59 @@ def Geom_format_summary(summary: IngestSummary) -> str:
         suspect = "" if not fitted or Geom_check_suspect_point(res.fit)[0] else f"  (suspect point x={res.fit.x_at_max:.4f})"
         out.append(f"{item.status.value:9} {item.reason or '':15} {fit} {closure:8} {item.source_relpath}{suspect}")
     return "\n".join(out) + "\n"
+
+
+def Geom_format_digest(summary: IngestSummary) -> str:
+    """
+    The run for a log: its counts and the kept shapes' fit statistics, then only the files to look at, each
+    rejection and duplicate (the summary file has every file's line).
+
+    Args:
+        summary (IngestSummary): The run
+
+    Returns:
+        str: The digest text
+    """
+    out = _head(summary)
+    kept = [i for i in summary.items if i.status in (ItemStatus.ADDED, ItemStatus.RESHAPED)
+            and i.result is not None and i.result.fit is not None]
+    if kept:
+        devs = sorted((i.result.fit.max_dev, i.name) for i in kept)
+        p90 = devs[round(0.9 * (len(devs) - 1))][0]
+        closures = Counter(i.result.closure.value for i in kept if i.result.closure is not None)
+        label = "added and reshaped" if summary.count(ItemStatus.RESHAPED) else "added"
+        out.append(f"{label}: fit max median {statistics.median(d for d, _ in devs):.1e}c, p90 {p90:.1e}c, worst "
+                   f"{devs[-1][0]:.1e}c ({devs[-1][1]}); closure: "
+                   + ", ".join(f"{n} {kind}" for kind, n in closures.most_common()))
+    for item in summary.items:
+        if item.status is ItemStatus.REJECTED:
+            res = item.result
+            fit = f"{res.fit.max_dev:8.1e}c" if res is not None and res.fit is not None else f"{'':9}"
+            out.append(f"rejected  {item.reason or '':15} {fit}  {item.source_relpath}")
+    out += [f"duplicate {item.source_relpath}: {item.detail}" for item in summary.items
+            if item.status is ItemStatus.DUPLICATE]
+    return "\n".join(out) + "\n"
+
+
+def Geom_suspect_points(summary: IngestSummary) -> list[str]:
+    """Each fitted file whose worst point looks mistyped (`Geom_check_suspect_point`), for a warning."""
+    out = []
+    for item in summary.items:
+        res = item.result
+        if res is not None and res.fit is not None and not Geom_check_suspect_point(res.fit)[0]:
+            out.append(f"suspect point at x={res.fit.x_at_max:.4f}: {item.source_relpath} ({item.status.value})")
+    return out
+
+
+def _head(summary: IngestSummary) -> list[str]:
+    """The run's id, start, code, source and counts."""
+    rejected = [i.reason for i in summary.items if i.status is ItemStatus.REJECTED]
+    by_reason = ", ".join(f"{r} {rejected.count(r)}" for r in sorted(set(rejected)))
+    reshaped = summary.count(ItemStatus.RESHAPED)
+    return [f"Geometry ingest {summary.ingest_id}" + (" (dry run, nothing written)" if summary.dry_run else ""),
+            f"started {summary.started_at}, code {summary.git_commit}, shape version {summary.shape_version}",
+            f"source  {summary.source_root or '(none: stored airfoils only)'}",
+            f"{len(summary.items)} files: {summary.count(ItemStatus.ADDED)} added, "
+            + (f"{reshaped} reshaped, " if reshaped else "")
+            + f"{summary.count(ItemStatus.DUPLICATE)} duplicate, {summary.count(ItemStatus.REJECTED)} rejected"
+            + (f" ({by_reason})" if by_reason else "")]

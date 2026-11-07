@@ -56,7 +56,7 @@ stage is the script's name in configs and logs.
 |---|---|---|---|---|---|
 | `meshing.machine_check` | `machine_check` | runs the parity test; `--rewrite` writes the parity reference here instead | the shared manifest, c2d | the stamp (`--rewrite`: `machine_parity.json`) | ~1 min |
 | `geometry.calibrate <folder>` | `geometry_calibrate` | fits every file at CST orders 4-12 for choosing the CST constants | the `.dat` folder | `--out`: a report file | ~1 min for 190 files |
-| `geometry.ingest [folder]` | `geometry_ingest` | adds the folder's airfoils to a manifest; without a folder, brings stored ones to the current shape version | the `.dat` folder | `--data-root`: a data folder (manifest, raw copies, reports) | a few minutes for 190 files |
+| `geometry.ingest [folder]` | `geometry_ingest` | adds the folder's airfoils to a manifest; without a folder, brings stored ones to the current shape version | the `.dat` folder | `--data-root`: a data folder (manifest, raw copies, reports) | ~15 s for 190 files |
 | `meshing.calibrate` | `mesh_calibrate` | measures the numbers the ladder's rungs run on | `--geometry-db` | `--out`: a folder, `<date>.txt` and `<date>.sqlite` | rungs 1-3 ~1.5-2 h on 6 workers (estimated) |
 | `meshing.campaign` | `campaign` | the ladder over every airfoil not finished under the current constants | `--geometry-db` | `--db`: a run store | ~12 min for 158 airfoils on 6 workers |
 | `meshing.remesh` | `remesh` | rebuilds best runs (`--airfoils`, `--all`) or one run (`--run`), each checked against its stored hash | `--db`, `--geometry-db` | `--out`: a folder per airfoil | ~5 s an airfoil |
@@ -109,12 +109,13 @@ machine_check -> geometry_calibrate -> geometry_ingest -> mesh_calibrate -> camp
 ## 5. Where data and logs go
 
 Every run has a folder of its own: a new `data/scratchpad/<time>_<run name>/`, or the config's `folder:`. It
-holds the run's log, `log.log`, a copy of the config, `config.yaml`, and every output left out, under `<stage>/`:
+holds the run's log, `log.log`, a copy of the config, `config_<time>.yaml`, and every output left out, under
+`<stage>/`:
 
 ```
 data/scratchpad/2026-11-07_052637_e2e_for_cst/     the run's folder
 ├── log.log                                        the run's one log
-├── config.yaml                                    the config, copied at the start
+├── config_2026-11-07_052637.yaml                  the config, copied at the start
 ├── geometry_ingest/                               outputs left out, one folder per stage: data only
 ├── campaign/meshing.sqlite
 └── remesh/<airfoil>/<airfoil>.su2
@@ -130,7 +131,8 @@ Every output is decided before anything runs:
 | `shared` | the committed store | a `!!` warning |
 
 A `folder:` that exists is used again, with a `!` warning: the log adds this run under its own `===== PLAN =====`,
-`config.yaml` is replaced, and the outputs left out are the earlier run's, so a stopped campaign resumes.
+its config copy joins the earlier runs' (each named by its start), and the outputs left out are the earlier run's,
+so a stopped campaign resumes.
 
 - **`shared`** is `data/` for the ingest (the committed manifest), `data/manifest/datagen/meshing/meshing.sqlite`
   for the campaign, and the committed calibration folders for the calibrations. The re-mesh has none: meshes
@@ -161,13 +163,23 @@ HH:MM:SS [who] [stage]              [level] text
 - **level**: `info`; `!` a warning; `!!` a shared store written; `error`.
 
 Markers open each block, so `START|END` finds every boundary: `===== PLAN =====`, then `===== START <stage> =====`
-and `===== END <stage> =====` around each stage, then `===== SUMMARY =====`.
+and `===== END <stage> =====` around each stage, then `===== SUMMARY =====`. Inside `mesh_calibrate`, each rung
+has its own `----- START rung N of 3 -----` and `----- END rung N of 3 -----`, the end followed by what it found.
+
+The stages log statistics and edge cases; every table goes to its report file, named at the end:
+
+- **ingest**: the counts, the fit statistics, one line per rejection and duplicate, a `!` per suspect point;
+- **CST calibration**: the per-configuration and formula-family tables, the airfoils whose surfaces cross or whose
+  fit strays; the per-airfoil table is in the report;
+- **campaign and mesh calibration**: a progress line every tenth of the airfoils (`16/158 (10%), 6.8/min, ends
+  ~05:52`), and a line of its own only for an airfoil that aborted, failed or reached rung 3, with its golden run's
+  failed gates against their limits (`golden failed: skew 0.262 > 0.22, size_ratio 1.2502 > 1.25`).
 
 ```
 21:30:12 [run] [plan]               [info]  ===== PLAN =====  master dx003, started 2026-11-06 21:30:12 on Ege_Laptop, code 68ae03b
-21:30:12 [run] [plan]               [info]  config D:\runs\dx003.yaml, copied into the run folder as config.yaml
+21:30:12 [run] [plan]               [info]  config D:\runs\dx003.yaml, copied into the run folder as config_2026-11-06_213012.yaml
 21:30:12 [run] [plan]               [info]  stages machine_check -> campaign -> remesh (off: mesh_calibrate)
-21:30:12 [run] [plan]               [!]     run folder: data/experiments/dx003 exists; this run adds to its log.log, replaces its config.yaml and writes the outputs left out into it
+21:30:12 [run] [plan]               [!]     run folder: data/experiments/dx003 exists; this run adds to its log.log and writes the outputs left out into it
 21:30:12 [run] [campaign]           [!]     writes db: nothing given, writing into the run folder: data/experiments/dx003/campaign/meshing.sqlite exists; this run adds to it
 21:30:12 [run] [remesh]             [info]  reads db: this run's campaign, data/experiments/dx003/campaign/meshing.sqlite
 21:30:12 [run] [machine_check]      [info]  ===== START machine_check =====  python -m scripts.datagen.meshing.machine_check

@@ -72,8 +72,7 @@ def run(args: argparse.Namespace) -> int:
                                       args.rung2_cap, args.workers, args.geometry_db, args.work_root)
     except FileExistsError as e:
         raise UsageError(str(e)) from None
-    print(files.text)
-    print(f"Written to {files.report} and {files.db}")
+    print(f"Report (every rung's tables): {files.report}; every run: {files.db}")  # findings logged per rung
     return 0
 
 

@@ -12,13 +12,16 @@ rewritten (a run whose machine check passed does that itself) and committed with
 """
 
 import argparse
+import logging
 import sys
 from pathlib import Path
 
 from scripts.datagen.engine import Input, Output, OutputKind, Run, Script_main, Stage, StagePlan, UsageError
 from scripts.datagen.meshing.parity import REWRITE, Script_reference_problem
 from src.datagen.geometry.common.paths import DATA_ROOT, Geom_paths
-from src.datagen.geometry.manifest.ingest import Geom_format_summary, Geom_ingest_folder
+from src.datagen.geometry.manifest.ingest import Geom_format_digest, Geom_ingest_folder, Geom_suspect_points
+
+logger = logging.getLogger(__name__)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -38,9 +41,11 @@ def run(args: argparse.Namespace) -> int:
     if args.folder is not None and not args.folder.is_dir():
         raise UsageError(f"{args.folder} is not a folder")
     summary = Geom_ingest_folder(args.folder, args.data_root, args.dry_run)
-    print(Geom_format_summary(summary))
+    print(Geom_format_digest(summary))
+    for note in Geom_suspect_points(summary):
+        logger.warning(note)
     if summary.summary_path:
-        print(f"Summary written to {Geom_paths(args.data_root).from_rel(summary.summary_path)}")
+        print(f"Every file's line: {Geom_paths(args.data_root).from_rel(summary.summary_path)}")
     return 0
 
 

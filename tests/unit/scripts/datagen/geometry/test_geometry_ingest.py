@@ -1,7 +1,8 @@
 """
 Tests for `scripts.datagen.geometry.ingest`, the ingest's command line, i.e.:
 
-Step 1: Ensure the options reach the ingest, its data folder the scratchpad's when left out, its summary printed
+Step 1: Ensure the options reach the ingest, its data folder the run folder's when left out, its digest printed and
+its suspect points warned
     - test_the_options_reach_the_ingest
 Step 2: Ensure a mistake in what was asked stops it before the ingest runs
     - test_a_mistake_is_a_usage_error
@@ -11,6 +12,7 @@ Step 3: Ensure an ingest into the shared manifest keeps the parity reference in 
 The ingest itself is a stand-in; it is tested in the geometry tiers.
 """
 
+import re
 from types import SimpleNamespace
 
 import pytest
@@ -24,7 +26,8 @@ def ingest(monkeypatch):
     calls = []
     summary = SimpleNamespace(summary_path="raw/datagen/geometry/report/x/summary.txt")
     monkeypatch.setattr(geometry_ingest, "Geom_ingest_folder", lambda *args: calls.append(args) or summary)
-    monkeypatch.setattr(geometry_ingest, "Geom_format_summary", lambda s: "the summary")
+    monkeypatch.setattr(geometry_ingest, "Geom_format_digest", lambda s: "the digest")
+    monkeypatch.setattr(geometry_ingest, "Geom_suspect_points", lambda s: ["a suspect point"])
     return calls
 
 
@@ -39,7 +42,8 @@ def test_the_options_reach_the_ingest(ingest, tmp_path, data_root, capsys):
     assert left_out.name == "geometry_ingest" and left_out.parent.parent == data_root / "scratchpad"  # its run folder
     assert ingest == [(here, data, True), (None, data, False), (here, left_out, False)]
     printed = capsys.readouterr().out
-    assert "the summary" in printed and f"Summary written to {data / 'raw'}" in printed
+    assert "the digest" in printed and f"Every file's line: {data / 'raw'}" in printed
+    assert re.search(r"\[cmd\] \[geometry_ingest\] +\[!\] +a suspect point", printed)  # a warning
 # endregion
 
 

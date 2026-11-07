@@ -322,9 +322,9 @@ def test_the_ordinary_airfoils_are_drawn_the_same_way():
     assert cal.Optim_ordinary_airfoils([*cal.CALIBRATION_SET, "only"]) == ["only"]
 
 
-def test_a_calibration_runs_every_rung_and_reports_it(stubs, tmp_path, monkeypatch):
+def test_a_calibration_runs_every_rung_and_reports_it(stubs, tmp_path, monkeypatch, caplog):
     _world(monkeypatch, lambda k: {**_nodes(k), **_skew_off_defaults(k)})
-    with RunStore.open(tmp_path / "cal.sqlite") as store:
+    with RunStore.open(tmp_path / "cal.sqlite") as store, caplog.at_level(logging.INFO, logger=cal.__name__):
         result = cal.Optim_calibrate(store, (1, 2, 3), ["naca0012", "naca4412"], rung3_cap=10, rung2_cap=5,
                                      workers=1, work_root=tmp_path / "work")
         text = cal.Optim_format_report(store, result)
@@ -336,6 +336,14 @@ def test_a_calibration_runs_every_rung_and_reports_it(stubs, tmp_path, monkeypat
         assert (r3["golden_jmax"], r3["rung3_budget"]) == (result.golden_jmax, 10)
         labels = {row[0] for row in store._conn.execute("SELECT label FROM settings")}
         assert labels == {"calibration rung 1", "calibration rung 2", "calibration rung 3"}
+    logged = [r.getMessage() for r in caplog.records if r.name == cal.__name__]
+    assert [m.split("  ")[0] for m in logged if m.startswith("-----")] == [
+        f"----- {edge} rung {rung} of 3 -----" for rung in (1, 2, 3) for edge in ("START", "END")]
+    for finding in ("size ratio one jmax below jmax*", "worst skew at jmax*", "passing skew: ",
+                    "nodes saved against the golden run", "Rung-3 cap"):
+        assert any(finding in m for m in logged) and finding in text, finding  # one wording, log and report
+    assert not any(header in m for m in logged for header in ("n*@cw0", "golden skew", "Plateau replay"))  # tables:
+    assert all(header in text for header in ("n*@cw0", "golden skew", "Plateau replay"))  # the report's only
     for heading in ("Rung 1: n*, jmax* and the golden jmax", "Golden jmax = median", "NSTAR_CW_GRID 1 loses nothing",
                     "Campaign estimate at golden jmax 145", "Rung 2: its budget", "Rung-2 budget",
                     "Rung 3: from the golden run", "Plateau replay", "Plateau pick", "Rung-3 cap"):
@@ -361,7 +369,7 @@ def test_a_given_golden_jmax_over_rung_1_is_warned(stubs, tmp_path, monkeypatch,
                                      work_root=tmp_path / "work")
         text = cal.Optim_format_report(store, result)
 
-    assert [r.getMessage() for r in caplog.records] == \
+    assert [r.getMessage() for r in caplog.records if r.name == cal.__name__] == \
         ["golden jmax 150 is given: rungs 2 and 3 run at it, not at rung 1's recommendation"]
     assert (result.golden_jmax, result.recommended) == (150, 145)
     assert "Golden jmax for rungs 2 and 3: 150 (given; rung 1 recommends 145)" in text
@@ -369,7 +377,7 @@ def test_a_given_golden_jmax_over_rung_1_is_warned(stubs, tmp_path, monkeypatch,
     with RunStore.open(tmp_path / "other.sqlite") as store, caplog.at_level(logging.WARNING, logger=cal.__name__):
         cal.Optim_calibrate(store, (2,), ["naca0012"], golden_jmax=150, rung2_cap=2, workers=1,
                             work_root=tmp_path / "work2")
-    assert caplog.records == []  # no rung 1, nothing overridden
+    assert [r for r in caplog.records if r.name == cal.__name__] == []  # no rung 1, nothing overridden
 
 
 def test_a_dated_calibration_writes_its_report_and_database_once(stubs, tmp_path, monkeypatch):

@@ -3,6 +3,7 @@ Integration tests for `geometry.ingest`: whole folders into a manifest under a t
 
 Step 1: Ensure one ingest stores, skips and rejects each kind of file, and writes what it says
     - test_ingest_outcomes
+    - test_the_digest_keeps_the_counts_statistics_rejections_and_duplicates
     - test_ingest_writes_rows_files_and_reports
 Step 2: Ensure running again is safe, judging the stored rejections again
     - test_second_ingest_adds_nothing
@@ -29,7 +30,9 @@ import src.datagen.geometry.manifest.ingest as ingest_module
 from src.datagen.geometry.build.add import Geom_add_airfoil, Geom_identify
 from src.datagen.geometry.common.constants import NORM_N_POINTS, SHAPE_VERSION
 from src.datagen.geometry.build.families import _family_contour
-from src.datagen.geometry.manifest.ingest import Geom_format_summary, Geom_ingest_folder
+from src.datagen.geometry.manifest.ingest import (
+    Geom_format_digest, Geom_format_summary, Geom_ingest_folder, Geom_suspect_points,
+)
 from src.datagen.geometry.common.io import Geom_coords_hash, Geom_read_dat, Geom_write_dat
 from src.datagen.geometry.common.paths import Geom_paths
 from src.datagen.geometry.common.schemas import Closure, Family, ItemStatus, RejectReason
@@ -84,6 +87,20 @@ def test_ingest_outcomes(source, tmp_path):
     assert by_rel["tabulated/naca2412.dat"].geometry_id == by_rel["analytic/naca2412.dat"].geometry_id
     assert by_rel["zz/testfoil_copy.dat"].geometry_id == by_rel["tabulated/testfoil.dat"].geometry_id
     assert "'testfoil'" in by_rel["zz/TESTFOIL.dat"].detail
+
+
+def test_the_digest_keeps_the_counts_statistics_rejections_and_duplicates(source, tmp_path):
+    summary = Geom_ingest_folder(source, tmp_path / "data")
+    lines = Geom_format_digest(summary).splitlines()
+
+    assert "8 files: 3 added, 2 duplicate, 3 rejected (format 1, name_taken 1, surfaces_cross 1)" in lines
+    assert any(line.startswith("added: fit max median ") and "closure: " in line for line in lines)
+    assert [line.split()[-1] for line in lines if line.startswith("rejected ")] == \
+        ["tabulated/broken.dat", "tabulated/crossfoil.dat", "zz/TESTFOIL.dat"]
+    assert [line.split(":")[0] for line in lines if line.startswith("duplicate ")] == \
+        ["duplicate tabulated/naca2412.dat", "duplicate zz/testfoil_copy.dat"]
+    assert not any("tabulated/testfoil.dat" in line for line in lines)  # an added file: no line of its own
+    assert Geom_suspect_points(summary) == []  # the shapes are clean formulas
 
 
 def test_ingest_writes_rows_files_and_reports(source, tmp_path):

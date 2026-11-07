@@ -32,9 +32,7 @@ import subprocess
 import pytest
 
 from scripts.datagen import engine
-from scripts.datagen.engine import (
-    CHILD_ENV, CONFIG_NAME, LOG_NAME, PlanError, Script_argv, Script_main, Script_plan, Script_run,
-)
+from scripts.datagen.engine import CHILD_ENV, LOG_NAME, PlanError, Script_argv, Script_main, Script_plan, Script_run
 from tests.unit.scripts.datagen.engine_stages import MAKER, READER
 
 _LINE = re.compile(r"^\d\d:\d\d:\d\d \[(run|cmd)\] \[([a-z_]+)\] +\[(info|!|!!|error)\] +(.*)$")
@@ -77,11 +75,13 @@ def test_a_named_run_folder_holds_the_log_the_config_and_the_outputs_left_out(tm
         assert Script_run("named", [(MAKER, [])], in_process=True, config=config, folder=folder) == 0
 
     assert (folder / "maker" / "made.txt").exists() and not (data_root / "scratchpad").exists()
-    assert (folder / CONFIG_NAME).read_text(encoding="utf-8") == config.read_text(encoding="utf-8")
+    copies = sorted(folder.glob("config_*.yaml"))  # one per run, even in the same second
+    assert len(copies) == 2 and all(c.read_text(encoding="utf-8") == config.read_text(encoding="utf-8") for c in copies)
     rows = _lines(folder / LOG_NAME)
     assert len([t for *_, t in rows if t.startswith("===== PLAN =====")]) == 2  # used again: one log, two runs
-    assert ("run", "plan", "!", f"run folder: {folder.resolve()} exists; this run adds to its {LOG_NAME}, replaces "
-                                f"its {CONFIG_NAME} and writes the outputs left out into it") in rows
+    assert [t.split(" as ")[-1] for *_, t in rows if t.startswith("config ")] == [c.name for c in copies]
+    assert ("run", "plan", "!", f"run folder: {folder.resolve()} exists; this run adds to its {LOG_NAME} and writes "
+                                f"the outputs left out into it") in rows
     assert any(level == "!" and text.endswith("exists; this run writes into it")
                for _, stage, level, text in rows if stage == "maker")
     with pytest.raises(PlanError, match="is a file, not a folder"):
@@ -194,7 +194,8 @@ def test_the_stages_run_as_child_processes(tmp_path, data_root, capsys):
     assert Script_run("kids", [(MAKER, ["--out", str(made)]), (READER, ["--out", str(copy)])], in_process=False) == 0
 
     rows = _lines(_log(data_root, "kids"))
-    assert ("cmd", "maker", "info", "made it") in rows and ("cmd", "maker", "!", "a warning") in rows
+    assert [(lvl, t) for w, s, lvl, t in rows if (w, s) == ("cmd", "maker")] == [  # printed and logged, in order
+        ("info", "made it"), ("info", "an info"), ("!", "a warning")]
     assert ("cmd", "reader", "info", "read made.txt") in rows and copy.read_text() == "made"
     assert not any("(in this process)" in text for *_, text in rows)
     assert Script_run("crashed", [(MAKER, ["--out", str(tmp_path / "c"), "--raise", "boom"])], in_process=False) == 1

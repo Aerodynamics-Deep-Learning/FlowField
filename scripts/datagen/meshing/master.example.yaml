@@ -7,8 +7,8 @@
 # them (the scripts named beside each section below).
 #
 # Paths: relative ones are under data/. `shared` names a committed store; write one only on purpose. The run's
-# folder (`folder:` below) holds its log, log.log, a copy of this file, config.yaml, and every output left out, under
-# <stage>/. A stage reads what an earlier stage of this run wrote unless you name something else.
+# folder (`folder:` below) holds its log, log.log, a copy of this file, config_<time>.yaml, and every output left
+# out, under <stage>/. A stage reads what an earlier stage of this run wrote unless you name something else.
 #
 # YAML: quote names YAML would read as something else (yes, no, on, off, 0012); write 1e-3 as 1.0e-3; indent with
 # spaces; in double quotes a backslash starts an escape, so write Windows paths with / or in single quotes.

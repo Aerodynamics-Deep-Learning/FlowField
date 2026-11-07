@@ -22,6 +22,7 @@ A stopped batch leaves no ladder running; rerunning picks up the rest (`RunStore
 """
 
 import dataclasses
+import datetime
 import logging
 import multiprocessing as mp
 import os
@@ -43,7 +44,7 @@ from src.datagen.meshing.optimizer.batch.slots import Optim_slot_platform, SlotP
 from src.datagen.meshing.optimizer.common.constants import ABORT_STREAK_MIN, SLOT_MEMORY_CAP_MB, WATCHDOG_S
 from src.datagen.meshing.optimizer.evaluate.context import RunContext, StudySetupError
 from src.datagen.meshing.optimizer.manifest.store import Optim_utc_now, RunStore
-from src.datagen.meshing.optimizer.search.events import LadderOutcome, Optim_record
+from src.datagen.meshing.optimizer.search.events import LadderOutcome, Optim_failure_values, Optim_record
 
 logger = logging.getLogger(__name__)
 
@@ -93,10 +94,11 @@ def Optim_load_shapes(names: Optional[Sequence[str]] = None, db=None) -> list[tu
 
 def Optim_run_airfoils(task: Callable, airfoils: Sequence[tuple[str, ShapeRecord]], ctx: RunContext, store: RunStore,
                        workers: int = 1, *, platform: Optional[SlotPlatform] = None, watchdog_s: float = WATCHDOG_S,
-                       cap_mb: int = SLOT_MEMORY_CAP_MB) -> list:
+                       cap_mb: int = SLOT_MEMORY_CAP_MB, warn_memory: bool = True) -> list:
     """
     Runs `task` once per airfoil, and again once for each that aborted, recording every event it reports as
-    it arrives, the settings row first.
+    it arrives, the settings row first. Logs a progress line every tenth of the airfoils, and a line of its own
+    only for an airfoil that aborted, failed or reached rung 3, with its golden run's failed gates.
 
     Args:
         task (Callable): (name, shape, ctx, emit) -> LadderOutcome; module-level, so a worker process can take it
@@ -108,6 +110,8 @@ def Optim_run_airfoils(task: Callable, airfoils: Sequence[tuple[str, ShapeRecord
         platform (SlotPlatform | None): The slots' platform; this machine's if None
         watchdog_s (float): A slot silent this long is killed as hung
         cap_mb (int): Each slot's memory cap, worker and children together
+        warn_memory (bool): Warn when the slots' caps add up past the memory free now (a caller running several
+            batches warns once)
 
     Returns:
         list: Each airfoil's last outcome, in the order given
@@ -117,11 +121,12 @@ def Optim_run_airfoils(task: Callable, airfoils: Sequence[tuple[str, ShapeRecord
         KeyboardInterrupt: Ctrl-C, likewise
     """
     store.ensure_settings(ctx.settings)
-    turns = _Turns(airfoils, workers)
+    turns = _Turns(airfoils, workers, store, ctx.settings)
     if workers <= 1:
         _run_here(task, ctx, store, turns)
     else:
-        _Pool(task, ctx, store, turns, workers, platform or Optim_slot_platform(), watchdog_s, cap_mb).run()
+        pool = _Pool(task, ctx, store, turns, workers, platform or Optim_slot_platform(), watchdog_s, cap_mb)
+        pool.run(warn_memory)
     logger.info("%d airfoils in %.0f s", len(airfoils), time.perf_counter() - turns.t0)
     return turns.outcomes
 
@@ -129,16 +134,17 @@ def Optim_run_airfoils(task: Callable, airfoils: Sequence[tuple[str, ShapeRecord
 #region The turns, with slots or without
 
 class _Turns:
-    """The airfoils' order, their retries and the stop rules."""
+    """The airfoils' order, their retries, the stop rules and what the log says of them."""
 
-    def __init__(self, airfoils: Sequence[tuple[str, ShapeRecord]], workers: int):
+    def __init__(self, airfoils: Sequence[tuple[str, ShapeRecord]], workers: int, store: RunStore, settings: dict):
         self.airfoils = list(airfoils)
+        self.store, self.settings = store, settings
         self.pending = deque(range(len(self.airfoils)))
         self.retries: deque = deque()
         self.tries = [0] * len(self.airfoils)
         self.outcomes: list = [None] * len(self.airfoils)
         self.streak, self.streak_max = 0, max(workers, ABORT_STREAK_MIN)
-        self.done = 0
+        self.done, self.tenths = 0, 0
         self.t0 = time.perf_counter()
 
     def next(self) -> Optional[int]:
@@ -181,15 +187,40 @@ class _Turns:
                                self.outcomes) from error
 
     def _log(self, i: int, outcome, retry: bool, seconds: float) -> None:
-        head = f"[{self.done}/{len(self.airfoils)}] {self.airfoils[i][0]}"
+        """An edge case's line: an abort, a failure, or a climb to rung 3; then the progress."""
+        name = self.airfoils[i][0]
         if outcome.status == "aborted":
-            logger.warning("%s: aborted after %.0f s (%s)%s", head, seconds, _line(outcome.error),
+            logger.warning("%s: aborted after %.0f s (%s)%s", name, seconds, _line(outcome.error),
                            "; it runs again at the end" if retry else "")
-            return
+        elif outcome.status == "failed" or "mads" in outcome.route:
+            logger.log(logging.WARNING if outcome.status == "failed" else logging.INFO, "%s: %s in %.0f s", name,
+                       self._ended(outcome), seconds)
+        self._progress()
+
+    def _ended(self, outcome) -> str:
+        """How a ladder ended: its route, best, c2d runs, and why its golden run did not pass."""
         best = outcome.best_row or {}
-        nodes = f", {best['num_nodes']:,} nodes" if best.get("num_nodes") else ""
-        logger.info("%s: %s via %s%s in %.0f s", head, outcome.status, " > ".join(outcome.route) or "-", nodes,
-                    seconds)
+        text = f"{outcome.status} via {' > '.join(outcome.route) or '-'}"
+        text += f", {best['num_nodes']:,} nodes" if best.get("num_nodes") else ""
+        runs = self.store.runs(outcome.ladder_id) if outcome.ladder_id else []
+        text += f", {sum(r['entry_flag'] is not None for r in runs)} c2d runs"
+        golden = next((r for r in runs if r["rung"] == "golden"), None)
+        if golden is not None and not golden["passed"]:
+            text += f"; golden failed: {Optim_failure_values(golden, self.settings)}"
+        elif outcome.route == ["nstar"]:
+            text += "; n* accepted no grid point"
+        return text
+
+    def _progress(self) -> None:
+        """A line each time another tenth of the airfoils is done, with the rate and when the rest should end."""
+        n = len(self.airfoils)
+        tenths = 10 * self.done // n
+        if tenths <= self.tenths or self.done == n:
+            return
+        self.tenths = tenths
+        rate = self.done / max(time.perf_counter() - self.t0, 1e-9) * 60
+        ends = datetime.datetime.now() + datetime.timedelta(minutes=(n - self.done) / rate)
+        logger.info("%d/%d (%d%%), %.1f/min, ends ~%s", self.done, n, 100 * self.done // n, rate, f"{ends:%H:%M}")
 
 
 class _Ladder:
@@ -261,9 +292,10 @@ class _Pool:
         self.started = 0
         self.peak_mb = 0.0
 
-    def run(self) -> None:
+    def run(self, warn_memory: bool = True) -> None:
         self.platform.prepare()
-        _warn_memory(self.platform, self.workers, self.cap_mb)
+        if warn_memory:
+            _warn_memory(self.platform, self.workers, self.cap_mb)
         try:
             while True:
                 self._fill()

@@ -19,7 +19,7 @@ from pydantic import BaseModel
 from scipy.interpolate import CubicSpline
 
 from .add import _fit_and_gate, _prepare
-from src.datagen.geometry.common.constants import CST_NOSE, CURVE_POINTS
+from src.datagen.geometry.common.constants import CST_NOSE, CST_ORDER, CURVE_POINTS
 from .parametrization import Geom_cst_contour, Geom_curve_distance
 from src.datagen.geometry.common.paths import Geom_git_version, Geom_source_label
 from src.datagen.geometry.common.schemas import CSTParams, Family, Nose, RejectReason
@@ -113,15 +113,18 @@ def _between_dev(cst: CSTParams, midpoints: np.ndarray, le: int) -> float:
                      Geom_curve_distance(midpoints[le:], dense[m:]).max()))
 
 
-def Geom_format_calibration(rows: list[CalibrationRow], folder, default_nose: Nose = CST_NOSE) -> str:
+def Geom_format_calibration(rows: list[CalibrationRow], folder, default_nose: Nose = CST_NOSE,
+                            per_airfoil: bool = True) -> str:
     """
     The calibration report: rejections before fitting, a summary per configuration (over unique
-    geometries), the formula families' pure representation error, and every airfoil's error by order.
+    geometries), the formula families' pure representation error, the airfoils whose surfaces cross or whose
+    fit strays at the ingest's nose, and every airfoil's error by order.
 
     Args:
         rows (list[CalibrationRow]): `Geom_calibrate`'s output
         folder (str | Path): The folder it ran on, for the header
-        default_nose (Nose): The nose the per-airfoil table shows
+        default_nose (Nose): The nose the edge cases and the per-airfoil table show
+        per_airfoil (bool): With every airfoil's error by order; without it, the report as a log shows it
 
     Returns:
         str: The report text
@@ -169,6 +172,17 @@ def Geom_format_calibration(rows: list[CalibrationRow], folder, default_nose: No
         out.append("")
 
     shown = Nose(default_nose) if Nose(default_nose) in noses else noses[0]
+    crossing = [f"{r.name} ({_orders([f.order for f in r.fits if f.nose == shown and f.crossed])})" for r in unique
+                if any(f.nose == shown and f.crossed for f in r.fits)]
+    out.append(f"Surfaces cross at nose {shown.value}: {len(crossing)}" + (f": {', '.join(crossing)}" if crossing else ""))
+    if CST_ORDER in orders:
+        strays = [r.name for r in unique for f in r.fits if (f.nose, f.order) == (shown, CST_ORDER) and f.strays]
+        out.append(f"Strays at order {CST_ORDER}, nose {shown.value} (the ingest's order): {len(strays)}"
+                   + (f": {', '.join(strays)}" if strays else ""))
+    out.append("")
+    if not per_airfoil:
+        return "\n".join(out)
+
     out.append(f"Per airfoil, max_dev [1e-4 c] by order, nose {shown.value} "
                "(x: surfaces cross, s: strays, -: too few points):")
     out.append(f"{'source':40s} {'pts':>5} " + " ".join(f"{o:>7}" for o in orders))
@@ -182,9 +196,19 @@ def Geom_format_calibration(rows: list[CalibrationRow], folder, default_nose: No
     return "\n".join(out) + "\n"
 
 
+def _orders(orders: list[int]) -> str:
+    """[6, 10, 11, 12] -> 'orders 6, 10-12'."""
+    runs, start = [], orders[0]
+    for prev, cur in zip(orders, orders[1:] + [None]):
+        if cur is None or cur != prev + 1:
+            runs.append(str(start) if start == prev else f"{start}-{prev}")
+            start = cur
+    return ("order " if len(orders) == 1 else "orders ") + ", ".join(runs)
+
+
 def Geom_run_calibration(folder, out, orders=range(4, 13), workers: Optional[int] = None) -> str:
     """
-    The calibration of `folder` at `orders`, its report written to `out`.
+    The calibration of `folder` at `orders`, its whole report written to `out`.
 
     Args:
         folder (str | Path): A root folder of .dat files
@@ -193,10 +217,10 @@ def Geom_run_calibration(folder, out, orders=range(4, 13), workers: Optional[int
         workers (int | None): Parallel processes, one per core by default
 
     Returns:
-        str: The report
+        str: The report without its per-airfoil table, as a log shows it
     """
-    text = Geom_format_calibration(Geom_calibrate(folder, orders, workers=workers), folder)
+    rows = Geom_calibrate(folder, orders, workers=workers)
     out = Path(out)
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(text, encoding="utf-8", newline="\n")
-    return text
+    out.write_text(Geom_format_calibration(rows, folder), encoding="utf-8", newline="\n")
+    return Geom_format_calibration(rows, folder, per_airfoil=False)

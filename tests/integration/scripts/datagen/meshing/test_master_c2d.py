@@ -13,7 +13,7 @@ import re
 
 import pytest
 
-from scripts.datagen.engine import CONFIG_NAME, LOG_NAME
+from scripts.datagen.engine import LOG_NAME
 from scripts.datagen.meshing import master as mesh_master
 from src.datagen.geometry.common.paths import Geom_paths
 from src.datagen.meshing.c2d.run import C2D_find_exe
@@ -41,13 +41,14 @@ def test_a_campaign_then_its_remesh_through_the_master(tmp_path, capsys):
 
     assert mesh_master.main([str(config)]) == 0
 
-    assert sorted(p.name for p in folder.iterdir()) == [CONFIG_NAME, LOG_NAME]  # every output was named
+    [copy] = folder.glob("config_*.yaml")
+    assert sorted(p.name for p in folder.iterdir()) == sorted([copy.name, LOG_NAME])  # every output was named
     assert not list(here.rglob("*_run.log")) and not list(store.parent.glob("*.log")) and not list(out.glob("*.log"))
     rows = [_LINE.match(row) for row in (folder / LOG_NAME).read_text(encoding="utf-8").splitlines()]
     assert all(rows)
     rows = [m.groups() for m in rows]
-    assert any(r[:3] == ("cmd", "campaign", "info") and r[3].startswith("[1/1] naca0012: passed via golden")
-               for r in rows)
+    assert ("cmd", "campaign", "info", "Airfoils: 1 passed") in rows  # a golden pass gets no line of its own
+    assert not any("naca0012: passed via" in r[3] for r in rows)
     assert ("run", "remesh", "info", f"reads db: this run's campaign, {store}") in rows
     assert ("run", "machine_check", "!", "machine_check is off: this run does not check that this machine "
                                          "reproduces the reference") in rows

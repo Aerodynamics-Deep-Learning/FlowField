@@ -19,7 +19,7 @@ import pytest
 
 from scripts.datagen.geometry import ingest as geometry_ingest
 from scripts.datagen.meshing import campaign as mesh_campaign, master as mesh_master, remesh as mesh_remesh
-from scripts.datagen.engine import CONFIG_NAME, LOG_NAME, PlanError, Script_plan
+from scripts.datagen.engine import LOG_NAME, PlanError, Script_plan
 from scripts.datagen.meshing.master import Script_load_config, Script_options_to_argv
 from src.datagen.geometry.common.paths import Geom_paths
 
@@ -65,7 +65,8 @@ def test_folder_names_the_run_folder(tmp_path, data_root, capsys):
     assert Script_load_config(_config(tmp_path, f"folder: {elsewhere.as_posix()}\n")).folder == elsewhere
     config = _config(tmp_path, f"folder: {elsewhere.as_posix()}\nmachine_check:\n  enabled: false\n")
     assert mesh_master.main([str(config)]) == 0
-    assert sorted(p.name for p in elsewhere.iterdir()) == [CONFIG_NAME, LOG_NAME]
+    [copy] = elsewhere.glob("config_*.yaml")
+    assert sorted(p.name for p in elsewhere.iterdir()) == sorted([copy.name, LOG_NAME])
 # endregion
 
 
@@ -90,7 +91,8 @@ def test_a_config_mistake_refuses_the_run(tmp_path, data_root, capsys):
     [run] = (data_root / "scratchpad").iterdir()  # a refused run logs into the scratchpad, never a named folder
     log = (run / LOG_NAME).read_text(encoding="utf-8")
     assert "refused, nothing was run: 5 problems" in log and "[remesh]" in log and "no option 'al'" in log
-    assert (run / CONFIG_NAME).read_text(encoding="utf-8") == config.read_text(encoding="utf-8")
+    [copy] = run.glob("config_*.yaml")
+    assert copy.read_text(encoding="utf-8") == config.read_text(encoding="utf-8")
 
 
 def test_the_example_config_plans(data_root):
