@@ -30,8 +30,9 @@ CELL_CEILING = 300_000
 
 #region Gates, on the worst cell
 
-# The study's shape gates, what a campaign's mesh must reach; far stricter than the entry flag's (0.85, 0.10, 0.10)
-GATE_SKEW_MAX = 0.22
+# The study's shape gates, what a campaign's mesh must reach; far stricter than the entry flag's (0.85, 0.10, 0.10).
+# Skew 0.25: 128 of 158 golden-like meshes under it, 2 under 0.22 (2026-11-07 calibration)
+GATE_SKEW_MAX = 0.25
 GATE_ORTHO_MIN = 0.9
 GATE_JAC_MIN = 0.9
 

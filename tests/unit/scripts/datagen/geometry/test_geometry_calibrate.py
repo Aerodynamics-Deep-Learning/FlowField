@@ -33,7 +33,7 @@ def test_the_options_reach_the_calibration(calibrate, tmp_path, data_root, capsy
     report = scratch / "geometry_calibrate" / f"{datetime.date.today().isoformat()}.txt"
     assert calibrate == [(here, out, range(4, 7), 2), (here, report, range(4, 13), None)]
     printed = capsys.readouterr().out
-    assert "the report" in printed and f"Written to {out}" in printed
+    assert "the report" in printed and f"Full report (every configuration, every airfoil): {out}" in printed
 # endregion
 
 

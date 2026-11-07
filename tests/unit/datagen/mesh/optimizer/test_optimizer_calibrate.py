@@ -1,10 +1,11 @@
 """
 Tests for `meshing.optimizer.batch.calibrate`, the calibration of the ladder's rungs, i.e.:
 
-Step 1: Ensure rung 1's bisection finds jmax*, and the golden jmax and campaign estimate drawn from it
+Step 1: Ensure rung 1's bisection finds jmax*, logs only an airfoil without one, and the golden jmax and campaign
+estimate drawn from it
     - test_the_bisection_finds_every_jmax_star
     - test_a_mesh_that_fails_ends_the_bisection
-    - test_jmax_star_failing_another_gate_is_noted
+    - test_jmax_star_failing_another_gate_is_noted_not_logged
     - test_the_golden_jmax_is_the_median_plus_the_margin
     - test_the_campaign_estimate_times_n_star_the_golden_mesh_and_its_bumps
 Step 2: Ensure rung 2 is read off real ladders
@@ -163,7 +164,10 @@ def test_the_bisection_finds_every_jmax_star(stubs, tmp_path, monkeypatch):
         assert all({k: r[k] for k in (*NSTAR.knobs, *SMOOTHING_DEFAULTS)} == {**NSTAR.knobs, **SMOOTHING_DEFAULTS}
                    for r in runs)
         if expected is not None:
-            assert notes["jmax_star_passes"] is True
+            assert notes["jmax_star_passes"] is True and cal._bisect_edge(outcome) is None
+        else:  # the log's line says what the top of the range measured
+            assert cal._bisect_edge(outcome) == (f"no jmax* in [{JMAX_MIN}, {JMAX_MAX}]: at jmax {JMAX_MAX}, "
+                                                 f"size_ratio 1.3000 > {settings['gate_size_ratio_max']:g}")
     # n* at the narrowest cluster_width: the full grid's le_ratio values, one cluster_width
     assert json.loads(stubs[-1]["nstar_json"]) == {**json.loads(settings["nstar_json"]), "cw_grid": 1}
     assert (notes["n_star_floor"], notes["n_star_floor_s"]) == (FLOOR.n, FLOOR.seconds)
@@ -175,13 +179,18 @@ def test_a_mesh_that_fails_ends_the_bisection(stubs, tmp_path, monkeypatch):
 
     assert outcome.notes["bisect_failed"] == "jmax 139: mesher_failed" and "jmax_star" not in outcome.notes
     assert [e[1]["jmax"] for e in events if e[0] == "run"] == [159, 139]  # nothing after it
+    assert cal._bisect_edge(outcome) == "bisection stopped at jmax 139: mesher_failed"
 
 
-def test_jmax_star_failing_another_gate_is_noted(stubs, tmp_path, monkeypatch):
+def test_jmax_star_failing_another_gate_is_noted_not_logged(stubs, tmp_path, monkeypatch):
     _world(monkeypatch, lambda k: {**_sr_from(142)(k), "q_skew_max": 0.5})
     outcome, _ = _climb(cal._Bisect, Optim_build_settings(), tmp_path)
 
     assert (outcome.notes["jmax_star"], outcome.notes["jmax_star_passes"]) == (142, False)  # by size ratio alone
+    assert outcome.status == "failed" and cal._bisect_edge(outcome) is None  # rung 2's work: no line in the log
+    no_n_star = NStarResult(n=None, knobs=None, evals=1200, seconds=2.0)
+    monkeypatch.setattr(ladder, "Optim_n_star_search", lambda contour, s: no_n_star)
+    assert cal._bisect_edge(_climb(cal._Bisect, Optim_build_settings(), tmp_path)[0]) == "n* accepted nothing"
 
 
 @pytest.mark.parametrize("found, golden", [([139, 142, 150], 147), ([139, 142], 146), ([None, None], None)])
@@ -337,6 +346,8 @@ def test_a_calibration_runs_every_rung_and_reports_it(stubs, tmp_path, monkeypat
         labels = {row[0] for row in store._conn.execute("SELECT label FROM settings")}
         assert labels == {"calibration rung 1", "calibration rung 2", "calibration rung 3"}
     logged = [r.getMessage() for r in caplog.records if r.name == cal.__name__]
+    assert not any("bisect" in r.getMessage() for r in caplog.records  # skew 0.3 at jmax*: rung 2's, unlogged
+                   if r.name == "src.datagen.meshing.optimizer.batch.runner")
     assert [m.split("  ")[0] for m in logged if m.startswith("-----")] == [
         f"----- {edge} rung {rung} of 3 -----" for rung in (1, 2, 3) for edge in ("START", "END")]
     for finding in ("size ratio one jmax below jmax*", "worst skew at jmax*", "passing skew: ",

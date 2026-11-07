@@ -45,7 +45,7 @@ def run(args: argparse.Namespace) -> int:
     if not args.folder.is_dir():
         raise UsageError(f"{args.folder} is not a folder")
     print(Geom_run_calibration(args.folder, args.out, args.orders, args.workers))
-    print(f"Written to {args.out}")
+    print(f"Full report (every configuration, every airfoil): {args.out}")
     return 0
 
 

@@ -94,11 +94,13 @@ def Optim_load_shapes(names: Optional[Sequence[str]] = None, db=None) -> list[tu
 
 def Optim_run_airfoils(task: Callable, airfoils: Sequence[tuple[str, ShapeRecord]], ctx: RunContext, store: RunStore,
                        workers: int = 1, *, platform: Optional[SlotPlatform] = None, watchdog_s: float = WATCHDOG_S,
-                       cap_mb: int = SLOT_MEMORY_CAP_MB, warn_memory: bool = True) -> list:
+                       cap_mb: int = SLOT_MEMORY_CAP_MB, warn_memory: bool = True,
+                       edge: Optional[Callable] = None) -> list:
     """
     Runs `task` once per airfoil, and again once for each that aborted, recording every event it reports as
     it arrives, the settings row first. Logs a progress line every tenth of the airfoils, and a line of its own
-    only for an airfoil that aborted, failed or reached rung 3, with its golden run's failed gates.
+    only for an edge case: an abort, and by default a failure or a climb to rung 3, with its golden run's failed
+    gates.
 
     Args:
         task (Callable): (name, shape, ctx, emit) -> LadderOutcome; module-level, so a worker process can take it
@@ -112,6 +114,8 @@ def Optim_run_airfoils(task: Callable, airfoils: Sequence[tuple[str, ShapeRecord
         cap_mb (int): Each slot's memory cap, worker and children together
         warn_memory (bool): Warn when the slots' caps add up past the memory free now (a caller running several
             batches warns once)
+        edge (Callable | None): (outcome) -> the line an airfoil that ended without aborting gets, None for no
+            line; the default rule above if None
 
     Returns:
         list: Each airfoil's last outcome, in the order given
@@ -121,7 +125,7 @@ def Optim_run_airfoils(task: Callable, airfoils: Sequence[tuple[str, ShapeRecord
         KeyboardInterrupt: Ctrl-C, likewise
     """
     store.ensure_settings(ctx.settings)
-    turns = _Turns(airfoils, workers, store, ctx.settings)
+    turns = _Turns(airfoils, workers, store, ctx.settings, edge)
     if workers <= 1:
         _run_here(task, ctx, store, turns)
     else:
@@ -136,9 +140,10 @@ def Optim_run_airfoils(task: Callable, airfoils: Sequence[tuple[str, ShapeRecord
 class _Turns:
     """The airfoils' order, their retries, the stop rules and what the log says of them."""
 
-    def __init__(self, airfoils: Sequence[tuple[str, ShapeRecord]], workers: int, store: RunStore, settings: dict):
+    def __init__(self, airfoils: Sequence[tuple[str, ShapeRecord]], workers: int, store: RunStore, settings: dict,
+                 edge: Optional[Callable] = None):
         self.airfoils = list(airfoils)
-        self.store, self.settings = store, settings
+        self.store, self.settings, self.edge = store, settings, edge
         self.pending = deque(range(len(self.airfoils)))
         self.retries: deque = deque()
         self.tries = [0] * len(self.airfoils)
@@ -187,11 +192,15 @@ class _Turns:
                                self.outcomes) from error
 
     def _log(self, i: int, outcome, retry: bool, seconds: float) -> None:
-        """An edge case's line: an abort, a failure, or a climb to rung 3; then the progress."""
+        """An edge case's line: an abort, then the caller's rule or a failure or a climb to rung 3; then the progress."""
         name = self.airfoils[i][0]
         if outcome.status == "aborted":
             logger.warning("%s: aborted after %.0f s (%s)%s", name, seconds, _line(outcome.error),
                            "; it runs again at the end" if retry else "")
+        elif self.edge is not None:
+            line = self.edge(outcome)
+            if line:
+                logger.warning("%s: %s in %.0f s", name, line, seconds)
         elif outcome.status == "failed" or "mads" in outcome.route:
             logger.log(logging.WARNING if outcome.status == "failed" else logging.INFO, "%s: %s in %.0f s", name,
                        self._ended(outcome), seconds)
@@ -446,13 +455,15 @@ def _warn_memory(platform: SlotPlatform, workers: int, cap_mb: int) -> None:
         logger.warning("%s: slots are not capped in memory; a runaway worker is left to the OOM killer (start under "
                        "`systemd-run --user --scope -p Delegate=yes` for caps)", platform.name)
     need, memory = workers * cap_mb, platform.memory()
+    short = []
     if memory.ram_available_mb < need:
-        logger.warning("%d slots may hold up to %d MB together, but %.0f MB of RAM is free now: past that, meshes "
-                       "page to disk and slow down", workers, need, memory.ram_available_mb)
+        short.append(f"{memory.ram_available_mb:.0f} MB of RAM (past it, meshes page to disk and slow down)")
     if memory.commit_available_mb is not None and memory.commit_available_mb < need:
-        logger.warning("%d slots may commit up to %d MB together, but %.0f MB can be committed now: the OS must "
-                       "grow its page file to give it, or allocations fail", workers, need,
-                       memory.commit_available_mb)
+        short.append(f"{memory.commit_available_mb:.0f} MB to commit (past it, the page file grows or allocations "
+                     "fail)")
+    if short:
+        logger.warning("%d slots may use up to %d MB together at their caps; free now: %s", workers, need,
+                       ", ".join(short))
 
 
 @contextmanager

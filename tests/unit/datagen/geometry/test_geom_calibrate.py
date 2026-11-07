@@ -5,15 +5,16 @@ Step 1: Ensure every file is fitted at every configuration, or its rejection kep
     - test_calibrate_rows
     - test_parallel_matches_sequential
     - test_strays
-Step 2: Ensure the report, and that a calibration writes it
+Step 2: Ensure the report, the digest a log shows, and that a calibration writes the one and returns the other
     - test_format_calibration
-    - test_a_calibration_writes_its_report_and_returns_it_without_the_per_airfoil_table
+    - test_the_digest_shows_the_ingests_configuration_and_its_neighbours
+    - test_a_calibration_writes_its_report_and_returns_its_digest
 """
 
 import pytest
 
 from src.datagen.geometry.build.calibrate import (
-    CalibrationFit, Geom_calibrate, Geom_format_calibration, Geom_run_calibration, _orders,
+    CalibrationFit, Geom_calibrate, Geom_calibration_digest, Geom_format_calibration, Geom_run_calibration, _orders,
 )
 from src.datagen.geometry.build.families import _family_contour
 from src.datagen.geometry.common.io import Geom_write_dat
@@ -71,12 +72,34 @@ def test_format_calibration(folder):
     assert _orders([6, 10, 11, 12]) == "orders 6, 10-12" and _orders([8]) == "order 8"
 
 
-def test_a_calibration_writes_its_report_and_returns_it_without_the_per_airfoil_table(folder, tmp_path):
+def _table(text):
+    """The digest's rows as (order, nose, kept + over + cross, marked)."""
+    lines = text.splitlines()
+    start = next(i for i, line in enumerate(lines) if line.lstrip().startswith("order")) + 1
+    rows = [line.split() for line in lines[start:lines.index("", start)]]
+    return [(int(r[0]), r[1], int(r[2]) + int(r[3]) + int(r[4]), "ingest's" in r[-1]) for r in rows]
+
+
+def test_the_digest_shows_the_ingests_configuration_and_its_neighbours(folder):
+    text = Geom_calibration_digest(Geom_calibrate(folder, orders=[7, 8, 9], workers=1), folder)
+
+    assert text.startswith("CST calibration of roots\n") and "broken.dat" in text  # header, rejections
+    assert "Tolerance 1e-03c, over the 2 unique geometries" in text and "the 1 formula shapes' worst" in text
+    assert _table(text) == [(7, "lem", 2, False), (8, "lem", 2, True), (9, "lem", 2, False),
+                            (8, "separate", 2, False), (8, "shared", 2, False)]
+    assert text.endswith("Strays at order 8, nose lem (the ingest's order): 0")
+    # without the ingest's order: around the nearest calibrated one, nothing marked
+    assert _table(Geom_calibration_digest(Geom_calibrate(folder, orders=[4, 5], workers=1), folder)) == [
+        (4, "lem", 2, False), (5, "lem", 2, False), (5, "separate", 2, False), (5, "shared", 2, False)]
+
+
+def test_a_calibration_writes_its_report_and_returns_its_digest(folder, tmp_path):
     out = tmp_path / "report" / "calibration.txt"  # its folder made on the way
     shown = Geom_run_calibration(folder, out, orders=range(4, 6), workers=1)
 
     report = out.read_text(encoding="utf-8")
-    assert report.startswith(shown) and shown.startswith("CST calibration of")  # the table is all it leaves out
-    assert "Per airfoil, max_dev" in report and "Per airfoil" not in shown
-    assert "Surfaces cross at nose lem: " in shown
+    assert shown.startswith("CST calibration of") and "Tolerance 1e-03c" in shown
+    assert "Per configuration" in report and "Per airfoil, max_dev" in report and "Formula families only" in report
+    assert not any(table in shown for table in ("Per configuration", "Per airfoil", "Formula families only"))
+    assert "Surfaces cross at nose lem: " in shown and "Surfaces cross at nose lem: " in report
 # endregion

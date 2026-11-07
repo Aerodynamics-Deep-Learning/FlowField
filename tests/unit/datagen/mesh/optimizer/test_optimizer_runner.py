@@ -25,7 +25,7 @@ Step 5: Ensure a setup error, aborts in a row and Ctrl-C stop the batch, leaving
 Step 6: Ensure the limits hold together: the watchdog outlasts c2d's own timeout, a tight machine is warned of
     - test_the_watchdog_outlasts_c2ds_own_timeout
     - test_a_pool_too_big_for_memory_is_warned
-Step 7: Ensure the log says how far a batch is and only what needs a look
+Step 7: Ensure the log says how far a batch is and only what needs a look, by the caller's rule if it has one
     - test_the_log_has_progress_and_only_the_edge_cases
 
 The task is `runner_tasks.task`, a ladder of two runs whose airfoil's name says how it goes, kept in a module of its
@@ -287,18 +287,24 @@ def test_the_watchdog_outlasts_c2ds_own_timeout():
 class _TightMachine:
     name, caps_memory = "tight", False
 
+    def __init__(self, commit_available_mb=500):
+        self.commit = commit_available_mb
+
     def memory(self):
-        return MemoryState(16000, 1000, 20000, 500)
+        return MemoryState(16000, 1000, 20000, self.commit)
 
 
 def test_a_pool_too_big_for_memory_is_warned(caplog):
     runner._warn_memory(_TightMachine(), 6, 2048)
     warnings = [r.getMessage() for r in caplog.records if r.levelname == "WARNING"]
 
-    assert len(warnings) == 3
-    assert "not capped in memory" in warnings[0]
-    assert "up to 12288 MB" in warnings[1] and "1000 MB of RAM" in warnings[1]
-    assert "500 MB can be committed" in warnings[2]
+    assert len(warnings) == 2 and "not capped in memory" in warnings[0]
+    assert "6 slots may use up to 12288 MB together at their caps" in warnings[1]  # one line for every limit short
+    assert "1000 MB of RAM" in warnings[1] and "500 MB to commit" in warnings[1]
+    caplog.clear()
+    runner._warn_memory(_TightMachine(commit_available_mb=20000), 6, 2048)
+    [_, memory] = [r.getMessage() for r in caplog.records if r.levelname == "WARNING"]
+    assert "1000 MB of RAM" in memory and "to commit" not in memory
 # endregion
 
 
@@ -320,4 +326,11 @@ def test_the_log_has_progress_and_only_the_edge_cases(ctx, store, caplog, monkey
     monkeypatch.setattr(runner, "_warn_memory", lambda *args: warned.append(args))
     Optim_run_airfoils(task, _airfoils("x", "y"), ctx, store, 2, warn_memory=False)
     assert warned == []  # a caller running several batches warns once
+
+    caplog.clear()  # a caller's own rule: here only the climb to rung 3, in its words
+    with caplog.at_level(logging.INFO, logger=runner.__name__):
+        Optim_run_airfoils(task, _airfoils("golden0", "mads", "plain"), ctx, store, 1,
+                           edge=lambda o: "climbed" if "mads" in o.route else None)
+    assert [(r.levelname, r.getMessage().rsplit(" in ", 1)[0]) for r in caplog.records
+            if r.getMessage().startswith(("golden", "mads", "plain"))] == [("WARNING", "mads: climbed")]
 # endregion

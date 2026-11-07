@@ -38,7 +38,7 @@ from src.datagen.meshing.optimizer.common.constants import (
 from src.datagen.meshing.optimizer.common.settings import Optim_build_settings
 from src.datagen.meshing.optimizer.evaluate.context import RunContext
 from src.datagen.meshing.optimizer.manifest.store import Optim_git_state, RunStore
-from src.datagen.meshing.optimizer.search.events import LadderOutcome
+from src.datagen.meshing.optimizer.search.events import LadderOutcome, Optim_failure_values
 from src.datagen.meshing.optimizer.search.ladder import Ladder, Optim_run_ladder
 from src.datagen.meshing.optimizer.search.mads import Optim_plateau_reached
 from src.datagen.meshing.optimizer.search.nstar import Optim_n_star_search
@@ -104,8 +104,8 @@ class _Bisect(Ladder):
         if hi not in meshed:  # the top of the range, never meshed
             passes = self._size_ratio_passes(knobs, hi, meshed)
             if not passes:
-                if passes is False:
-                    self.notes["jmax_star"] = None  # above the range
+                if passes is False:  # above the range
+                    self.notes.update(jmax_star=None, top_failed=Optim_failure_values(meshed[hi], s))
                 return
         self.notes.update(jmax_star=hi, jmax_star_passes=bool(meshed[hi]["passed"]))
 
@@ -116,6 +116,16 @@ class _Bisect(Ladder):
             self.notes["bisect_failed"] = f"jmax {jmax}: {row['status']}"
             return None
         return "size_ratio" not in row["failed_gates"]
+
+
+def _bisect_edge(outcome: LadderOutcome) -> Optional[str]:
+    """Rung 1's log line for an airfoil without jmax*; jmax* failing a shape gate is rung 2's work, so no line."""
+    notes = outcome.notes or {}
+    if notes.get("bisect_failed"):
+        return f"bisection stopped at {notes['bisect_failed']}"
+    if notes.get("top_failed"):
+        return f"no jmax* in [{JMAX_MIN}, {JMAX_MAX}]: at jmax {JMAX_MAX}, {notes['top_failed']}"
+    return _why(outcome)
 
 
 class _Descend(Ladder):
@@ -221,7 +231,7 @@ def Optim_calibrate(store: RunStore, rungs: Sequence[int] = (1, 2, 3), names: Op
     run = partial(_run_stage, store=store, work_root=Path(work_root), workers=workers, first=min(rungs))
     if 1 in rungs:
         done[1] = run(1, partial(Optim_run_ladder, ladder_type=_Bisect), load(names), Optim_build_settings(),
-                      f"n* and jmax* by bisection over [{JMAX_MIN}, {JMAX_MAX}]")
+                      f"n* and jmax* by bisection over [{JMAX_MIN}, {JMAX_MAX}]", edge=_bisect_edge)
     recommended = Optim_golden_from(Optim_bisections(store, done[1])) if 1 in done else None
     if golden_jmax is not None:
         source = "given"
@@ -255,12 +265,12 @@ def Optim_calibrate(store: RunStore, rungs: Sequence[int] = (1, 2, 3), names: Op
 
 
 def _run_stage(rung: int, task, airfoils: list, settings: dict, what: str, *, store: RunStore, work_root: Path,
-               workers: int, first: int) -> Stage:
+               workers: int, first: int, edge=None) -> Stage:
     logger.info("%s  %s; %d airfoils, %d workers", _RUNG_START.format(rung), what, len(airfoils), workers)
     store.ensure_settings(settings, label=f"calibration rung {rung}")
     ctx = RunContext.create(settings, work_root / f"rung{rung}")
     t0 = time.perf_counter()
-    outcomes = Optim_run_airfoils(task, airfoils, ctx, store, workers, warn_memory=rung == first)
+    outcomes = Optim_run_airfoils(task, airfoils, ctx, store, workers, warn_memory=rung == first, edge=edge)
     return Stage(rung, settings, [name for name, _ in airfoils], outcomes, time.perf_counter() - t0)
 
 
