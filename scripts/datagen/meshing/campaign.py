@@ -4,7 +4,7 @@ not yet finished under the current constants, each airfoil's best mesh recorded 
 setting: changing a constant makes a new settings row, under which every airfoil runs again. It resumes by
 itself: the airfoils finished under these settings are skipped, the ones a cut-short campaign left run again.
 
-    python -m scripts.datagen.mesh_campaign [--db <run store> | --db shared] [--airfoils a,b] [--workers 6]
+    python -m scripts.datagen.meshing.campaign [--db <run store> | --db shared] [--airfoils a,b] [--workers 6]
         [--settings-label TEXT] [--geometry-db PATH] [--work-root DIR]
 
 Left out, --db is a new run store in the scratchpad, which a rerun cannot resume: name one to resume. `shared` is
@@ -27,7 +27,8 @@ from src.datagen.meshing.optimizer.manifest.store import RunStore
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(prog="python -m scripts.datagen.meshing.campaign", description=__doc__,
+                                     formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--db", type=Path, help="the run store the campaign records into (default: a new one in the "
                                                 "scratchpad; `shared`: the repo's)")
     parser.add_argument("--airfoils", type=Script_names, help="comma-separated names (default: every stored airfoil)")
@@ -54,7 +55,7 @@ def run(args: argparse.Namespace) -> int:
 
 
 STAGE = Stage(
-    "campaign", "scripts.datagen.mesh_campaign", build_parser, run,
+    "campaign", "scripts.datagen.meshing.campaign", build_parser, run,
     outputs=(Output("db", OutputKind.FILE, "run store", scratch="meshing.sqlite", shared=lambda: MESHING_DB,
                     exists="this run adds to it"),),
     inputs=(GEOMETRY_DB,),

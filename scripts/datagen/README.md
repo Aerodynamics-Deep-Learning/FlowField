@@ -4,6 +4,15 @@ The command lines of the data-generation pipeline: airfoil `.dat` files in, a ge
 study's best mesh per airfoil, and those meshes back out as `.su2` files. Each script runs one stage; the
 master runs several from a YAML config. Run everything from the repo root.
 
+```
+scripts/datagen/
+├── README.md        this guide
+├── engine.py        what every script shares: the plan, the output rule, the logs
+├── geometry/        calibrate.py, ingest.py
+└── meshing/         machine_check.py (+ parity.py), calibrate.py, campaign.py, remesh.py,
+                     master.py (+ master.example.yaml)
+```
+
 ## 1. First, on a new machine
 
 1. Install the requirements into the project's Python (3.11): `pip install -r requirements.txt`.
@@ -12,7 +21,7 @@ master runs several from a YAML config. Run everything from the repo root.
 3. Check that this machine samples and meshes exactly as the reference machine did:
 
    ```
-   python -m scripts.datagen.machine_check
+   python -m scripts.datagen.meshing.machine_check
    ```
 
    It must end with `machine_check passed`, both steps `passed`. **A skip is a failure**: step 2 skips when
@@ -40,16 +49,17 @@ The two calibrations measure; they never change a constant. Their reports tell y
 
 ## 3. The scripts
 
-`python -m scripts.datagen.<script> --help` lists every option; the table says what each is for.
+`python -m scripts.datagen.<folder>.<script> --help` lists every option; the table says what each is for. The
+stage is the script's name in configs and logs.
 
-| Script | What it does | Reads | Writes | Time |
-|---|---|---|---|---|
-| `machine_check` | runs the parity test; `--rewrite` writes the parity reference here instead | the shared manifest, c2d | the stamp (`--rewrite`: `machine_parity.json`) | ~1 min |
-| `geometry_calibrate <folder>` | fits every file at CST orders 4-12 for choosing the CST constants | the `.dat` folder | `--out`: a report file | ~1 min for 190 files |
-| `geometry_ingest [folder]` | adds the folder's airfoils to a manifest; without a folder, brings stored ones to the current shape version | the `.dat` folder | `--data-root`: a data folder (manifest, raw copies, reports) | a few minutes for 190 files |
-| `mesh_calibrate` | measures the numbers the ladder's rungs run on | `--geometry-db` | `--out`: a folder, `<date>.txt` and `<date>.sqlite` | rungs 1-3 ~1.5-2 h on 6 workers (estimated) |
-| `mesh_campaign` | the ladder over every airfoil not finished under the current constants | `--geometry-db` | `--db`: a run store | ~12 min for 158 airfoils on 6 workers |
-| `mesh_remesh` | rebuilds best runs (`--airfoils`, `--all`) or one run (`--run`), each checked against its stored hash | `--db`, `--geometry-db` | `--out`: a folder per airfoil | ~5 s an airfoil |
+| Script (`python -m scripts.datagen.…`) | Stage | What it does | Reads | Writes | Time |
+|---|---|---|---|---|---|
+| `meshing.machine_check` | `machine_check` | runs the parity test; `--rewrite` writes the parity reference here instead | the shared manifest, c2d | the stamp (`--rewrite`: `machine_parity.json`) | ~1 min |
+| `geometry.calibrate <folder>` | `geometry_calibrate` | fits every file at CST orders 4-12 for choosing the CST constants | the `.dat` folder | `--out`: a report file | ~1 min for 190 files |
+| `geometry.ingest [folder]` | `geometry_ingest` | adds the folder's airfoils to a manifest; without a folder, brings stored ones to the current shape version | the `.dat` folder | `--data-root`: a data folder (manifest, raw copies, reports) | a few minutes for 190 files |
+| `meshing.calibrate` | `mesh_calibrate` | measures the numbers the ladder's rungs run on | `--geometry-db` | `--out`: a folder, `<date>.txt` and `<date>.sqlite` | rungs 1-3 ~1.5-2 h on 6 workers (estimated) |
+| `meshing.campaign` | `campaign` | the ladder over every airfoil not finished under the current constants | `--geometry-db` | `--db`: a run store | ~12 min for 158 airfoils on 6 workers |
+| `meshing.remesh` | `remesh` | rebuilds best runs (`--airfoils`, `--all`) or one run (`--run`), each checked against its stored hash | `--db`, `--geometry-db` | `--out`: a folder per airfoil | ~5 s an airfoil |
 
 Exit codes, for every script and the master:
 
@@ -67,11 +77,11 @@ ladder, set the debugger to follow subprocesses, or call `Optim_run_ladder` your
 ## 4. Running several stages: the master
 
 ```
-python -m scripts.datagen.mesh_master <config.yaml>
+python -m scripts.datagen.meshing.master <config.yaml>
 ```
 
-Copy `mesh_master.example.yaml` anywhere and edit it. The stages always run in this order, whatever order the
-config lists them in:
+Copy `scripts/datagen/meshing/master.example.yaml` anywhere and edit it. The stages always run in this order,
+whatever order the config lists them in:
 
 ```
 machine_check -> geometry_calibrate -> geometry_ingest -> mesh_calibrate -> campaign -> remesh
@@ -135,11 +145,11 @@ HH:MM:SS [who] [stage]              [level] text
 - **level**: `info`; `!` a warning; `!!` a shared store written; `error`.
 
 ```
-21:30:12 [run] [plan]               [info]  mesh_master dx003, started 2026-11-06 21:30:12 on Ege_Laptop, code 68ae03b
+21:30:12 [run] [plan]               [info]  master dx003, started 2026-11-06 21:30:12 on Ege_Laptop, code 68ae03b
 21:30:12 [run] [plan]               [info]  stages machine_check -> campaign -> remesh (off: mesh_calibrate)
 21:30:12 [run] [campaign]           [!]     writes db: data/experiments/dx003/meshing.sqlite exists; this run adds to it
 21:30:12 [run] [remesh]             [info]  reads db: this run's campaign, data/experiments/dx003/meshing.sqlite
-21:30:12 [run] [machine_check]      [info]  start: python -m scripts.datagen.machine_check
+21:30:12 [run] [machine_check]      [info]  start: python -m scripts.datagen.meshing.machine_check
 21:31:06 [cmd] [machine_check]      [info]  step 2, c2d: passed
 21:31:07 [cmd] [campaign]           [!]     2 ladders left running by an earlier campaign marked aborted; their airfoils run again
 21:34:20 [run] [campaign]           [info]  done: exit 0, 3.2 min
@@ -175,9 +185,9 @@ The ingest is not machine-portable (its fit runs on LAPACK), so the committed `g
 machine shares. Writing it is a release:
 
 1. One person ingests at a time, after pulling: `geometry.sqlite` is a binary file git cannot merge.
-2. `python -m scripts.datagen.geometry_ingest <folder> --data-root shared` (or `data_root: shared` in a config).
+2. `python -m scripts.datagen.geometry.ingest <folder> --data-root shared` (or `data_root: shared` in a config).
 3. The parity reference must list the new airfoils. A master run whose machine check passed earlier in the
-   same run rewrites it by itself; otherwise run `python -m scripts.datagen.machine_check --rewrite` on the
+   same run rewrites it by itself; otherwise run `python -m scripts.datagen.meshing.machine_check --rewrite` on the
    reference machine.
 4. Commit `data/manifest/datagen/geometry/geometry.sqlite` and
    `tests/integration/datagen/mesh/optimizer/machine_parity.json` together.

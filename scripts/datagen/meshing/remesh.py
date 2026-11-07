@@ -3,7 +3,7 @@ The mesh study's re-mesh (src/datagen/meshing/optimizer/batch/remesh.py): stored
 `<out>/<airfoil>/`, each .su2 (and .vtk, if asked) delivered only once it hashes to what its run stored. By name,
 an airfoil's mesh is its best run under the current settings; by --run, any run that meshed, best or not.
 
-    python -m scripts.datagen.mesh_remesh (--airfoils a,b | --all | --run ID) [--out <folder>] [--vtk]
+    python -m scripts.datagen.meshing.remesh (--airfoils a,b | --all | --run ID) [--out <folder>] [--vtk]
         [--db PATH] [--geometry-db PATH]
 
 Left out, --out is a folder in the scratchpad (meshes are never kept in a committed place); --db is the repo's run
@@ -26,7 +26,8 @@ from src.datagen.meshing.optimizer.manifest.store import RunStore
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(prog="python -m scripts.datagen.meshing.remesh", description=__doc__,
+                                     formatter_class=argparse.RawDescriptionHelpFormatter)
     which = parser.add_mutually_exclusive_group(required=True)
     which.add_argument("--airfoils", type=Script_names,
                        help="comma-separated names: each one's best run under the current settings")
@@ -67,7 +68,7 @@ def run(args: argparse.Namespace) -> int:
 
 
 STAGE = Stage(
-    "remesh", "scripts.datagen.mesh_remesh", build_parser, run,
+    "remesh", "scripts.datagen.meshing.remesh", build_parser, run,
     outputs=(Output("out", OutputKind.FOLDER, "re-mesh folder", exists="meshes of the same airfoils are replaced"),),
     inputs=(Input("db", "run store", shared=lambda: MESHING_DB, made_by=("campaign", "db")), GEOMETRY_DB),
     meshes=True, check=lambda args, made_here: Script_check_names(Optim_load_shapes, args, made_here))

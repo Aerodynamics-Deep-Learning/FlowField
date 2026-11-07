@@ -1,5 +1,5 @@
 """
-Tests for `scripts.datagen.mesh_remesh`, the re-mesh's command line, i.e.:
+Tests for `scripts.datagen.meshing.remesh`, the re-mesh's command line, i.e.:
 
 Step 1: Ensure the options pick the runs, the folder is the scratchpad's when left out, what was not delivered is
 printed, and the exit code says if all were
@@ -16,7 +16,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from scripts.datagen import mesh_remesh
+from scripts.datagen.meshing import remesh as mesh_remesh
 from src.datagen.geometry.common.paths import Geom_paths
 from src.datagen.meshing.optimizer.batch.remesh import RemeshOutcome
 

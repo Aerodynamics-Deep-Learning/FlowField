@@ -2,7 +2,7 @@
 Calibration of the CST order, nose and fit tolerance: fits every airfoil in a root folder at a range of
 orders, with each way of representing the nose, through the same code the ingest uses, and writes the
 table the constants are chosen from. Touches no database. Run from the command line by
-`scripts/datagen/geometry_calibrate.py`.
+`scripts/datagen/geometry/calibrate.py`.
 
 Files are independent, so they are fitted in parallel processes, one per core by default.
 """

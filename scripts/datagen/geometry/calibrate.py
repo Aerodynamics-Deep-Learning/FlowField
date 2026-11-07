@@ -3,7 +3,7 @@ Fits every .dat under a folder at a range of CST orders, with each way of repres
 code the ingest uses, and writes the table the CST constants are chosen from
 (src/datagen/geometry/build/calibrate.py). Touches no database; it recommends, it changes no constant.
 
-    python -m scripts.datagen.geometry_calibrate <folder> [--out <report file> | --out shared] [--orders 4-12]
+    python -m scripts.datagen.geometry.calibrate <folder> [--out <report file> | --out shared] [--orders 4-12]
         [--workers N]
 
 Left out, --out is `<date>.txt` in the scratchpad; `shared` is the repo's calibration folder,
@@ -31,7 +31,8 @@ def _orders(text: str) -> range:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(prog="python -m scripts.datagen.geometry.calibrate", description=__doc__,
+                                     formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("folder", type=Path, help="root folder of .dat files, searched recursively")
     parser.add_argument("--out", type=Path, help="the report file, its folder made if missing (default: one in the "
                                                  "scratchpad; `shared`: the repo's calibration folder)")
@@ -53,7 +54,7 @@ def _shared_report() -> Path:
 
 
 STAGE = Stage(
-    "geometry_calibrate", "scripts.datagen.geometry_calibrate", build_parser, run,
+    "geometry_calibrate", "scripts.datagen.geometry.calibrate", build_parser, run,
     outputs=(Output("out", OutputKind.FILE, "CST calibration report", scratch="{date}.txt", shared=_shared_report,
                     exists="this run overwrites it"),),
     inputs=(Input("folder", ".dat folder", folder=True),))

@@ -1,5 +1,5 @@
 """
-Tests for `scripts.datagen.geometry_calibrate`, the CST calibration's command line, i.e.:
+Tests for `scripts.datagen.geometry.calibrate`, the CST calibration's command line, i.e.:
 
 Step 1: Ensure the options reach the calibration, its report the scratchpad's when left out, and it is printed
     - test_the_options_reach_the_calibration
@@ -13,7 +13,7 @@ import datetime
 
 import pytest
 
-from scripts.datagen import geometry_calibrate
+from scripts.datagen.geometry import calibrate as geometry_calibrate
 
 
 @pytest.fixture

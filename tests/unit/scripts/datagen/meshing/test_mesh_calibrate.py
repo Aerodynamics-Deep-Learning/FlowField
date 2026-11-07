@@ -1,5 +1,5 @@
 """
-Tests for `scripts.datagen.mesh_calibrate`, the ladder calibration's command line, i.e.:
+Tests for `scripts.datagen.meshing.calibrate`, the ladder calibration's command line, i.e.:
 
 Step 1: Ensure the options reach the calibration, its folder the scratchpad's when left out, and it is printed
     - test_the_options_reach_the_calibration
@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-from scripts.datagen import mesh_calibrate
+from scripts.datagen.meshing import calibrate as mesh_calibrate
 from src.datagen.geometry.common.paths import Geom_paths
 from src.datagen.meshing.optimizer.batch.calibrate import RUNG2_CAP, RUNG3_CAP, CalibrationFiles
 from src.datagen.meshing.optimizer.common.constants import WORKERS

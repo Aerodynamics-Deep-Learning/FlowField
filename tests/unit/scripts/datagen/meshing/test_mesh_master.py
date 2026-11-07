@@ -1,5 +1,5 @@
 """
-Tests for `scripts.datagen.mesh_master`, the run a YAML config makes, i.e.:
+Tests for `scripts.datagen.meshing.master`, the run a YAML config makes, i.e.:
 
 Step 1: Ensure a config's sections become the enabled stages' arguments, in the fixed order
     - test_options_become_arguments
@@ -15,12 +15,13 @@ from pathlib import Path
 
 import pytest
 
-from scripts.datagen import geometry_ingest, mesh_campaign, mesh_master, mesh_remesh
+from scripts.datagen.geometry import ingest as geometry_ingest
+from scripts.datagen.meshing import campaign as mesh_campaign, master as mesh_master, remesh as mesh_remesh
 from scripts.datagen.engine import PlanError, Script_plan
-from scripts.datagen.mesh_master import Script_load_config, Script_options_to_argv
+from scripts.datagen.meshing.master import Script_load_config, Script_options_to_argv
 from src.datagen.geometry.common.paths import Geom_paths
 
-EXAMPLE = Path(mesh_master.__file__).with_name("mesh_master.example.yaml")
+EXAMPLE = Path(mesh_master.__file__).with_name("master.example.yaml")
 
 
 def _config(tmp_path, text: str) -> Path:

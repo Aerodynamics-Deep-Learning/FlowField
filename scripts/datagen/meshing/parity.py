@@ -24,7 +24,7 @@ PARITY_MODULE = "tests.integration.datagen.mesh.optimizer.test_machine_parity"
 PARITY_TEST = REPO_ROOT / "tests" / "integration" / "datagen" / "mesh" / "optimizer" / "test_machine_parity.py"
 REFERENCE = PARITY_TEST.with_name("machine_parity.json")
 STAMP = DATA_ROOT / ".machine_check.json"
-REWRITE = "python -m scripts.datagen.machine_check --rewrite"
+REWRITE = "python -m scripts.datagen.meshing.machine_check --rewrite"
 
 _STEPS = {"test_this_machine_samples_like_the_reference": "step 1, sampling",
           "test_this_machine_meshes_like_the_reference": "step 2, c2d"}
@@ -84,7 +84,7 @@ def Script_reference_problem() -> Optional[str]:
     if (ref["sampler_version"], ref["shape_version"]) != (SAMPLER_VERSION, SHAPE_VERSION):
         return (f"the parity reference is for {ref['sampler_version']}/{ref['shape_version']}, the code is at "
                 f"{SAMPLER_VERSION}/{SHAPE_VERSION}. This is a release step, done by hand on the reference machine: "
-                f"1. python -m scripts.datagen.geometry_ingest --data-root shared  2. {REWRITE}  3. commit "
+                f"1. python -m scripts.datagen.geometry.ingest --data-root shared  2. {REWRITE}  3. commit "
                 f"geometry.sqlite and machine_parity.json together")
     from src.datagen.meshing.optimizer.batch.runner import Optim_load_shapes  # the shared manifest's names
     stored, listed = {name for name, _ in Optim_load_shapes()}, set(ref["samples"])
@@ -137,7 +137,7 @@ def Script_stamp_problem() -> Optional[str]:
     Returns:
         str | None: The warning; None while nothing it checked has moved
     """
-    advice = ": meshes made here may not hash like the stored runs (python -m scripts.datagen.machine_check, ~1 min)"
+    advice = ": meshes made here may not hash like the stored runs (python -m scripts.datagen.meshing.machine_check, ~1 min)"
     try:
         stamp = json.loads(STAMP.read_text(encoding="utf-8"))
     except (OSError, ValueError):

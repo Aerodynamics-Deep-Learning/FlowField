@@ -1,5 +1,5 @@
 """
-Tests for `scripts.datagen.parity`, the machine check, and `scripts.datagen.machine_check`, its script, i.e.:
+Tests for `scripts.datagen.meshing.parity`, the machine check, and `scripts.datagen.meshing.machine_check`, its script, i.e.:
 
 Step 1: Ensure a check passes only when every test passed, a skip counting as a failure, and only a pass is stamped
     - test_a_check_passes_only_when_every_test_passed
@@ -18,8 +18,8 @@ import subprocess
 
 import pytest
 
-from scripts.datagen import machine_check, parity
-from scripts.datagen.parity import CheckResult, Script_machine_check, Script_stamp_problem
+from scripts.datagen.meshing import machine_check, parity
+from scripts.datagen.meshing.parity import CheckResult, Script_machine_check, Script_stamp_problem
 from src.datagen.geometry.common.constants import SAMPLER_VERSION, SHAPE_VERSION
 
 _STEP1, _STEP2 = "test_this_machine_samples_like_the_reference", "test_this_machine_meshes_like_the_reference"

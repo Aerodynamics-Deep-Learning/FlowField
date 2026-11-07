@@ -1,10 +1,10 @@
 """
 Whether this machine makes the mesh study's inputs and meshes bit for bit as the reference machine did
-(scripts/datagen/parity.py): runs tests/integration/datagen/mesh/optimizer/test_machine_parity.py and passes only
+(scripts/datagen/meshing/parity.py): runs tests/integration/datagen/mesh/optimizer/test_machine_parity.py and passes only
 when both its tests pass, a skip counting as a failure. Run it first on a new machine, and again when c2d, the
 parity reference or the code's versions change; the mesh scripts warn until it has passed.
 
-    python -m scripts.datagen.machine_check [--rewrite]
+    python -m scripts.datagen.meshing.machine_check [--rewrite]
 
 --rewrite writes the parity reference on this machine instead, which makes it the reference machine: do it only
 there, after a new manifest or a sampler or shape version change, and commit the file with the manifest.
@@ -15,7 +15,7 @@ import logging
 import sys
 
 from scripts.datagen.engine import Script_main, Stage
-from scripts.datagen.parity import (
+from scripts.datagen.meshing.parity import (
     STAMP, Script_machine_check, Script_reference_problem, Script_reference_written_on, Script_rewrite_reference,
     Script_write_stamp,
 )
@@ -24,7 +24,8 @@ logger = logging.getLogger(__name__)
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(prog="python -m scripts.datagen.meshing.machine_check", description=__doc__,
+                                     formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--rewrite", action="store_true", help="write the parity reference on this machine instead")
     return parser
 
@@ -57,7 +58,7 @@ def _check(args: argparse.Namespace, made_here: set) -> list[str]:
     return [problem] if problem else []
 
 
-STAGE = Stage("machine_check", "scripts.datagen.machine_check", build_parser, run, check=_check)
+STAGE = Stage("machine_check", "scripts.datagen.meshing.machine_check", build_parser, run, check=_check)
 
 
 def main(argv=None) -> int:

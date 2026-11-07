@@ -2,7 +2,7 @@
 The mesh study's re-mesh: stored runs meshed again into `<out>/<airfoil>/`, each `.su2` (and `.vtk`, if asked)
 delivered only once it hashes to what its run stored (`evaluate/remesh.py`). By name, an airfoil's mesh is its
 best run under the current settings; by run id, any run that meshed, best or not. Run from the command line by
-`scripts/datagen/mesh_remesh.py`.
+`scripts/datagen/meshing/remesh.py`.
 
 Airfoils run one after another; one that cannot be re-meshed is reported and the rest go on. The run store
 is only read, so this can run beside a campaign.

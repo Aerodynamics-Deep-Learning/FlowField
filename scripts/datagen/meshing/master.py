@@ -3,14 +3,14 @@ Runs the data-generation stages a YAML config enables, always in this order, eac
 
     machine_check -> geometry_calibrate -> geometry_ingest -> mesh_calibrate -> campaign -> remesh
 
-    python -m scripts.datagen.mesh_master <config.yaml>
+    python -m scripts.datagen.meshing.master <config.yaml>
 
 One section per stage with `enabled: true` or `false` (machine_check is on when its section is left out); its other
 keys are the stage script's options, `-` written as `_` (`--settings-label` as `settings_label`; `--help` on
 each script lists them). Relative paths are under data/, `shared` names a committed store, and an output left out
 goes to data/scratchpad/<time>_<config name>/<stage>/. A stage reads what an earlier stage of the same run wrote
 unless told otherwise. Everything is checked before anything runs; the first stage that fails stops the run.
-A log of the run lands beside every output. See scripts/datagen/README.md and mesh_master.example.yaml.
+A log of the run lands beside every output. See scripts/datagen/README.md and master.example.yaml beside this file.
 """
 
 import argparse
@@ -20,10 +20,10 @@ from pathlib import Path
 import yaml
 
 from scripts.datagen import engine
-from scripts.datagen import (
-    geometry_calibrate, geometry_ingest, machine_check, mesh_calibrate, mesh_campaign, mesh_remesh,
-)
 from scripts.datagen.engine import SHARED, PlanError, Script_refuse, Script_run, Stage
+from scripts.datagen.geometry import calibrate as geometry_calibrate, ingest as geometry_ingest
+from scripts.datagen.meshing import calibrate as mesh_calibrate, campaign as mesh_campaign, machine_check
+from scripts.datagen.meshing import remesh as mesh_remesh
 
 STAGES = (machine_check.STAGE, geometry_calibrate.STAGE, geometry_ingest.STAGE, mesh_calibrate.STAGE,
           mesh_campaign.STAGE, mesh_remesh.STAGE)
@@ -112,7 +112,8 @@ def Script_options_to_argv(stage: Stage, options: dict) -> list[str]:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(prog="python -m scripts.datagen.meshing.master", description=__doc__,
+                                     formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("config", type=Path, help="the run's YAML config, anywhere")
     return parser
 
@@ -122,7 +123,7 @@ def main(argv=None) -> int:
     args = parser.parse_args(argv)
     if not args.config.is_file():
         parser.error(f"no config at {args.config}")
-    name, title, config = args.config.stem, f"mesh_master {args.config.stem}", args.config.resolve()
+    name, title, config = args.config.stem, f"master {args.config.stem}", args.config.resolve()
     try:
         requested, off = Script_load_config(args.config)
     except PlanError as e:

@@ -160,7 +160,7 @@ def Script_plan(name: str, requested: Sequence[tuple[Stage, Sequence[str]]], *, 
     Plans a run without running or writing anything.
 
     Args:
-        name (str): The run's name: the config's, or the script's
+        name (str): The run's name: the config's, or the one stage's
         requested (Sequence[tuple[Stage, Sequence[str]]]): The stages, in order, each with its arguments
         title (str | None): The log's first words; `name` if None
         config (Path | None): The master's config
@@ -202,7 +202,7 @@ def Script_plan(name: str, requested: Sequence[tuple[Stage, Sequence[str]]], *, 
                                      f"not what this calibration recommends"))
     meshing = [stage.name for stage, _ in requested if stage.meshes]
     if meshing and "machine_check" not in names:
-        from scripts.datagen.parity import Script_stamp_problem  # the stamp is the machine check's
+        from scripts.datagen.meshing.parity import Script_stamp_problem  # the stamp is the machine check's
         problem = Script_stamp_problem()
         if problem:
             notes.append((meshing[0], "!", problem))
@@ -617,7 +617,7 @@ def Script_main(stage: Stage, argv: Optional[Sequence[str]] = None) -> int:
         stage.build_parser().print_help()
         print("\n" + HELP_TAIL)
         return 0
-    return Script_run(stage.module.rsplit(".", 1)[-1], [(stage, argv)], in_process=True)
+    return Script_run(stage.name, [(stage, argv)], in_process=True)
 
 
 def _as_child(stage: Stage, argv: Sequence[str]) -> int:

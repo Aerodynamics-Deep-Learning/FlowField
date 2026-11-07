@@ -1,5 +1,5 @@
 """
-Tests for `scripts.datagen.mesh_campaign`, the campaign's command line, i.e.:
+Tests for `scripts.datagen.meshing.campaign`, the campaign's command line, i.e.:
 
 Step 1: Ensure the options reach the campaign, its store the scratchpad's when left out, its summary printed and
 how it ended the exit code
@@ -14,7 +14,7 @@ The campaign and the manifest are stand-ins; the campaign is tested in the optim
 
 import pytest
 
-from scripts.datagen import mesh_campaign
+from scripts.datagen.meshing import campaign as mesh_campaign
 from src.datagen.geometry.common.paths import Geom_paths
 from src.datagen.meshing.optimizer.batch.campaign import CampaignResult
 from src.datagen.meshing.optimizer.batch.runner import BatchStopped

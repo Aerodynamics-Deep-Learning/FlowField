@@ -1,7 +1,7 @@
 """
 Calibration of the mesh study's ladder: on real c2d meshes, measures the numbers each rung runs on and writes
 the report they are chosen from. Like the CST calibration, it is run by hand and recommends; it changes no
-constant. Run from the command line by `scripts/datagen/mesh_calibrate.py`.
+constant. Run from the command line by `scripts/datagen/meshing/calibrate.py`.
 
     Rung 1  every airfoil: n* on its full grid and at the narrowest cluster_width, then jmax*, the smallest
             jmax whose mesh passes the size ratio (a bisection over [JMAX_MIN, JMAX_MAX]); recommends the

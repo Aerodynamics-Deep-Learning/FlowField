@@ -2,7 +2,7 @@
 The mesh study's campaign: the ladder over every stored airfoil, each airfoil's best mesh recorded in a run
 store. It runs at the constants alone, with no overrides, so every settings row in the store is the code's own;
 changing a constant makes a new settings_id, under which every airfoil runs again. Run from the command line by
-`scripts/datagen/mesh_campaign.py`.
+`scripts/datagen/meshing/campaign.py`.
 
 It resumes by itself: an airfoil with a passed or failed ladder under the current settings is skipped, and a
 ladder a cut-short campaign left running is marked aborted at the start, so its airfoil runs again. The

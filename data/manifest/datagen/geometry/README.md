@@ -7,7 +7,7 @@ it, through the ingest; don't edit it by hand.
 ## Adding airfoils
 
 ```
-python -m scripts.datagen.geometry_ingest [<folder>] --data-root data [--dry-run]
+python -m scripts.datagen.geometry.ingest [<folder>] --data-root data [--dry-run]
 ```
 
 Every `.dat` under `<folder>` is read, normalized, closed, fitted with a CST and checked. The file

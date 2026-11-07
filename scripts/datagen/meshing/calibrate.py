@@ -3,7 +3,7 @@ Calibrates the mesh study's ladder on real c2d meshes (src/datagen/meshing/optim
 the numbers each rung runs on and writes the report they are chosen from to `<out>/<date>.txt`, every run kept
 beside it in `<out>/<date>.sqlite`. It recommends; it changes no constant.
 
-    python -m scripts.datagen.mesh_calibrate [--out <folder> | --out shared] [--rungs 1,2,3] [--airfoils a,b]
+    python -m scripts.datagen.meshing.calibrate [--out <folder> | --out shared] [--rungs 1,2,3] [--airfoils a,b]
         [--golden-jmax N] [--rung3-cap 300] [--rung2-cap 100] [--workers 6] [--geometry-db PATH] [--work-root DIR]
 
     Rung 1  every airfoil: n*, then jmax* by bisection; recommends the golden jmax, n*'s cluster_width grid,
@@ -42,7 +42,8 @@ def _rungs(text: str) -> list[int]:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(prog="python -m scripts.datagen.meshing.calibrate", description=__doc__,
+                                     formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--out", type=Path, help="the folder for the report and the database (default: one in the "
                                                  "scratchpad; `shared`: the repo's calibration folder)")
     parser.add_argument("--rungs", type=_rungs, default="1,2,3", help="rungs to calibrate, of 1,2,3 (default all)")
@@ -85,7 +86,7 @@ def _check(args: argparse.Namespace, made_here: set) -> list[str]:
 
 
 STAGE = Stage(
-    "mesh_calibrate", "scripts.datagen.mesh_calibrate", build_parser, run,
+    "mesh_calibrate", "scripts.datagen.meshing.calibrate", build_parser, run,
     outputs=(Output("out", OutputKind.FOLDER, "calibration folder", shared=lambda: CALIBRATION_DIR,
                     exists="today's report and database go into it"),),
     inputs=(GEOMETRY_DB,),

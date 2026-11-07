@@ -13,7 +13,7 @@ import re
 
 import pytest
 
-from scripts.datagen import mesh_master
+from scripts.datagen.meshing import master as mesh_master
 from src.datagen.geometry.common.paths import Geom_paths
 from src.datagen.meshing.c2d.run import C2D_find_exe
 from src.datagen.meshing.optimizer.batch.runner import Optim_load_shapes

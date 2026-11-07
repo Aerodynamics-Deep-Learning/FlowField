@@ -1,6 +1,7 @@
 import pytest
 
-from scripts.datagen import engine, parity
+from scripts.datagen import engine
+from scripts.datagen.meshing import parity
 
 
 @pytest.fixture(autouse=True)

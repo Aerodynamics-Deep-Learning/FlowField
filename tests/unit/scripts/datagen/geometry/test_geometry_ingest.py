@@ -1,5 +1,5 @@
 """
-Tests for `scripts.datagen.geometry_ingest`, the ingest's command line, i.e.:
+Tests for `scripts.datagen.geometry.ingest`, the ingest's command line, i.e.:
 
 Step 1: Ensure the options reach the ingest, its data folder the scratchpad's when left out, its summary printed
     - test_the_options_reach_the_ingest
@@ -15,7 +15,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from scripts.datagen import geometry_ingest
+from scripts.datagen.geometry import ingest as geometry_ingest
 from scripts.datagen.engine import Resolved
 
 
@@ -81,6 +81,6 @@ def test_after_a_shared_ingest_the_reference_is_rewritten_or_flagged(monkeypatch
         return
     stage, level, text = run.said[-1]
     assert (stage, level) == ("geometry_ingest", said[0]) and said[1] in text
-    rewrote = [("geometry_ingest", "scripts.datagen.machine_check", ["--rewrite"], "machine_check")]
+    rewrote = [("geometry_ingest", "scripts.datagen.meshing.machine_check", ["--rewrite"], "machine_check")]
     assert run.relayed == (rewrote if problem and passed else [])
 # endregion

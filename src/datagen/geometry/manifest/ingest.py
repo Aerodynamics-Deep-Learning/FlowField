@@ -1,6 +1,6 @@
 """
 Geom addition driver: adds every root .dat under a folder to the geometry manifest. Run from the command line
-by `scripts/datagen/geometry_ingest.py`.
+by `scripts/datagen/geometry/ingest.py`.
 
 First, every stored airfoil without a shape under the current `SHAPE_VERSION` (all of them, after a
 version bump) is refitted from its raw copy, and every stored rejection is judged again from its copy
