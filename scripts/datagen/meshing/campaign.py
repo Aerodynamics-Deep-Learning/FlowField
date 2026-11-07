@@ -56,7 +56,7 @@ def run(args: argparse.Namespace) -> int:
 
 STAGE = Stage(
     "campaign", "scripts.datagen.meshing.campaign", build_parser, run,
-    outputs=(Output("db", OutputKind.FILE, "run store", scratch="meshing.sqlite", shared=lambda: MESHING_DB,
+    outputs=(Output("db", OutputKind.FILE, "run store", default_name="meshing.sqlite", shared=lambda: MESHING_DB,
                     exists="this run adds to it"),),
     inputs=(GEOMETRY_DB,),
     slots=True, meshes=True, check=lambda args, made_here: Script_check_names(Optim_load_shapes, args, made_here))

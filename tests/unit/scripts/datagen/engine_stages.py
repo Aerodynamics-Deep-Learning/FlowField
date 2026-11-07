@@ -59,7 +59,7 @@ MAKER = Stage("maker", MODULE, _maker_parser, _make,
               outputs=(Output("out", OutputKind.FOLDER, "made folder", shared=lambda: engine.DATA_ROOT / "shared_made",
                               exists="this run writes into it"),))
 READER = Stage("reader", MODULE, _reader_parser, _read,
-               outputs=(Output("out", OutputKind.FILE, "copy", scratch="read.txt"),),
+               outputs=(Output("out", OutputKind.FILE, "copy", default_name="read.txt"),),
                inputs=(Input("src", "made file", made_by=("maker", "out"), from_output=lambda folder: folder / "made.txt"),))
 STAGES = {stage.name: stage for stage in (MAKER, READER)}
 

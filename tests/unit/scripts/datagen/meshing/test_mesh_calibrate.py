@@ -50,10 +50,10 @@ def test_the_options_reach_the_calibration(calibrate, tmp_path, data_root, capsy
                                 "--golden-jmax", "150", "--rung3-cap", "30", "--rung2-cap", "10", "--workers", "2",
                                 "--geometry-db", str(manifest), "--work-root", str(work)]) == 0
     assert mesh_calibrate.main([]) == 0
-    [scratch] = (data_root / "scratchpad").iterdir()
+    left_out = calibrate[1][0]
+    assert left_out.name == "mesh_calibrate" and left_out.parent.parent == data_root / "scratchpad"  # its run folder
     assert calibrate == [(out, [1, 3], ["naca0012", "s1223"], 150, 30, 10, 2, manifest, work),
-                         (scratch / "mesh_calibrate", [1, 2, 3], None, None, RUNG3_CAP, RUNG2_CAP, WORKERS,
-                          Geom_paths().db, None)]
+                         (left_out, [1, 2, 3], None, None, RUNG3_CAP, RUNG2_CAP, WORKERS, Geom_paths().db, None)]
     printed = capsys.readouterr().out
     assert "the report" in printed and "Written to r.txt and r.sqlite" in printed
 # endregion

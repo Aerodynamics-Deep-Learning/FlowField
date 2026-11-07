@@ -85,10 +85,11 @@ def test_the_airfoils_best_runs_are_asked_for(remesh, db, tmp_path, data_root, c
     assert f"Re-meshed 1 of 2 into {out}" in printed and "  naca4412: run r2 hashes to" in printed
     assert mesh_remesh.main(["--all", "--out", str(out), "--db", str(db)]) == 1
     assert mesh_remesh.main(["--airfoils", "naca0012", "--db", str(db)]) == 0  # every one delivered
-    [scratch] = (data_root / "scratchpad").iterdir()
+    left_out = remesh[2][2]
+    assert left_out.name == "remesh" and left_out.parent.parent == data_root / "scratchpad"  # its run folder
     assert remesh == [("airfoils", ["naca4412", "naca0012"], out, {"with_vtk": True, "geometry_db": manifest}),
                       ("airfoils", None, out, shared),
-                      ("airfoils", ["naca0012"], scratch / "remesh", shared)]
+                      ("airfoils", ["naca0012"], left_out, shared)]
 
 
 def test_one_run_is_asked_for_by_its_id(remesh, db, tmp_path, capsys):

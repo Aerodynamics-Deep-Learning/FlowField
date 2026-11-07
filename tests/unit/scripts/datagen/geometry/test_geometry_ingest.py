@@ -35,8 +35,9 @@ def test_the_options_reach_the_ingest(ingest, tmp_path, data_root, capsys):
     assert geometry_ingest.main([str(tmp_path), "--data-root", str(data), "--dry-run"]) == 0
     assert geometry_ingest.main(["--data-root", str(data)]) == 0  # no folder: the stored airfoils only
     assert geometry_ingest.main([str(tmp_path)]) == 0
-    [scratch] = (data_root / "scratchpad").iterdir()
-    assert ingest == [(here, data, True), (None, data, False), (here, scratch / "geometry_ingest", False)]
+    left_out = ingest[2][1]
+    assert left_out.name == "geometry_ingest" and left_out.parent.parent == data_root / "scratchpad"  # its run folder
+    assert ingest == [(here, data, True), (None, data, False), (here, left_out, False)]
     printed = capsys.readouterr().out
     assert "the summary" in printed and f"Summary written to {data / 'raw'}" in printed
 # endregion

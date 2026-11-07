@@ -94,6 +94,8 @@ machine_check -> geometry_calibrate -> geometry_ingest -> mesh_calibrate -> camp
   set here, since no script has an option for one.
 - **Paths**: a relative path is under `data/`; an absolute one is used as written. `shared` names a committed
   store (section 5).
+- **`folder:`**, beside the sections, names the run's folder (section 5); left out, it is a new
+  `data/scratchpad/<time>_<config name>/`.
 - **A stage reads what an earlier stage of the same run wrote**: the mesh stages read this run's ingested
   manifest, the re-mesh this run's campaign store, unless the config names something else.
 - **Everything is checked before anything runs**, even the machine check: every option, every path, every
@@ -106,14 +108,29 @@ machine_check -> geometry_calibrate -> geometry_ingest -> mesh_calibrate -> camp
 
 ## 5. Where data and logs go
 
+Every run has a folder of its own: a new `data/scratchpad/<time>_<run name>/`, or the config's `folder:`. It
+holds the run's log, `log.log`, a copy of the config, `config.yaml`, and every output left out, under `<stage>/`:
+
+```
+data/scratchpad/2026-11-07_052637_e2e_for_cst/     the run's folder
+├── log.log                                        the run's one log
+├── config.yaml                                    the config, copied at the start
+├── geometry_ingest/                               outputs left out, one folder per stage: data only
+├── campaign/meshing.sqlite
+└── remesh/<airfoil>/<airfoil>.su2
+```
+
 Every output is decided before anything runs:
 
 | What you give | Where it goes | What you are told, at the start |
 |---|---|---|
-| nothing | a new folder, `data/scratchpad/<time>_<run name>/<stage>/` | a line naming it |
+| nothing | the run's folder, `<stage>/` | a line naming it |
 | a path that does not exist | there, made | nothing |
 | a path that exists | there: a store is added to, a report file overwritten, a mesh folder's same airfoils replaced | a `!` warning |
 | `shared` | the committed store | a `!!` warning |
+
+A `folder:` that exists is used again, with a `!` warning: the log adds this run under its own `===== PLAN =====`,
+`config.yaml` is replaced, and the outputs left out are the earlier run's, so a stopped campaign resumes.
 
 - **`shared`** is `data/` for the ingest (the committed manifest), `data/manifest/datagen/meshing/meshing.sqlite`
   for the campaign, and the committed calibration folders for the calibrations. The re-mesh has none: meshes
@@ -121,15 +138,14 @@ Every output is decided before anything runs:
 - **`data/scratchpad/`** and **`data/experiments/`** are gitignored: put named experiments under
   `data/experiments/`. Anything else you name under `data/` shows up in `git status`. Nothing ever deletes the
   scratchpad; clear it when you like.
-- **A campaign resumes only into a store you named**: left out, every call gets a new scratchpad store. Give
-  `--db` (or `db:`) a path to be able to rerun a stopped campaign; the "exists" warning then just says it adds
-  to it.
+- **A campaign resumes only into a store you named**: left out, every run gets a new scratchpad store. Give
+  `--db` (or `db:`) a path, or the run a `folder:`, to be able to rerun a stopped campaign; the "exists" warning
+  then just says it adds to it.
 - **The run store and calibrations are only shared on purpose.** Experiment in your own stores; the campaign
   run into `shared` is the one that gets committed, once the constants are agreed.
-- **The log**: one per run, `<time>_<run name>.log`, an identical copy in every folder the run writes data
-  into (beside a store, inside an output folder, beside an ingested manifest). A run that writes no data (a
-  machine check, a refused run) logs into its scratchpad folder. It is written line by line, so a killed run
-  keeps everything up to that moment.
+- **The log**: one per run, `log.log` in the run's folder; the stage folders hold data only. It is written and
+  synced to disk line by line, so a killed run keeps everything up to that moment and an editor showing it (VS
+  Code) follows it as it grows. A refused run logs into a new scratchpad folder, never a named one.
 
 ## 6. Reading a log
 
@@ -144,16 +160,23 @@ HH:MM:SS [who] [stage]              [level] text
 - **stage**: `plan` before anything runs, the stage's name, `summary` at the end.
 - **level**: `info`; `!` a warning; `!!` a shared store written; `error`.
 
+Markers open each block, so `START|END` finds every boundary: `===== PLAN =====`, then `===== START <stage> =====`
+and `===== END <stage> =====` around each stage, then `===== SUMMARY =====`.
+
 ```
-21:30:12 [run] [plan]               [info]  master dx003, started 2026-11-06 21:30:12 on Ege_Laptop, code 68ae03b
+21:30:12 [run] [plan]               [info]  ===== PLAN =====  master dx003, started 2026-11-06 21:30:12 on Ege_Laptop, code 68ae03b
+21:30:12 [run] [plan]               [info]  config D:\runs\dx003.yaml, copied into the run folder as config.yaml
 21:30:12 [run] [plan]               [info]  stages machine_check -> campaign -> remesh (off: mesh_calibrate)
-21:30:12 [run] [campaign]           [!]     writes db: data/experiments/dx003/meshing.sqlite exists; this run adds to it
-21:30:12 [run] [remesh]             [info]  reads db: this run's campaign, data/experiments/dx003/meshing.sqlite
-21:30:12 [run] [machine_check]      [info]  start: python -m scripts.datagen.meshing.machine_check
+21:30:12 [run] [plan]               [!]     run folder: data/experiments/dx003 exists; this run adds to its log.log, replaces its config.yaml and writes the outputs left out into it
+21:30:12 [run] [campaign]           [!]     writes db: nothing given, writing into the run folder: data/experiments/dx003/campaign/meshing.sqlite exists; this run adds to it
+21:30:12 [run] [remesh]             [info]  reads db: this run's campaign, data/experiments/dx003/campaign/meshing.sqlite
+21:30:12 [run] [machine_check]      [info]  ===== START machine_check =====  python -m scripts.datagen.meshing.machine_check
 21:31:06 [cmd] [machine_check]      [info]  step 2, c2d: passed
-21:31:07 [cmd] [campaign]           [!]     2 ladders left running by an earlier campaign marked aborted; their airfoils run again
-21:34:20 [run] [campaign]           [info]  done: exit 0, 3.2 min
-21:34:30 [run] [summary]            [info]  finished in 4.3 min
+21:31:07 [run] [machine_check]      [info]  ===== END machine_check =====  exit 0, 0.9 min
+21:31:07 [run] [campaign]           [info]  ===== START campaign =====  python -m scripts.datagen.meshing.campaign --db ...
+21:31:08 [cmd] [campaign]           [!]     2 ladders left running by an earlier campaign marked aborted; their airfoils run again
+21:34:20 [run] [campaign]           [info]  ===== END campaign =====  exit 0, 3.2 min
+21:34:30 [run] [summary]            [info]  ===== SUMMARY =====  finished in 4.3 min
 ```
 
 Every warning appears three times: at the top, where it happened, and again in the summary.

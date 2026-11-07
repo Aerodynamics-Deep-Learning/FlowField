@@ -53,7 +53,7 @@ def test_the_options_reach_the_campaign(campaign, tmp_path, data_root, capsys):
                                "--settings-label", "trial 3", "--geometry-db", str(manifest),
                                "--work-root", str(work)]) == 0
     assert mesh_campaign.main([]) == 0
-    [scratch] = (data_root / "scratchpad").iterdir()
+    [scratch] = [p.parent for p in (data_root / "scratchpad").glob("*/campaign")]  # the run that left it out
     assert calls == [(db, ["naca0012", "naca4412"], 2, work, "trial 3", {"geometry_db": manifest}),
                      (scratch / "campaign" / "meshing.sqlite", None, WORKERS, None, None,
                       {"geometry_db": Geom_paths().db})]

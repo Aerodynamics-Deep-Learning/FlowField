@@ -10,7 +10,7 @@ script per stage, each parsing its options and calling its stage function from `
     meshing/remesh         run store -> .su2 (.vtk) per airfoil           (meshing/optimizer/batch/remesh.py)
     meshing/master         the stages a YAML config enables, in order
 
-`engine.py` is what they all share: the plan made before anything runs, the output rule (scratchpad, new,
-existing, shared) and the logs. Run each as `python -m scripts.datagen.<folder>.<script>` from the repo root;
+`engine.py` is what they all share: the plan made before anything runs, the output rule (the run's folder, new,
+existing, shared) and the run's one log. Run each as `python -m scripts.datagen.<folder>.<script>` from the repo root;
 `--help` lists its options.
 """

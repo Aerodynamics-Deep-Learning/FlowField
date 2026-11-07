@@ -1,11 +1,13 @@
 """
 What every datagen script shares, and the run it makes (scripts/datagen/README.md is the guide):
 
-    plan     before anything runs: each stage's options parsed by its own parser, every output decided (left
-             out: the scratchpad; given: new or existing; `shared`: the committed one), this run's outputs handed
-             to later stages' inputs, each stage's own checks, the warnings; any problem refuses the whole run
-    log      one log, a copy in every folder the run saves data into (the scratchpad when it saves none), every
-             line `HH:MM:SS [run|cmd] [plan|<stage>|summary] [info|!|!!|error] text`
+    plan     before anything runs: the run's folder (a new data/scratchpad/<time>_<name>/ unless the master's config
+             names one), each stage's options parsed by its own parser, every output decided (left out: the run
+             folder's <stage>/; given: new or existing; `shared`: the committed one), this run's outputs handed to
+             later stages' inputs, each stage's own checks, the warnings; any problem refuses the whole run
+    log      one log, `log.log` in the run's folder beside a copy of the config, written and fsynced line by line;
+             every line `HH:MM:SS [run|cmd] [plan|<stage>|summary] [info|!|!!|error] text`, the blocks opened by
+             `===== PLAN =====`, `===== START <stage> =====` / `===== END <stage> =====` and `===== SUMMARY =====`
     run      a script's one stage in this process, so a debugger stops in it; the master's stages each as a
              child process, `python -m <script>` with FLOWFIELD_STAGE_CHILD naming the stage, which only runs
     summary  each stage's exit code and minutes, the warnings again
@@ -20,6 +22,7 @@ import io
 import logging
 import os
 import re
+import shutil
 import socket
 import subprocess
 import sys
@@ -34,8 +37,10 @@ from src.datagen.geometry.common.paths import DATA_ROOT, REPO_ROOT, Geom_paths
 CHILD_ENV = "FLOWFIELD_STAGE_CHILD"
 SHARED = "shared"
 INTERRUPTED = 130
-HELP_TAIL = ("Through this script: an output left out goes to a new folder in data/scratchpad/, `shared` names the "
-             "committed store, and a log of the run lands beside every output.")
+LOG_NAME = "log.log"
+CONFIG_NAME = "config.yaml"
+HELP_TAIL = ("Through this script: the run gets a new folder in data/scratchpad/ holding its log (log.log) and every "
+             "output left out; `shared` names the committed store.")
 
 _LOGGED = re.compile(r"^\d\d:\d\d:\d\d (DEBUG|INFO|WARNING|ERROR|CRITICAL) (.*)$")
 _LEVEL_OF = {"DEBUG": "info", "INFO": "info", "WARNING": "!", "ERROR": "error", "CRITICAL": "error"}
@@ -62,14 +67,14 @@ class _Refused(Exception):
 class OutputKind(enum.Enum):
     FILE = "file"
     FOLDER = "folder"
-    DATA_ROOT = "data root"  # a data/ layout; its log copy goes beside its manifest
+    DATA_ROOT = "data root"  # a data/ layout; it exists once its manifest does
 
 
 class Output(NamedTuple):
     option: str                                    # the parser's dest
     kind: OutputKind
     what: str                                      # what it is, for the messages
-    scratch: str = ""                              # its name in the stage's scratchpad folder ({date} allowed)
+    default_name: str = ""                         # left out: its name in the run folder's <stage>/ ({date} allowed)
     shared: Optional[Callable[[], Path]] = None    # what `shared` means; None: there is no shared one
     exists: str = "this run adds to it"            # what happens to one that exists
     dry_run: Optional[str] = None                  # a flag under which nothing is written
@@ -128,9 +133,8 @@ def Script_check_names(load: Callable, args: argparse.Namespace, made_here: set)
 class Resolved(NamedTuple):
     option: str
     path: Path
-    how: str                                       # outputs: scratchpad, new, exists, shared; inputs: given, shared,
+    how: str                                       # outputs: run folder, new, exists, shared; inputs: given, shared,
                                                    # this run's <stage>
-    log_dir: Optional[Path] = None                 # an output's: where its copy of the log goes
 
 
 class StagePlan(NamedTuple):
@@ -143,19 +147,17 @@ class StagePlan(NamedTuple):
 
 class RunPlan(NamedTuple):
     title: str
-    file_name: str                                 # the log's
     started: datetime.datetime
-    scratch: Path                                  # data/scratchpad/<time>_<name>
+    folder: Path                                   # the run's: its log, the config's copy, every output left out
     stages: list[StagePlan]
     off: list[str]                                 # stages a config switched off
     config: Optional[Path]
     notes: list[tuple[str, str, str]]              # (stage, level, text)
-    log_dirs: list[Path]
 
 
 def Script_plan(name: str, requested: Sequence[tuple[Stage, Sequence[str]]], *, title: Optional[str] = None,
-                config: Optional[Path] = None, off: Sequence[str] = (),
-                started: Optional[datetime.datetime] = None) -> RunPlan:
+                config: Optional[Path] = None, off: Sequence[str] = (), started: Optional[datetime.datetime] = None,
+                folder: Optional[Path] = None) -> RunPlan:
     """
     Plans a run without running or writing anything.
 
@@ -166,6 +168,7 @@ def Script_plan(name: str, requested: Sequence[tuple[Stage, Sequence[str]]], *, 
         config (Path | None): The master's config
         off (Sequence[str]): Stages the config switched off
         started (datetime | None): When the run started; now if None
+        folder (Path | None): The run's folder; a new one in the scratchpad if None
 
     Returns:
         RunPlan: Everything the run will do and say
@@ -174,8 +177,8 @@ def Script_plan(name: str, requested: Sequence[tuple[Stage, Sequence[str]]], *, 
         PlanError: With every problem found, when there is any
     """
     started = started or datetime.datetime.now()
-    scratch = DATA_ROOT / "scratchpad" / f"{started:%Y-%m-%d_%H%M%S}_{name}"
     problems, notes, plans, made = [], [], [], {}
+    folder = _run_folder(name, started, folder, config, notes, problems)
     for stage, argv in requested:
         parser = stage.build_parser()
         parser.error = _refuse
@@ -184,7 +187,7 @@ def Script_plan(name: str, requested: Sequence[tuple[Stage, Sequence[str]]], *, 
         except _Refused as e:
             problems.append((stage.name, str(e)))
             continue
-        writes = [_output(stage, out, args, scratch, started, made, notes, problems) for out in stage.outputs]
+        writes = [_output(stage, out, args, folder, started, made, notes, problems) for out in stage.outputs]
         made_here = set()
         reads = [_input(stage, inp, args, made, made_here, notes, problems) for inp in stage.inputs]
         if stage.check is not None:
@@ -208,26 +211,47 @@ def Script_plan(name: str, requested: Sequence[tuple[Stage, Sequence[str]]], *, 
             notes.append((meshing[0], "!", problem))
     if problems:
         raise PlanError(problems)
-
-    log_dirs = []
-    for w in (w for sp in plans for w in sp.writes):
-        if w.log_dir not in log_dirs:
-            log_dirs.append(w.log_dir)
-    return RunPlan(title or name, f"{started:%Y-%m-%d_%H%M%S}_{name}.log", started, scratch, plans, list(off), config,
-                   notes, log_dirs)
+    return RunPlan(title or name, started, folder, plans, list(off), config, notes)
 
 
 def _refuse(message: str):
     raise _Refused(message)
 
 
-def _output(stage, out, args, scratch, started, made, notes, problems) -> Optional[Resolved]:
+def _run_folder(name, started, folder, config, notes, problems) -> Path:
+    """The run's folder: the one named, else a new one in the scratchpad."""
+    if folder is None:
+        base = DATA_ROOT / "scratchpad" / f"{started:%Y-%m-%d_%H%M%S}_{name}"
+        path, n = base, 1
+        while path.exists():  # a run of the same name in the same second
+            n += 1
+            path = base.with_name(f"{base.name}_{n}")
+        notes.append(("plan", "info", f"run folder: {_show(path)} (new, in the scratchpad)"))
+        return path
+    path = Path(folder).resolve()
+    if path.is_file():
+        problems.append(("plan", f"folder: {_show(path)} is a file, not a folder"))
+    elif path.exists():
+        replaced = f", replaces its {CONFIG_NAME}" if config is not None else ""
+        notes.append(("plan", "!", f"run folder: {_show(path)} exists; this run adds to its {LOG_NAME}{replaced} and "
+                                   f"writes the outputs left out into it"))
+    else:
+        notes.append(("plan", "info", f"run folder: {_show(path)} (new)"))
+    return path
+
+
+def _output(stage, out, args, folder, started, made, notes, problems) -> Optional[Resolved]:
     value = getattr(args, out.option)
     dry = bool(out.dry_run and getattr(args, out.dry_run))
     if value is None:
-        folder = scratch / stage.name
-        path = folder / out.scratch.format(date=started.date().isoformat()) if out.scratch else folder
-        how, level, said = "scratchpad", "info", f"nothing given, writing to the scratchpad: {_show(path)}"
+        path = folder / stage.name
+        if out.default_name:
+            path = path / out.default_name.format(date=started.date().isoformat())
+        said = f"nothing given, writing into the run folder: {_show(path)}"
+        how, level = "run folder", "info"
+        if _exists(out.kind, path):  # a named run folder used again
+            level, said = ("info", f"{said} exists (dry run: nothing written)") if dry else \
+                ("!", f"{said} exists; {out.exists}")
     elif str(value) == SHARED:
         if out.shared is None:
             problems.append((stage.name, f"{out.option}: there is no shared {out.what}; give a path"))
@@ -244,9 +268,7 @@ def _output(stage, out, args, scratch, started, made, notes, problems) -> Option
     setattr(args, out.option, path)
     made[(stage.name, out.option)] = path
     notes.append((stage.name, level, f"writes {out.option}: {said}"))
-    log_dir = {OutputKind.FILE: path.parent, OutputKind.FOLDER: path,
-               OutputKind.DATA_ROOT: Geom_paths(path).manifest_dir}[out.kind]
-    return Resolved(out.option, path, how, log_dir)
+    return Resolved(out.option, path, how)
 
 
 def _exists(kind: OutputKind, path: Path) -> bool:
@@ -312,13 +334,12 @@ def _show(path) -> str:
 #region Log
 
 class RunLog:
-    """The run's log: each line to the screen and to every copy, written as it comes."""
+    """The run's log: each line to the screen and to the file, written and fsynced as it comes."""
 
-    def __init__(self, folders: Sequence[Path], file_name: str):
-        self.echo, self.lock, self.files = sys.stdout, threading.Lock(), []
-        for folder in folders:
-            folder.mkdir(parents=True, exist_ok=True)
-            self.files.append(open(folder / file_name, "a", encoding="utf-8", newline="\n"))
+    def __init__(self, path: Path):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        self.echo, self.lock = sys.stdout, threading.Lock()
+        self.file = open(path, "a", encoding="utf-8", newline="\n")
 
     def line(self, who: str, stage: str, level: str, text) -> None:
         head = f"{time.strftime('%H:%M:%S')} [{who}] {'[' + stage + ']':<21}{'[' + level + ']':<8}"
@@ -329,14 +350,13 @@ class RunLog:
                     self.echo.write(row + "\n")
                 except UnicodeEncodeError:
                     self.echo.write(row.encode("ascii", "replace").decode() + "\n")
-                self.echo.flush()
-                for f in self.files:
-                    f.write(row + "\n")
-                    f.flush()
+                self.file.write(row + "\n")
+            self.echo.flush()
+            self.file.flush()
+            os.fsync(self.file.fileno())  # on Windows, a held file's growth reaches watchers (an editor) only so
 
     def close(self) -> None:
-        for f in self.files:
-            f.close()
+        self.file.close()
 
 
 class _Lines(io.TextIOBase):
@@ -450,7 +470,8 @@ class Run:
 
 def Script_execute(plan: RunPlan, *, in_process: bool) -> int:
     """
-    Runs a plan: the log opened in every folder it saves into, the stages in order until one fails.
+    Runs a plan: its folder made, the config copied into it, its log opened there, the stages in order until one
+    fails.
 
     Args:
         plan (RunPlan): `Script_plan`'s
@@ -459,22 +480,28 @@ def Script_execute(plan: RunPlan, *, in_process: bool) -> int:
     Returns:
         int: 0, the failing stage's exit code, or 130 on Ctrl-C
     """
-    log = RunLog(plan.log_dirs or [plan.scratch], plan.file_name)
+    log = _open(plan)
     run = Run(plan, log)
     t_run, ran, code = time.monotonic(), [], 0
     try:
         _header(run, plan)
         for i, sp in enumerate(plan.stages):
             name, rest = sp.stage.name, [s.stage.name for s in plan.stages[i + 1:]]
-            run.say(name, "info", " ".join(["start: python -m", sp.stage.module, _line(sp.argv)]).rstrip()
+            run.say(name, "info", f"{_marker('START', name)}  " + " ".join(["python -m", sp.stage.module,
+                                                                             _line(sp.argv)]).rstrip()
                     + (" (in this process)" if in_process else ""))
             t0 = time.monotonic()
+            for out, w in zip(sp.stage.outputs, sp.writes):
+                if out.kind is OutputKind.FILE:  # a file's folder is there for its stage
+                    w.path.parent.mkdir(parents=True, exist_ok=True)
             try:
                 if in_process:
                     code = run.here(sp)
                 else:
                     code, interrupted = run._child(name, sp.stage.module, sp.argv, name)
                     code = INTERRUPTED if interrupted else code
+                if code == 0 and sp.stage.after is not None:  # inside the stage's block
+                    sp.stage.after(sp, {n for n, c, _ in ran if c == 0} | {name}, run)
             except Exception:
                 run.say(name, "error", traceback.format_exc().rstrip())
                 ran.append((name, 1, time.monotonic() - t0))
@@ -482,47 +509,60 @@ def Script_execute(plan: RunPlan, *, in_process: bool) -> int:
                 _summary(run, plan, ran, 1, time.monotonic() - t_run)
                 raise
             ran.append((name, code, time.monotonic() - t0))
+            _end(run, name, code, ran[-1][2], rest)
             if code != 0:
-                _end(run, name, code, ran[-1][2], rest)
                 break
-            run.say(name, "info", f"done: exit 0, {ran[-1][2] / 60:.1f} min")
-            if sp.stage.after is not None:
-                sp.stage.after(sp, {n for n, c, _ in ran if c == 0}, run)
         _summary(run, plan, ran, code, time.monotonic() - t_run)
         return code
     finally:
         log.close()
 
 
+def _open(plan: RunPlan) -> RunLog:
+    """The run's folder made, the config copied into it, its log opened."""
+    plan.folder.mkdir(parents=True, exist_ok=True)
+    copy = plan.folder / CONFIG_NAME
+    if plan.config is not None and Path(plan.config).resolve() != copy.resolve():
+        shutil.copyfile(plan.config, copy)
+    return RunLog(plan.folder / LOG_NAME)
+
+
+def _marker(*words: str) -> str:
+    return f"===== {' '.join(words)} ====="
+
+
 def _header(run: Run, plan: RunPlan) -> None:
-    run.say("plan", "info", f"{plan.title}, started {plan.started:%Y-%m-%d %H:%M:%S} on {socket.gethostname()}, "
-                            f"code {_code_version()}")
+    run.say("plan", "info", f"{_marker('PLAN')}  {plan.title}, started {plan.started:%Y-%m-%d %H:%M:%S} on "
+                            f"{socket.gethostname()}, code {_code_version()}")
     if plan.config is not None:
-        run.say("plan", "info", f"config {plan.config}")
-    run.say("plan", "info", "stages " + " -> ".join(sp.stage.name for sp in plan.stages)
-            + (f" (off: {', '.join(plan.off)})" if plan.off else ""))
+        run.say("plan", "info", f"config {plan.config}, copied into the run folder as {CONFIG_NAME}")
+    if plan.stages or plan.off:
+        run.say("plan", "info", "stages " + " -> ".join(sp.stage.name for sp in plan.stages)
+                + (f" (off: {', '.join(plan.off)})" if plan.off else ""))
     for stage, level, text in plan.notes:
         run.say(stage, level, text)
-    run.say("plan", "info", "log copies in: " + ", ".join(_show(d) for d in plan.log_dirs or [plan.scratch]))
 
 
 def _end(run: Run, name: str, code: int, seconds: float, rest: list[str]) -> None:
-    after = f"; not run: {', '.join(rest)}" if rest else ""
-    if code == INTERRUPTED:
-        run.say(name, "!", f"interrupted (Ctrl-C) after {seconds / 60:.1f} min{after}")
+    head, after = f"{_marker('END', name)}  ", f"; not run: {', '.join(rest)}" if rest else ""
+    if code == 0:
+        run.say(name, "info", f"{head}exit 0, {seconds / 60:.1f} min")
+    elif code == INTERRUPTED:
+        run.say(name, "!", f"{head}interrupted (Ctrl-C) after {seconds / 60:.1f} min{after}")
     else:
-        run.say(name, "error", f"exit {code} after {seconds / 60:.1f} min" + ("; the run stops here" if rest else "")
-                + after)
+        run.say(name, "error", f"{head}exit {code} after {seconds / 60:.1f} min"
+                + ("; the run stops here" if rest else "") + after)
 
 
 def _summary(run: Run, plan: RunPlan, ran: list, code: int, seconds: float) -> None:
+    head = f"{_marker('SUMMARY')}  "
     if code == 0:
-        run.say("summary", "info", f"finished in {seconds / 60:.1f} min")
+        run.say("summary", "info", f"{head}finished in {seconds / 60:.1f} min")
     elif code == INTERRUPTED:
-        run.say("summary", "!", f"interrupted at {ran[-1][0]}, exit {code}")
+        run.say("summary", "!", f"{head}interrupted at {ran[-1][0]}, exit {code}")
     else:
-        run.say("summary", "error", f"stopped at {ran[-1][0]}, exit {code}")
-    width = max(len(name) for name, _, _ in ran)
+        run.say("summary", "error", f"{head}stopped at {ran[-1][0]}, exit {code}")
+    width = max((len(name) for name, _, _ in ran), default=0)
     for name, c, s in ran:
         run.say("summary", "info", f"{name:<{width}}  exit {c:<4} {s / 60:5.1f} min")
     for stage, level, text in plan.notes:
@@ -551,24 +591,26 @@ def _code_version() -> str:
 #region Entry points
 
 def Script_run(name: str, requested: Sequence[tuple[Stage, Sequence[str]]], *, in_process: bool,
-               title: Optional[str] = None, config: Optional[Path] = None, off: Sequence[str] = ()) -> int:
+               title: Optional[str] = None, config: Optional[Path] = None, off: Sequence[str] = (),
+               folder: Optional[Path] = None) -> int:
     """
-    Plans and runs; a refused plan is logged into the scratchpad and exits 2.
+    Plans and runs; a refused plan is logged into a new scratchpad folder and exits 2.
 
     Args:
-        name (str): The run's name, in its log's and scratchpad folder's names
+        name (str): The run's name, in its scratchpad folder's name
         requested (Sequence[tuple[Stage, Sequence[str]]]): The stages, in order, each with its arguments
         in_process (bool): As `Script_execute`
         title (str | None): The log's first words; `name` if None
         config (Path | None): The master's config
         off (Sequence[str]): Stages the config switched off
+        folder (Path | None): The run's folder; a new one in the scratchpad if None
 
     Returns:
         int: The exit code
     """
     started = datetime.datetime.now()
     try:
-        plan = Script_plan(name, requested, title=title, config=config, off=off, started=started)
+        plan = Script_plan(name, requested, title=title, config=config, off=off, started=started, folder=folder)
     except PlanError as e:
         return Script_refuse(name, e.problems, title=title, config=config, started=started)
     return Script_execute(plan, in_process=in_process)
@@ -576,21 +618,19 @@ def Script_run(name: str, requested: Sequence[tuple[Stage, Sequence[str]]], *, i
 
 def Script_refuse(name: str, problems: Sequence[tuple[str, str]], *, title: Optional[str] = None,
                   config: Optional[Path] = None, started: Optional[datetime.datetime] = None) -> int:
-    """Logs a refused run into its scratchpad folder; returns 2."""
+    """Logs a refused run, with its config's copy, into a new scratchpad folder (never a named one); returns 2."""
     started = started or datetime.datetime.now()
-    scratch = DATA_ROOT / "scratchpad" / f"{started:%Y-%m-%d_%H%M%S}_{name}"
-    plan = RunPlan(title or name, f"{started:%Y-%m-%d_%H%M%S}_{name}.log", started, scratch, [], [], config, [], [])
-    log = RunLog([scratch], plan.file_name)
+    notes = []
+    folder = _run_folder(name, started, None, config, notes, [])
+    plan = RunPlan(title or name, started, folder, [], [], config, notes)
+    log = _open(plan)
     run = Run(plan, log)
     try:
-        run.say("plan", "info", f"{plan.title}, started {started:%Y-%m-%d %H:%M:%S} on {socket.gethostname()}, "
-                                f"code {_code_version()}")
-        if config is not None:
-            run.say("plan", "info", f"config {config}")
-        run.say("plan", "error", f"refused, nothing was run: {len(problems)} problem" + "s" * (len(problems) > 1))
+        _header(run, plan)
         for stage, text in problems:
             run.say(stage, "error", text)
-        run.say("plan", "info", f"log copies in: {_show(scratch)}")
+        run.say("summary", "error", f"{_marker('SUMMARY')}  refused, nothing was run: {len(problems)} problem"
+                + "s" * (len(problems) > 1))
     finally:
         log.close()
     return 2

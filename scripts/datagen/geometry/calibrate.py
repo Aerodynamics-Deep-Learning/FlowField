@@ -55,7 +55,7 @@ def _shared_report() -> Path:
 
 STAGE = Stage(
     "geometry_calibrate", "scripts.datagen.geometry.calibrate", build_parser, run,
-    outputs=(Output("out", OutputKind.FILE, "CST calibration report", scratch="{date}.txt", shared=_shared_report,
+    outputs=(Output("out", OutputKind.FILE, "CST calibration report", default_name="{date}.txt", shared=_shared_report,
                     exists="this run overwrites it"),),
     inputs=(Input("folder", ".dat folder", folder=True),))
 

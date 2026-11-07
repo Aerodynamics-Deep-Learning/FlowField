@@ -7,15 +7,17 @@ Runs the data-generation stages a YAML config enables, always in this order, eac
 
 One section per stage with `enabled: true` or `false` (machine_check is on when its section is left out); its other
 keys are the stage script's options, `-` written as `_` (`--settings-label` as `settings_label`; `--help` on
-each script lists them). Relative paths are under data/, `shared` names a committed store, and an output left out
-goes to data/scratchpad/<time>_<config name>/<stage>/. A stage reads what an earlier stage of the same run wrote
+each script lists them). Relative paths are under data/ and `shared` names a committed store. `folder:` names the
+run's folder, which holds its log (log.log), a copy of the config and every output left out, under <stage>/; left
+out, it is a new data/scratchpad/<time>_<config name>/. A stage reads what an earlier stage of the same run wrote
 unless told otherwise. Everything is checked before anything runs; the first stage that fails stops the run.
-A log of the run lands beside every output. See scripts/datagen/README.md and master.example.yaml beside this file.
+See scripts/datagen/README.md and master.example.yaml beside this file.
 """
 
 import argparse
 import sys
 from pathlib import Path
+from typing import NamedTuple, Optional
 
 import yaml
 
@@ -27,17 +29,24 @@ from scripts.datagen.meshing import remesh as mesh_remesh
 
 STAGES = (machine_check.STAGE, geometry_calibrate.STAGE, geometry_ingest.STAGE, mesh_calibrate.STAGE,
           mesh_campaign.STAGE, mesh_remesh.STAGE)
+FOLDER_KEY = "folder"
 
 
-def Script_load_config(path) -> tuple[list[tuple[Stage, list[str]]], list[str]]:
+class Config(NamedTuple):
+    stages: list[tuple[Stage, list[str]]]          # (stage, arguments) per enabled stage, in the fixed order
+    off: list[str]                                 # the stages it switched off
+    folder: Optional[Path]                         # the run's folder; None: a new one in the scratchpad
+
+
+def Script_load_config(path) -> Config:
     """
-    A config's enabled stages, in the fixed order, each with the arguments its options make.
+    A config's enabled stages, in the fixed order, each with the arguments its options make, and its run folder.
 
     Args:
         path (str | Path): The YAML config
 
     Returns:
-        tuple: (stage, arguments) per enabled stage, and the names of the stages it switched off
+        Config: The stages, those switched off, the run folder
 
     Raises:
         PlanError: With every problem in the config
@@ -50,8 +59,9 @@ def Script_load_config(path) -> tuple[list[tuple[Stage, list[str]]], list[str]]:
     if not isinstance(data, dict):
         raise PlanError([("config", "a config is one section per stage")])
     names = [stage.name for stage in STAGES]
-    problems = [("config", f"no stage named {key!r}; the stages are {', '.join(names)}")
-                for key in data if key not in names]
+    problems = [("config", f"no stage named {key!r}; the stages are {', '.join(names)} (beside them: `folder`)")
+                for key in data if key not in names and key != FOLDER_KEY]
+    folder = _folder(data.get(FOLDER_KEY), problems)
     requested, off = [], []
     for stage in STAGES:
         section = data.get(stage.name, {"enabled": True} if stage.name == "machine_check" else None)
@@ -70,7 +80,18 @@ def Script_load_config(path) -> tuple[list[tuple[Stage, list[str]]], list[str]]:
             problems.append((stage.name, str(e)))
     if problems:
         raise PlanError(problems)
-    return requested, off
+    return Config(requested, off, folder)
+
+
+def _folder(value, problems: list) -> Optional[Path]:
+    """`folder:` as a path, a relative one under data/."""
+    if value is None:
+        return None
+    if not isinstance(value, str) or not value.strip() or value == SHARED:
+        problems.append(("config", f"folder is the run's own folder, a path, not {value!r}"))
+        return None
+    path = Path(value)
+    return path if path.is_absolute() else engine.DATA_ROOT / path
 
 
 def Script_options_to_argv(stage: Stage, options: dict) -> list[str]:
@@ -125,10 +146,11 @@ def main(argv=None) -> int:
         parser.error(f"no config at {args.config}")
     name, title, config = args.config.stem, f"master {args.config.stem}", args.config.resolve()
     try:
-        requested, off = Script_load_config(args.config)
+        loaded = Script_load_config(args.config)
     except PlanError as e:
         return Script_refuse(name, e.problems, title=title, config=config)
-    return Script_run(name, requested, in_process=False, title=title, config=config, off=off)
+    return Script_run(name, loaded.stages, in_process=False, title=title, config=config, off=loaded.off,
+                      folder=loaded.folder)
 
 
 if __name__ == "__main__":
