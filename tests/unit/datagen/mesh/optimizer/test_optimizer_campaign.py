@@ -23,6 +23,7 @@ import uuid
 
 import pytest
 
+from src.datagen.geometry.common.constants import SHAPE_VERSION
 from src.datagen.geometry.common.paths import Geom_paths
 from src.datagen.meshing.optimizer.batch import campaign
 from src.datagen.meshing.optimizer.batch.campaign import Optim_campaign_summary, Optim_run_campaign
@@ -106,12 +107,13 @@ def test_a_campaign_runs_its_airfoils_under_the_constants(store):
 
 def test_the_airfoils_come_from_the_manifest_given(store, monkeypatch, tmp_path):
     asked, load = [], campaign.Optim_load_shapes
-    monkeypatch.setattr(campaign, "Optim_load_shapes", lambda names, db: asked.append(db) or load(names))
+    monkeypatch.setattr(campaign, "Optim_load_shapes",
+                        lambda names, db, shape_version: asked.append((db, shape_version)) or load(names))
     manifest = tmp_path / "geometry.sqlite"
 
     result = Optim_run_campaign(store, ["naca0012"], workers=1, task=_ladder, geometry_db=manifest)
 
-    assert asked == [manifest] and result.names == ["naca0012"]
+    assert asked == [(manifest, SHAPE_VERSION)] and result.names == ["naca0012"]
 
 
 def test_an_unknown_airfoil_is_refused_before_anything_is_recorded(store):

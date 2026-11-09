@@ -69,7 +69,7 @@ def Script_load_config(path) -> Config:
     folder = _folder(data.get(FOLDER_KEY), problems)
     top = _settings(data.get(SETTINGS_KEY), "settings", problems)
     problems += [("settings", f"no stage reads {key}") for key in top if not any(key in s.reads for s in STAGES)]
-    requested, off, resolved, sources = [], [], {}, {}
+    requested, off, resolved, sources, options = [], [], {}, {}, {}
     for stage in STAGES:
         section = data.get(stage.name, {"enabled": True} if stage.name == "machine_check" else None)
         if section is None and stage.name not in data:
@@ -88,6 +88,7 @@ def Script_load_config(path) -> Config:
                 f"its own settings, over the settings block's {engine._text(top[key])}" if key in top else
                 "its own settings")
         resolved[stage.name] = settings
+        options[stage.name] = {key for key, value in section.items() if value is not None}
         try:
             argv = Script_options_to_argv(stage, {k: v for k, v in section.items() if k not in ("enabled",
                                                                                                 SETTINGS_KEY)})
@@ -96,7 +97,7 @@ def Script_load_config(path) -> Config:
             continue
         requested.append((stage, argv + [a for key, value in settings.items()
                                          for a in ("--set", f"{key}={engine._text(value)}")]))
-    problems += _disagreements(resolved)
+    problems += _disagreements(resolved, options)
     notes = [("settings", "!", f"{key} is read by no stage this run") for key in top
              if any(key in s.reads for s in STAGES) and not any(key in r for r in resolved.values())]
     if problems:
@@ -124,15 +125,30 @@ def _settings(value, where: str, problems: list) -> dict:
     return out
 
 
-def _disagreements(resolved: dict) -> list[tuple[str, str]]:
-    """The re-mesh finds the campaign's meshes by their settings, so where both run they must hold the same ones."""
-    if "campaign" not in resolved or "remesh" not in resolved:
-        return []
-    campaign, remesh = resolved["campaign"], resolved["remesh"]
-    shared = mesh_campaign.STAGE.reads & mesh_remesh.STAGE.reads
-    return [("remesh", f"{key} is {_said(remesh, key)} here but {_said(campaign, key)} in campaign; the re-mesh "
-                       f"finds the campaign's meshes by their settings, so both must set it alike")
-            for key in sorted(shared) if campaign.get(key) != remesh.get(key)]
+def _disagreements(resolved: dict, options: dict) -> list[tuple[str, str]]:
+    """
+    A stage that reads what an earlier stage of the run writes must set alike every setting both read: the re-mesh
+    finds the campaign's meshes by their settings, a mesh stage the ingest's shapes by their CST order and nose.
+    """
+    stages, out = {stage.name: stage for stage in STAGES}, []
+    for name, settings in resolved.items():
+        for inp in stages[name].inputs:
+            maker = inp.made_by[0] if inp.made_by else None
+            if maker not in resolved or inp.option in options[name]:  # it reads no output of this run
+                continue
+            for key in sorted(stages[name].reads & stages[maker].reads):
+                if _value(settings, key) != _value(resolved[maker], key):
+                    out.append((name, f"{key} is {_said(settings, key)} here but {_said(resolved[maker], key)} in "
+                                      f"{maker}, whose {inp.what} it reads; both must set it alike"))
+    return out
+
+
+def _value(settings: dict, key: str):
+    """A setting as the run uses it: given, else constants.py's; a dict's given names over constants.py's."""
+    value, default = settings.get(key), engine.SETTABLE[key]
+    if value is None:
+        return default
+    return {**default, **value} if isinstance(default, dict) else value
 
 
 def _said(settings: dict, key: str) -> str:

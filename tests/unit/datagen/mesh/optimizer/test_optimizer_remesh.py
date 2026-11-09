@@ -82,7 +82,7 @@ class _Mesher:
                                mesh_path_vtk=vtk_path, num_nodes=68_796 if ok else None, verbose_list=[])
 
 
-def _load_shapes(names=None, db=None):
+def _load_shapes(names=None, db=None, shape_version=SHAPE_VERSION):
     """`Optim_load_shapes` over the test shapes."""
     names = SHAPE_NAMES if names is None else names
     unknown = [name for name in names if name not in SHAPE_NAMES]
@@ -194,7 +194,7 @@ def test_a_killed_remeshs_folder_is_cleared_first(study):
 @pytest.mark.parametrize("case, match", [
     ("unknown run", "no run nope in"),
     ("rejected run", r"no mesh to rebuild \(status rejected\)"),
-    ("shape version", r"shape version \S+ then, other now\): re-mesh it at its commit c{40}"),
+    ("shape version", r"shape version (cst\w+)-\w+ then, \1-r0 now\): re-mesh it at its commit c{40}"),
     ("sampler version", r"sampler version \S+ then, other now\)"),
     ("config schema", r"config schema \S+ then, other now\)"),
     ("c2d executable", r"c2d executable \S+ then, \S+ now\)"),
@@ -203,7 +203,7 @@ def test_a_killed_remeshs_folder_is_cleared_first(study):
 def test_a_run_that_cannot_be_rebuilt_is_refused_before_meshing(study, monkeypatch, case, match):
     run_id = {"unknown run": "nope", "rejected run": study.rejected["run_id"]}.get(case, study.best["run_id"])
     if case == "shape version":
-        monkeypatch.setattr(remesh_module, "SHAPE_VERSION", "other")
+        monkeypatch.setattr(remesh_module, "SHAPE_REVISION", "r0")
     elif case == "sampler version":
         monkeypatch.setattr(remesh_module, "SAMPLER_VERSION", "other")
     elif case == "config schema":

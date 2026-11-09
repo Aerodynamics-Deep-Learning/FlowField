@@ -2,10 +2,11 @@
 Geom addition driver: adds every root .dat under a folder to the geometry manifest. Run from the command line
 by `scripts/datagen/geometry/ingest.py`.
 
-First, every stored airfoil without a shape under the current `SHAPE_VERSION` (all of them, after a
-version bump) is refitted from its raw copy, and every stored rejection is judged again from its copy
-(so a loosened gate lets it in); then the shapes and rejections of other versions move to the archive
-database and their renderings are deleted. Without a folder, that is all a run does.
+The run's CST order and nose name its shape version (`Geom_shape_version`). First, every stored airfoil
+without a shape under it (all of them, after a revision bump or at another order or nose) is refitted from its
+raw copy, and every stored rejection is judged again from its copy (so a loosened gate lets it in); then the
+shapes and rejections of other versions move to the archive database and their renderings are deleted. Without
+a folder, that is all a run does.
 
 Then per file, in sorted path order: identify it (an airfoil already stored, or a file already stored
 as a rejection, is a duplicate, skipped before fitting), run `add.Geom_add_airfoil`, then check its
@@ -24,47 +25,58 @@ import shutil
 import statistics
 import traceback
 from collections import Counter
+from functools import partial
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional
 
-from src.datagen.constants import CST_FIT_TOL
+from src.datagen.constants import CST_FIT_TOL, CST_NOSE, CST_ORDER
 from src.datagen.geometry.build.add import Geom_add_airfoil, Geom_identify
 from src.datagen.geometry.build.checks import Geom_check_suspect_point
-from src.datagen.geometry.common.constants import FAMILY_MATCH_TOL, SHAPE_VERSION
+from src.datagen.geometry.common.constants import FAMILY_MATCH_TOL, Geom_shape_version
 from src.datagen.geometry.common.io import GeometryFormatError, Geom_write_dat
 from src.datagen.geometry.common.paths import GeometryPaths, Geom_git_version, Geom_paths, Geom_source_label
 from src.datagen.geometry.common.schemas import (
-    AddResult, GeometryRecord, IngestItem, IngestSummary, Identity, ItemStatus, RejectionRecord, RejectReason,
+    AddResult, GeometryRecord, IngestItem, IngestSummary, Identity, ItemStatus, Nose, RejectionRecord, RejectReason,
 )
 from .store import GeometryStore
 
 
-def Geom_ingest_folder(folder, data_root, dry_run: bool = False) -> IngestSummary:
+def Geom_ingest_folder(folder, data_root, dry_run: bool = False, *, order: int = CST_ORDER, nose: Nose = CST_NOSE,
+                       fit_tol: float = CST_FIT_TOL) -> IngestSummary:
     """
-    Brings the stored airfoils to the current shape version, then adds every .dat under `folder`.
+    Brings the stored airfoils to the run's shape version, then adds every .dat under `folder`.
 
     Args:
         folder (str | Path | None): A root folder, searched recursively; None to only bring the stored
-            airfoils to the current shape version
+            airfoils to the run's shape version
         data_root (str | Path): The data folder holding the manifest and its files (the repo's own is `DATA_ROOT`)
         dry_run (bool): Do everything but write
+        order (int): CST Bernstein order
+        nose (Nose): How the CST represents the nose
+        fit_tol (float): The fit gate's limit
 
     Returns:
         IngestSummary: What happened to each stored airfoil refitted and each file
 
     Raises:
         NotADirectoryError: If `folder` is not a folder
+        ValueError: If `nose` is no `Nose` or `order` is below 1
     """
     if folder is not None:
         folder = Path(folder)
         if not folder.is_dir():
             raise NotADirectoryError(f"{folder} is not a folder")
+    nose = Nose(nose)
+    if order < 1:
+        raise ValueError(f"the CST order is 1 or more, not {order}")
+    fit = partial(Geom_add_airfoil, order=order, nose=nose, fit_tol=fit_tol)
     paths = Geom_paths(data_root)
     now = datetime.datetime.now(datetime.timezone.utc)
+    version = Geom_shape_version(order, nose)
     summary = IngestSummary(ingest_id=f"{now:%Y%m%dT%H%MZ}_{secrets.token_hex(2)}",
                             started_at=f"{now:%Y-%m-%dT%H:%M:%SZ}",
                             source_root=Geom_source_label(folder) if folder is not None else "",
-                            shape_version=SHAPE_VERSION, git_commit=Geom_git_version(), dry_run=dry_run)
+                            shape_version=version, fit_tol=fit_tol, git_commit=Geom_git_version(), dry_run=dry_run)
     report_dir = paths.report_dir(summary.ingest_id)
 
     if dry_run:
@@ -72,7 +84,7 @@ def Geom_ingest_folder(folder, data_root, dry_run: bool = False) -> IngestSummar
     else:
         store = GeometryStore.open(paths.db)
         summary.summary_path = paths.to_rel(report_dir / "summary.txt")
-        store.begin_ingest(summary.ingest_id, summary.started_at, summary.source_root, SHAPE_VERSION,
+        store.begin_ingest(summary.ingest_id, summary.started_at, summary.source_root, version,
                            summary.git_commit, summary.summary_path)
     known = _Known(store)
 
@@ -84,15 +96,15 @@ def Geom_ingest_folder(folder, data_root, dry_run: bool = False) -> IngestSummar
 
     try:
         if store is not None:
-            for geo in store.geometries_without_shape(SHAPE_VERSION):
-                take(_assess_reshape(geo, paths), paths.from_rel(geo.raw_path))
+            for geo in store.geometries_without_shape(version):
+                take(_assess_reshape(geo, paths, fit), paths.from_rel(geo.raw_path))
             for rej in store.rejections_to_recheck():
-                take(_assess_recheck(rej, paths, known), paths.from_rel(rej.raw_path))
+                take(_assess_recheck(rej, paths, known, fit), paths.from_rel(rej.raw_path))
             if not dry_run:
-                for version in store.archive_old_shapes(SHAPE_VERSION, summary.ingest_id, summary.started_at):
-                    shutil.rmtree(paths.norm_dir(version), ignore_errors=True)
+                for old in store.archive_old_shapes(version, summary.ingest_id, summary.started_at):
+                    shutil.rmtree(paths.norm_dir(old), ignore_errors=True)
         for path in sorted(folder.rglob("*.dat")) if folder is not None else []:
-            take(_assess(path, folder, known), path)
+            take(_assess(path, folder, known, fit), path)
     finally:
         if store is not None:
             store.close()
@@ -140,7 +152,7 @@ class _Known:
         return self.store.name_owner(name) if self.store else None
 
 
-def _assess(path: Path, folder: Path, known: _Known) -> IngestItem:
+def _assess(path: Path, folder: Path, known: _Known, fit: Callable) -> IngestItem:
     """Decides what happens to one file; writes nothing."""
     rel = path.relative_to(folder).as_posix()
     try:
@@ -159,10 +171,10 @@ def _assess(path: Path, folder: Path, known: _Known) -> IngestItem:
     if rejected_as is not None:
         return IngestItem(source_relpath=rel, name=ident.name, status=ItemStatus.DUPLICATE, reason="rejected",
                           detail=f"the same points are stored as a rejection of '{rejected_as[0]}' ({rejected_as[1]})")
-    return _judge(path, rel, ident, known)
+    return _judge(path, rel, ident, known, fit)
 
 
-def _assess_recheck(rej: RejectionRecord, paths: GeometryPaths, known: _Known) -> IngestItem:
+def _assess_recheck(rej: RejectionRecord, paths: GeometryPaths, known: _Known, fit: Callable) -> IngestItem:
     """Judges a stored rejection again from its copy; writes nothing."""
     path = paths.from_rel(rej.raw_path)
     try:
@@ -173,13 +185,14 @@ def _assess_recheck(rej: RejectionRecord, paths: GeometryPaths, known: _Known) -
         return IngestItem(source_relpath=rej.raw_path, name=rej.name, status=ItemStatus.REJECTED,
                           reason=RejectReason.ERROR.value,
                           detail=f"the copy {rej.raw_path} no longer holds the coordinates rejected as '{rej.name}'")
-    return _judge(path, rej.raw_path, ident, known)
+    return _judge(path, rej.raw_path, ident, known, fit)
 
 
-def _judge(path: Path, rel: str, ident: Identity, known: _Known) -> IngestItem:
-    """Runs a file through the pipeline, then checks its rendering and name against what is stored."""
+def _judge(path: Path, rel: str, ident: Identity, known: _Known, fit: Callable) -> IngestItem:
+    """Runs a file through the pipeline (`fit`, `Geom_add_airfoil` at the run's CST), then checks its rendering and
+    name against what is stored."""
     try:
-        res = Geom_add_airfoil(path)
+        res = fit(path)
     except Exception:
         return _error(rel, ident.name)
 
@@ -200,12 +213,12 @@ def _judge(path: Path, rel: str, ident: Identity, known: _Known) -> IngestItem:
     return item
 
 
-def _assess_reshape(geo: GeometryRecord, paths: GeometryPaths) -> IngestItem:
-    """Refits a stored airfoil from its raw copy under the current shape version; writes nothing."""
+def _assess_reshape(geo: GeometryRecord, paths: GeometryPaths, fit: Callable) -> IngestItem:
+    """Refits a stored airfoil from its raw copy under the run's shape version; writes nothing."""
     item = IngestItem(source_relpath=geo.raw_path, name=geo.name, status=ItemStatus.RESHAPED,
                       geometry_id=geo.geometry_id)
     try:
-        item.result = res = Geom_add_airfoil(paths.from_rel(geo.raw_path))
+        item.result = res = fit(paths.from_rel(geo.raw_path))
     except Exception:
         return _error(geo.raw_path, geo.name, geo.geometry_id)
     if res.identity is None or res.identity.raw_hash != geo.raw_hash:
@@ -233,9 +246,10 @@ def _record(item: IngestItem, path: Path, summary: IngestSummary, paths: Geometr
     report = paths.report_dir(summary.ingest_id) / Path(item.source_relpath).with_suffix(".txt")
     item.report_path = paths.to_rel(report)
     res, raw_rel, norm_rel, superseded = item.result, None, None, None
+    version = summary.shape_version
     if item.status in (ItemStatus.ADDED, ItemStatus.RESHAPED):
         raw = paths.raw_dir / f"{item.name}.dat"
-        norm = paths.norm_dir(SHAPE_VERSION) / f"{item.name}.dat"
+        norm = paths.norm_dir(version) / f"{item.name}.dat"
         _copy(path, raw)
         Geom_write_dat(norm, item.name, res.norm_coords)
         raw_rel, norm_rel = paths.to_rel(raw), paths.to_rel(norm)
@@ -246,7 +260,7 @@ def _record(item: IngestItem, path: Path, summary: IngestSummary, paths: Geometr
             path = paths.rejected_raw(ident.name, ident.raw_hash)
         raw_rel = paths.to_rel(path)
         if res.norm_coords is not None:
-            norm = paths.rejected_norm(SHAPE_VERSION, ident.name, ident.raw_hash)
+            norm = paths.rejected_norm(version, ident.name, ident.raw_hash)
             Geom_write_dat(norm, ident.name, res.norm_coords)
             norm_rel = paths.to_rel(norm)
     if res is not None and res.identity is not None and not _is_rejection(item):
@@ -254,14 +268,14 @@ def _record(item: IngestItem, path: Path, summary: IngestSummary, paths: Geometr
     _write_text(report, Geom_format_report(item, summary, raw_rel, norm_rel))
     with store.transaction():
         if item.status is ItemStatus.ADDED:
-            store.add_geometry(res, summary.ingest_id, raw_rel, norm_rel, SHAPE_VERSION)
+            store.add_geometry(res, summary.ingest_id, raw_rel, norm_rel, version)
         elif item.status is ItemStatus.RESHAPED:
-            store.add_shape(res, item.geometry_id, norm_rel, SHAPE_VERSION)
+            store.add_shape(res, item.geometry_id, norm_rel, version)
         elif _is_rejection(item):
-            store.add_rejection(res, item.reason, item.detail, summary.ingest_id, raw_rel, norm_rel, SHAPE_VERSION,
+            store.add_rejection(res, item.reason, item.detail, summary.ingest_id, raw_rel, norm_rel, version,
                                 item.report_path)
         if superseded is not None:
-            store.remove_rejection(superseded.raw_hash, SHAPE_VERSION)  # older versions go to the archive
+            store.remove_rejection(superseded.raw_hash, version)  # older versions go to the archive
         store.add_item(summary.ingest_id, item.source_relpath, item.name, item.status, item.reason,
                        item.geometry_id, item.report_path)
     if superseded is not None:
@@ -351,7 +365,7 @@ def Geom_format_report(item: IngestItem, summary: IngestSummary, raw_rel: Option
                 "  upper        " + " ".join(f"{a:+.6f}" for a in cst.upper),
                 "  lower        " + " ".join(f"{a:+.6f}" for a in cst.lower),
                 f"  LE term      {cst.le_weight:+.6f}",
-                f"  fit          max {res.fit.max_dev:.2e} c at x={res.fit.x_at_max:.4f} (limit {CST_FIT_TOL:g}), "
+                f"  fit          max {res.fit.max_dev:.2e} c at x={res.fit.x_at_max:.4f} (limit {summary.fit_tol:g}), "
                 f"rms {res.fit.rms_dev:.2e} c, over {res.fit.n_points} points",
                 f"  source       the file's points before closing are within {res.source_dev:.2e} c",
                 f"  TE wedge     {res.te_wedge_deg:.2f} deg"]
@@ -434,7 +448,8 @@ def _head(summary: IngestSummary) -> list[str]:
     by_reason = ", ".join(f"{r} {rejected.count(r)}" for r in sorted(set(rejected)))
     reshaped = summary.count(ItemStatus.RESHAPED)
     return [f"Geometry ingest {summary.ingest_id}" + (" (dry run, nothing written)" if summary.dry_run else ""),
-            f"started {summary.started_at}, code {summary.git_commit}, shape version {summary.shape_version}",
+            f"started {summary.started_at}, code {summary.git_commit}, shape version {summary.shape_version}, "
+            f"fit tolerance {summary.fit_tol:g}c",
             f"source  {summary.source_root or '(none: stored airfoils only)'}",
             f"{len(summary.items)} files: {summary.count(ItemStatus.ADDED)} added, "
             + (f"{reshaped} reshaped, " if reshaped else "")

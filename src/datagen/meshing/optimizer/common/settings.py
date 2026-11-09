@@ -3,6 +3,7 @@ The study's settings row: every value a run is meshed and judged by, plus the me
 id. Two runs share a settings_id exactly when none of them differs.
 
     Optim_build_settings    the row, with the tunable columns optionally overridden
+    Optim_shape_version     the stored shapes a run's settings study
     Optim_mesher_sha256     the hash of the c2d executable in use
     Optim_pinned            every config field the search leaves alone, with its value
     Optim_config_schema_fp  a fingerprint of C2D_MeshingConfig, recorded on every run
@@ -12,12 +13,14 @@ import hashlib
 import json
 
 from src.datagen.constants import (
-    CELL_CEILING, CLUSTER_WIDTH_MAX, CLUSTER_WIDTH_MIN, DESIGN_RE, DX_MAX, DX_MID_MIN, FARFIELD_RADIUS, GATE_AR_MAX,
-    GATE_GEO_DEV_MAX, GATE_JAC_MIN, GATE_ORTHO_MIN, GATE_SIZE_RATIO_MAX, GATE_SKEW_MAX, GOLDEN_JMAX, JMAX_BUMP_MAX,
-    JMAX_BUMP_STEP, JMAX_MAX, JMAX_MIN, NOMAD_SEED, NSTAR_CW_GRID, NSTAR_LE_GRID, RATIO_MIN, RUNG2_BUDGET,
-    RUNG3_BUDGET, RUNG3_MIN_GAIN, RUNG3_PATIENCE, SMOOTHING_DEFAULTS, TE_GAP, THETA_MAX_DEG, Y_PLUS,
+    CELL_CEILING, CLUSTER_WIDTH_MAX, CLUSTER_WIDTH_MIN, CST_NOSE, CST_ORDER, DESIGN_RE, DX_MAX, DX_MID_MIN,
+    FARFIELD_RADIUS, GATE_AR_MAX, GATE_GEO_DEV_MAX, GATE_JAC_MIN, GATE_ORTHO_MIN, GATE_SIZE_RATIO_MAX, GATE_SKEW_MAX,
+    GOLDEN_JMAX, JMAX_BUMP_MAX, JMAX_BUMP_STEP, JMAX_MAX, JMAX_MIN, NOMAD_SEED, NSTAR_CW_GRID, NSTAR_LE_GRID,
+    RATIO_MIN, RUNG2_BUDGET, RUNG3_BUDGET, RUNG3_MIN_GAIN, RUNG3_PATIENCE, SMOOTHING_DEFAULTS, TE_GAP, THETA_MAX_DEG,
+    Y_PLUS,
 )
-from src.datagen.geometry.common.constants import PRECHECK_MARGIN, SAMPLER_VERSION, SHAPE_VERSION
+from src.datagen.geometry.common.constants import PRECHECK_MARGIN, SAMPLER_VERSION, Geom_shape_version
+from src.datagen.geometry.common.schemas import Nose
 from src.datagen.meshing.c2d.schemas import C2D_MeshingConfig
 from src.datagen.meshing.optimizer.common.constants import BACKEND, LADDER_VERSION, MAX_BB_EVAL_FACTOR, PINNED, TOPOLOGY
 from src.datagen.meshing.optimizer.common.space import KNOBS, Optim_space, Optim_space_json
@@ -27,15 +30,16 @@ from src.datagen.utils.tools import find_tool
 _SPACE = {"dx_mid_min": DX_MID_MIN, "ratio_min": RATIO_MIN, "cluster_width_min": CLUSTER_WIDTH_MIN,
           "cluster_width_max": CLUSTER_WIDTH_MAX, "jmax_min": JMAX_MIN, "jmax_max": JMAX_MAX}
 
-# What the run code reads from the row, each by its constant's name: the n* grid's two fold into nstar_json, the
-# space's bounds into search_space_json, y+ and the farfield radius into pinned_json, the smoothing defaults into
-# smoothing_json. The rest describes the code or the executable, so overriding it would record settings the run did
-# not use. Checked per (backend, topology) once other meshers join
+# What the run code reads from the row, each by its constant's name: the CST order and nose fold into shape_version,
+# the n* grid's two into nstar_json, the space's bounds into search_space_json, y+ and the farfield radius into
+# pinned_json, the smoothing defaults into smoothing_json. The rest describes the code or the executable, so
+# overriding it would record settings the run did not use. Checked per (backend, topology) once other meshers join
 OVERRIDABLE = (
-    "design_re", "te_gap", "cell_ceiling", "dx_max", "theta_max_deg", "gate_skew_max", "gate_ortho_min",
-    "gate_jac_min", "gate_ar_max", "gate_size_ratio_max", "gate_geo_dev_max", "golden_jmax", "jmax_bump_step",
-    "jmax_bump_max", "rung2_budget", "rung3_budget", "rung3_patience", "rung3_min_gain", "max_bb_eval_factor",
-    "nomad_seed", "nstar_le_grid", "nstar_cw_grid", *_SPACE, "y_plus", "farfield_radius", "smoothing_defaults",
+    "cst_order", "cst_nose", "design_re", "te_gap", "cell_ceiling", "dx_max", "theta_max_deg", "gate_skew_max",
+    "gate_ortho_min", "gate_jac_min", "gate_ar_max", "gate_size_ratio_max", "gate_geo_dev_max", "golden_jmax",
+    "jmax_bump_step", "jmax_bump_max", "rung2_budget", "rung3_budget", "rung3_patience", "rung3_min_gain",
+    "max_bb_eval_factor", "nomad_seed", "nstar_le_grid", "nstar_cw_grid", *_SPACE, "y_plus", "farfield_radius",
+    "smoothing_defaults",
 )
 
 # The ones in src/datagen/constants.py, which a run's settings can set
@@ -55,8 +59,8 @@ def Optim_build_settings(**overrides) -> dict:
         dict: Column name to value
 
     Raises:
-        ValueError: If an override names a column outside `OVERRIDABLE`, leaves a search range empty, or sets a
-            smoothing default outside its knob's bounds
+        ValueError: If an override names a column outside `OVERRIDABLE`, leaves a search range empty, sets a
+            smoothing default outside its knob's bounds, or names no nose
         TypeError: If an int column's override is not an int
         FileNotFoundError: If no c2d executable is configured
     """
@@ -68,6 +72,8 @@ def Optim_build_settings(**overrides) -> dict:
     def take(key, default):
         return _checked(key, default, overrides.pop(key)) if key in overrides else default
 
+    shape_version = Optim_shape_version({"cst_order": take("cst_order", CST_ORDER),
+                                         "cst_nose": overrides.pop("cst_nose", CST_NOSE)})
     grid = {"le_grid": take("nstar_le_grid", NSTAR_LE_GRID), "cw_grid": take("nstar_cw_grid", NSTAR_CW_GRID)}
     dx_max = take("dx_max", DX_MAX)
     space = Optim_space(dx_max=dx_max, **{key: take(key, default) for key, default in _SPACE.items()})
@@ -79,7 +85,7 @@ def Optim_build_settings(**overrides) -> dict:
         "backend": BACKEND,
         "topology": TOPOLOGY,
         "design_re": DESIGN_RE,
-        "shape_version": SHAPE_VERSION,
+        "shape_version": shape_version,
         "sampler_version": SAMPLER_VERSION,
         "mesher_sha256": Optim_mesher_sha256(),
         "dx_max": dx_max,
@@ -111,6 +117,19 @@ def Optim_build_settings(**overrides) -> dict:
         values[key] = _checked(key, values[key], value)
     values["settings_id"] = hashlib.sha256(json.dumps(values, sort_keys=True).encode()).hexdigest()[:16]
     return values
+
+
+def Optim_shape_version(settings: dict) -> str:
+    """
+    The shape version a run's settings study: their `cst_order` and `cst_nose`, else the constants'.
+
+    Raises:
+        ValueError: If `cst_nose` names no nose
+    """
+    nose = getattr(settings.get("cst_nose", CST_NOSE), "value", settings.get("cst_nose", CST_NOSE))
+    if nose not in {n.value for n in Nose}:
+        raise ValueError(f"cst_nose is one of {', '.join(n.value for n in Nose)}, not {nose!r}")
+    return Geom_shape_version(settings.get("cst_order", CST_ORDER), nose)
 
 
 def _checked(key: str, default, value):

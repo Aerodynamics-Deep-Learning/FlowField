@@ -15,20 +15,20 @@ Step 3: Ensure a dry run decides the same and writes nothing
     - test_missing_folder
 Step 4: Ensure a shape version bump refits every stored airfoil and archives the old shapes
     - test_version_bump_reshapes_and_archives
+    - test_another_order_and_nose_is_another_version
     - test_version_bump_dry_run_writes_nothing
     - test_reshape_refuses_an_edited_raw_copy
     - test_reshape_rejection_is_kept_until_it_passes
 """
 
-import functools
 import sqlite3
 
 import numpy as np
 import pytest
 
 import src.datagen.geometry.manifest.ingest as ingest_module
-from src.datagen.geometry.build.add import Geom_add_airfoil, Geom_identify
-from src.datagen.geometry.common.constants import NORM_N_POINTS, SHAPE_VERSION
+from src.datagen.geometry.build.add import Geom_identify
+from src.datagen.geometry.common.constants import NORM_N_POINTS, SHAPE_REVISION, SHAPE_VERSION
 from src.datagen.geometry.build.families import _family_contour
 from src.datagen.geometry.manifest.ingest import (
     Geom_format_digest, Geom_format_summary, Geom_ingest_folder, Geom_suspect_points,
@@ -172,7 +172,7 @@ def test_reingesting_the_raw_copies_rebuilds_the_manifest(source, tmp_path):
     assert {p.name: p.read_bytes() for p in paths.raw_dir.iterdir()} == copies
 
 
-def test_loosened_gate_admits_a_stored_rejection(source, tmp_path, monkeypatch):
+def test_loosened_gate_admits_a_stored_rejection(source, tmp_path):
     paths = Geom_paths(tmp_path / "data")
     bumped = _naca(0, 0, 12, closed_te=True)
     bumped[:101, 1] += 0.01 * np.exp(-((bumped[:101, 0] - 0.5) / 0.02) ** 2)  # a bump no order-8 CST follows
@@ -183,8 +183,7 @@ def test_loosened_gate_admits_a_stored_rejection(source, tmp_path, monkeypatch):
         rec = store.get_rejection(raw_hash, SHAPE_VERSION)
     assert rec.reason is RejectReason.FIT_TOLERANCE
 
-    monkeypatch.setattr(ingest_module, "Geom_add_airfoil", functools.partial(Geom_add_airfoil, fit_tol=1.0))
-    loosened = {i.name: i for i in Geom_ingest_folder(None, paths.data_root).items}
+    loosened = {i.name: i for i in Geom_ingest_folder(None, paths.data_root, fit_tol=1.0).items}
 
     assert loosened["bumpfoil"].status is ItemStatus.ADDED
     assert loosened["crossfoil"].status is ItemStatus.REJECTED  # a crossing is not a tolerance
@@ -230,10 +229,15 @@ def test_missing_folder(tmp_path):
 _BUMPED = "cst8-r2"
 
 
+def _bumped(order, nose) -> str:
+    """The shape version after a revision bump."""
+    return _BUMPED
+
+
 def test_version_bump_reshapes_and_archives(source, tmp_path, monkeypatch):
     paths = Geom_paths(tmp_path / "data")
     Geom_ingest_folder(source, paths.data_root)
-    monkeypatch.setattr(ingest_module, "SHAPE_VERSION", _BUMPED)
+    monkeypatch.setattr(ingest_module, "Geom_shape_version", _bumped)
     bumped = Geom_ingest_folder(None, paths.data_root)
 
     assert [(i.status, i.name) for i in bumped.items] == [
@@ -256,11 +260,28 @@ def test_version_bump_reshapes_and_archives(source, tmp_path, monkeypatch):
     assert [i.status for i in again.items] == [ItemStatus.REJECTED] * 2  # nothing to refit; rejections judged again
 
 
+def test_another_order_and_nose_is_another_version(source, tmp_path):
+    paths = Geom_paths(tmp_path / "data")
+    Geom_ingest_folder(source, paths.data_root)
+    other = Geom_ingest_folder(None, paths.data_root, order=9, nose="separate", fit_tol=1.0)
+
+    version = f"cst9separate-{SHAPE_REVISION}"
+    assert other.shape_version == version and other.count(ItemStatus.RESHAPED) == 3
+    with GeometryStore.open(paths.db) as store:
+        shapes = store.shapes(version)
+        assert len(shapes) == 3 and {s.cst.order for s in shapes} == {9}
+        assert not store.shapes(SHAPE_VERSION)
+    with sqlite3.connect(paths.archive_db) as archive:  # the constants' shapes leave the manifest
+        assert archive.execute("SELECT count(*), min(shape_version) FROM archived_shapes").fetchone() == (3, SHAPE_VERSION)
+    with pytest.raises(ValueError):
+        Geom_ingest_folder(None, paths.data_root, nose="pointy")
+
+
 def test_version_bump_dry_run_writes_nothing(source, tmp_path, monkeypatch):
     paths = Geom_paths(tmp_path / "data")
     Geom_ingest_folder(source, paths.data_root)
     before = paths.db.read_bytes()
-    monkeypatch.setattr(ingest_module, "SHAPE_VERSION", _BUMPED)
+    monkeypatch.setattr(ingest_module, "Geom_shape_version", _bumped)
     dry = Geom_ingest_folder(None, paths.data_root, dry_run=True)
 
     assert dry.count(ItemStatus.RESHAPED) == 3
@@ -274,7 +295,7 @@ def test_reshape_refuses_an_edited_raw_copy(source, tmp_path, monkeypatch):
     coords = Geom_read_dat(raw).coords
     coords[30, 1] += 1e-4
     Geom_write_dat(raw, "testfoil", coords)
-    monkeypatch.setattr(ingest_module, "SHAPE_VERSION", _BUMPED)
+    monkeypatch.setattr(ingest_module, "Geom_shape_version", _bumped)
     bumped = {i.name: i for i in Geom_ingest_folder(None, paths.data_root).items}
 
     assert bumped["testfoil"].status is ItemStatus.REJECTED and "no longer holds" in bumped["testfoil"].detail
@@ -287,9 +308,8 @@ def test_reshape_refuses_an_edited_raw_copy(source, tmp_path, monkeypatch):
 def test_reshape_rejection_is_kept_until_it_passes(source, tmp_path, monkeypatch):
     paths = Geom_paths(tmp_path / "data")
     Geom_ingest_folder(source, paths.data_root)
-    monkeypatch.setattr(ingest_module, "SHAPE_VERSION", _BUMPED)
-    monkeypatch.setattr(ingest_module, "Geom_add_airfoil", functools.partial(Geom_add_airfoil, fit_tol=1e-12))
-    strict = Geom_ingest_folder(None, paths.data_root)
+    monkeypatch.setattr(ingest_module, "Geom_shape_version", _bumped)
+    strict = Geom_ingest_folder(None, paths.data_root, fit_tol=1e-12)
 
     assert [i.status for i in strict.items] == [ItemStatus.REJECTED] * 5
     with GeometryStore.open(paths.db) as store:
@@ -300,7 +320,6 @@ def test_reshape_rejection_is_kept_until_it_passes(source, tmp_path, monkeypatch
         assert rec.raw_path == geo.raw_path  # its stored copy, not a second one
         assert len(store.rejections(_BUMPED)) == 5
 
-    monkeypatch.setattr(ingest_module, "Geom_add_airfoil", Geom_add_airfoil)
     healed = Geom_ingest_folder(None, paths.data_root)
 
     assert sorted(i.status.value for i in healed.items) == ["rejected"] * 2 + ["reshaped"] * 3

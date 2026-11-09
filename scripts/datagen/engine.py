@@ -121,11 +121,14 @@ def Script_names(text: str) -> list[str]:
 
 
 def Script_check_names(load: Callable, args: argparse.Namespace, made_here: set) -> list[str]:
-    """A stage's named airfoils checked against the manifest it reads, unless this run's ingest writes it."""
-    if not getattr(args, "airfoils", None) or "geometry_db" in made_here:
+    """
+    A stage's airfoils checked against the manifest it reads, unless this run's ingest writes it: each one named,
+    else that it holds any. `load(names, db)` raises ValueError for either.
+    """
+    if "geometry_db" in made_here:
         return []
     try:
-        load(args.airfoils, args.geometry_db)
+        load(getattr(args, "airfoils", None) or None, args.geometry_db)
     except ValueError as e:
         return [str(e)]
     return []
@@ -137,9 +140,6 @@ def Script_check_names(load: Callable, args: argparse.Namespace, made_here: set)
 
 # Every setting by its name in lower case, with the value it has when not set
 SETTABLE = {name.lower(): value for name, value in vars(constants).items() if name.isupper()}
-
-# Read when the code loads, so a run cannot set them yet
-_LOAD_TIME = frozenset({"cst_order", "cst_nose", "cst_fit_tol"})
 
 
 class Setting(NamedTuple):
@@ -153,7 +153,7 @@ def Script_setting(text: str) -> Setting:
     a dict as `name:value` pairs comma-separated (those given, each typed as the constant's own).
 
     Raises:
-        argparse.ArgumentTypeError: For no such setting, one not settable yet, or a value of the wrong kind
+        argparse.ArgumentTypeError: For no such setting, or a value of the wrong kind
     """
     key, sep, raw = text.partition("=")
     key, raw = key.strip().lower(), raw.strip()
@@ -162,8 +162,6 @@ def Script_setting(text: str) -> Setting:
     if key not in SETTABLE:
         raise argparse.ArgumentTypeError(f"no setting {key!r}: the settings are src/datagen/constants.py's values, "
                                          f"named in lower case")
-    if key in _LOAD_TIME:
-        raise argparse.ArgumentTypeError(f"{key} cannot be set for a run yet: the code reads it when it loads")
     default = SETTABLE[key]
     parts = [part.strip() for part in raw.split(",") if part.strip()]
     if isinstance(default, tuple):
@@ -205,10 +203,11 @@ def Script_settings(args: argparse.Namespace, stage: "Stage") -> dict:
     problems = _settings_problems(stage, args)
     if problems:
         raise UsageError("; ".join(problems))
-    return _gathered(stage, args)
+    return Script_given(stage, args)
 
 
-def _gathered(stage: "Stage", args: argparse.Namespace) -> dict:
+def Script_given(stage: "Stage", args: argparse.Namespace) -> dict:
+    """A run's settings as given, unchecked: for a stage's own check, before the plan has judged them."""
     settings = {s.key: s.value for s in getattr(args, "set", None) or []}
     for option, key in stage.aliases:
         if getattr(args, option, None) is not None:
@@ -297,7 +296,7 @@ def Script_plan(name: str, requested: Sequence[tuple[Stage, Sequence[str]]], *, 
             problems.append((stage.name, str(e)))
             continue
         problems += [(stage.name, text) for text in _settings_problems(stage, args)]
-        for key, value in _gathered(stage, args).items():
+        for key, value in Script_given(stage, args).items():
             source = (sources or {}).get((stage.name, key), "given")
             notes.append((stage.name, "info", f"settings: {key} {_text(value)} ({source}; constants.py "
                                               f"{_text(SETTABLE[key])})"))

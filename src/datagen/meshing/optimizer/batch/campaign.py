@@ -65,8 +65,8 @@ def Optim_run_campaign(store: RunStore, names: Optional[Sequence[str]] = None, w
         ValueError: If a name has no stored shape, before anything is recorded
     """
     t0 = time.perf_counter()
-    airfoils = Optim_load_shapes(names, geometry_db)
     settings = Optim_build_settings(**(overrides or {}))
+    airfoils = Optim_load_shapes(names, geometry_db, settings["shape_version"])
     settings_id = store.ensure_settings(settings, label=label)
     cut_short = store.abort_running()
     if cut_short:

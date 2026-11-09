@@ -16,17 +16,18 @@ code 0 when every mesh was delivered, else 1.
 
 import argparse
 import sys
+from functools import partial
 from pathlib import Path
 
 from scripts.datagen.engine import (
-    GEOMETRY_DB, Input, Output, OutputKind, Script_check_names, Script_main, Script_names, Script_settings,
-    Script_settings_option, Stage, UsageError,
+    GEOMETRY_DB, Input, Output, OutputKind, Script_check_names, Script_given, Script_main, Script_names,
+    Script_settings, Script_settings_option, Stage, UsageError,
 )
 from src.datagen.meshing.optimizer.batch.quality import Optim_remesh_quality
 from src.datagen.meshing.optimizer.batch.remesh import Optim_remesh_airfoils, Optim_remesh_run
 from src.datagen.meshing.optimizer.batch.runner import Optim_load_shapes
 from src.datagen.meshing.optimizer.common.paths import MESHING_DB
-from src.datagen.meshing.optimizer.common.settings import STUDY_KEYS
+from src.datagen.meshing.optimizer.common.settings import STUDY_KEYS, Optim_shape_version
 from src.datagen.meshing.optimizer.manifest.store import RunStore
 
 
@@ -50,7 +51,7 @@ def run(args: argparse.Namespace) -> int:
     settings = Script_settings(args, STAGE)
     if args.airfoils:
         try:
-            Optim_load_shapes(args.airfoils, args.geometry_db)
+            Optim_load_shapes(args.airfoils, args.geometry_db, Optim_shape_version(settings))
         except ValueError as e:
             raise UsageError(str(e)) from None
     try:
@@ -78,12 +79,22 @@ def run(args: argparse.Namespace) -> int:
     return 0 if not missing else 1
 
 
+def _check(args: argparse.Namespace, made_here: set) -> list[str]:
+    """By name, the airfoils under the shape version the run's CST order and nose name; --run carries its own."""
+    if args.run:
+        return []
+    try:
+        version = Optim_shape_version(Script_given(STAGE, args))
+    except ValueError as e:
+        return [str(e)]
+    return Script_check_names(partial(Optim_load_shapes, shape_version=version), args, made_here)
+
+
 STAGE = Stage(
     "remesh", "scripts.datagen.meshing.remesh", build_parser, run,
     outputs=(Output("out", OutputKind.FOLDER, "re-mesh folder", exists="meshes of the same airfoils are replaced"),),
     inputs=(Input("db", "run store", shared=lambda: MESHING_DB, made_by=("campaign", "db")), GEOMETRY_DB),
-    meshes=True, check=lambda args, made_here: Script_check_names(Optim_load_shapes, args, made_here),
-    reads=STUDY_KEYS)
+    meshes=True, check=_check, reads=STUDY_KEYS)
 
 
 def main(argv=None) -> int:

@@ -37,7 +37,7 @@ from src.datagen.constants import (
     CAL_WITHIN, DX_MAX, GOLDEN_JMAX, SLOT_MEMORY_CAP_MB, WATCHDOG_S, WORKERS,
 )
 from src.datagen.meshing.optimizer.batch.runner import Optim_load_shapes, Optim_run_airfoils
-from src.datagen.meshing.optimizer.common.settings import Optim_build_settings
+from src.datagen.meshing.optimizer.common.settings import Optim_build_settings, Optim_shape_version
 from src.datagen.meshing.optimizer.common.space import Knob, Optim_knobs_of
 from src.datagen.meshing.optimizer.evaluate.context import RunContext
 from src.datagen.meshing.optimizer.manifest.store import Optim_git_state, RunStore
@@ -249,7 +249,7 @@ def Optim_calibrate(store: RunStore, rungs: Sequence[int] = (1, 2, 3), names: Op
     if golden_jmax is not None and 1 in rungs and {2, 3} & set(rungs):
         logger.warning("golden jmax %d is given: rungs 2 and 3 run at it, not at rung 1's recommendation",
                        golden_jmax)
-    load = partial(Optim_load_shapes, db=geometry_db)
+    load = partial(Optim_load_shapes, db=geometry_db, shape_version=Optim_shape_version(overrides))
     done: dict[int, Stage] = {}
     run = partial(_run_stage, store=store, work_root=Path(work_root), workers=workers, first=min(rungs),
                   watchdog_s=watchdog_s, cap_mb=cap_mb)

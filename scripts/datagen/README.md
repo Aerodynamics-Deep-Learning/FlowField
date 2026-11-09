@@ -219,8 +219,7 @@ Every value that can change is in `src/datagen/constants.py`. A run sets one wit
 `settings:`, or a script's `--set name=value` (repeatable; `--help` lists what each script reads). The value is
 typed as its constant (a tuple comma-separated, the smoothing defaults as `alfa:0.7` pairs over the rest), and
 refused before anything runs when it names nothing in the file, a stage that does not read it, or two values for
-one name. The CST order, nose and tolerance cannot be set for a run yet: they name the shapes a manifest stores.
-The PLAN names every value a run set and where it came from:
+one name. The PLAN names every value a run set and where it came from:
 
 ```
 [campaign]  [info]  settings: gate_skew_max 0.22 (the settings block; constants.py 0.25)
@@ -228,10 +227,20 @@ The PLAN names every value a run set and where it came from:
 
 A changed constant or setting (or another c2d executable) makes a new `settings_id`, under which every airfoil
 runs again; the rows of earlier settings stay in the store, and a re-mesh by name takes the best run under the
-run's settings, so it must set what the campaign set (the master refuses a run where the two differ).
+run's settings, so it must set what the campaign set.
 `--settings-label` names a settings row when the campaign that first records it runs, so you can find it again
 in a SQLite viewer. The calibration runs every rung under the study's settings; its own choices are the `cal_`
 ones, and `--golden-jmax`, `--rung2-cap`, `--rung3-cap` and `--workers` are short forms of settings.
+
+The CST order and nose name the shape version (`cst8-r1` is order 8 with the lem nose; `cst10separate-r1` order 10
+with separate radii), and a manifest holds one: an ingest at another refits every stored airfoil and archives the
+shapes it had. So the shared manifest takes only constants.py's CST values (the ingest refuses others there, a dry
+run aside): try another order, nose or fit tolerance by ingesting into a data folder of the run's own, and set the
+order and nose at the top of the config so the mesh stages, which find their shapes by them, read the same.
+
+In a config, a stage that reads what an earlier stage of the run wrote must set alike every setting both read
+(the master refuses a run where they differ): the re-mesh and the campaign whose run store it reads, a mesh stage
+and the ingest whose manifest it reads. A stage told to read another store or manifest is free of it.
 
 ## 9. Ingesting into the shared manifest is a release
 

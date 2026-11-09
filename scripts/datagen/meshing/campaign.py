@@ -15,17 +15,18 @@ end, 1 when it stopped early, 130 on Ctrl-C.
 
 import argparse
 import sys
+from functools import partial
 from pathlib import Path
 
 from scripts.datagen.engine import (
-    GEOMETRY_DB, Output, OutputKind, Script_check_names, Script_main, Script_names, Script_settings,
+    GEOMETRY_DB, Output, OutputKind, Script_check_names, Script_given, Script_main, Script_names, Script_settings,
     Script_settings_option, Stage, UsageError,
 )
 from src.datagen.constants import WORKERS
 from src.datagen.meshing.optimizer.batch.campaign import Optim_campaign_summary, Optim_run_campaign
 from src.datagen.meshing.optimizer.batch.runner import EXECUTION_KEYS, Optim_execution, Optim_load_shapes
 from src.datagen.meshing.optimizer.common.paths import MESHING_DB
-from src.datagen.meshing.optimizer.common.settings import STUDY_KEYS
+from src.datagen.meshing.optimizer.common.settings import STUDY_KEYS, Optim_shape_version
 from src.datagen.meshing.optimizer.manifest.store import RunStore
 
 READS = STUDY_KEYS | EXECUTION_KEYS
@@ -49,7 +50,7 @@ def run(args: argparse.Namespace) -> int:
     settings = Script_settings(args, STAGE)
     if args.airfoils:
         try:
-            Optim_load_shapes(args.airfoils, args.geometry_db)
+            Optim_load_shapes(args.airfoils, args.geometry_db, Optim_shape_version(settings))
         except ValueError as e:
             raise UsageError(str(e)) from None
     execution = Optim_execution(settings)
@@ -64,13 +65,21 @@ def run(args: argparse.Namespace) -> int:
     return 1 if result.stopped is not None else 0
 
 
+def _check(args: argparse.Namespace, made_here: set) -> list[str]:
+    """The airfoils, under the shape version the run's CST order and nose name."""
+    try:
+        version = Optim_shape_version(Script_given(STAGE, args))
+    except ValueError as e:
+        return [str(e)]
+    return Script_check_names(partial(Optim_load_shapes, shape_version=version), args, made_here)
+
+
 STAGE = Stage(
     "campaign", "scripts.datagen.meshing.campaign", build_parser, run,
     outputs=(Output("db", OutputKind.FILE, "run store", default_name="meshing.sqlite", shared=lambda: MESHING_DB,
                     exists="this run adds to it"),),
     inputs=(GEOMETRY_DB,),
-    slots=True, meshes=True, check=lambda args, made_here: Script_check_names(Optim_load_shapes, args, made_here),
-    reads=READS, aliases=(("workers", "workers"),))
+    slots=True, meshes=True, check=_check, reads=READS, aliases=(("workers", "workers"),))
 
 
 def main(argv=None) -> int:

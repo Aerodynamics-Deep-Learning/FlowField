@@ -7,7 +7,7 @@ mesh is rebuilt on the executor's own input path and delivered only if it hashes
     RemeshRefused   the run cannot be rebuilt by this code: it has no mesh, or something it was meshed by moved
     RemeshMismatch  the rebuilt mesh is not the stored one; nothing was delivered
 
-A run is refused before meshing when its shape version, sampler version, config schema or c2d executable
+A run is refused before meshing when its shape revision, sampler version, config schema or c2d executable
 differs from the code's now: rebuilding it then needs its commit checked out. Anything else that moved (the
 machine, a dirty tree) is caught by the hash. The run store is only read.
 """
@@ -20,7 +20,7 @@ import socket
 from pathlib import Path
 from typing import NamedTuple, Optional
 
-from src.datagen.geometry.common.constants import SAMPLER_VERSION, SHAPE_VERSION
+from src.datagen.geometry.common.constants import SAMPLER_VERSION, SHAPE_REVISION
 from src.datagen.geometry.common.schemas import ShapeRecord
 from src.datagen.geometry.manifest.store import GeometryStore
 from src.datagen.meshing.c2d.schemas import C2D_MeshingConfig
@@ -69,7 +69,7 @@ def Optim_remesh(store: RunStore, run_id: str, out_dir, *, with_vtk: bool = Fals
         Remeshed: The delivered files
 
     Raises:
-        RemeshRefused: Before meshing, if the run is unknown, has no mesh, or its shape version, sampler
+        RemeshRefused: Before meshing, if the run is unknown, has no mesh, or its shape revision, sampler
             version, config schema or c2d executable differs from now, or its shape is not stored
         RemeshMismatch: After meshing, if the sampler rejected the config, no .su2 (or asked-for .vtk) was
             written, or the .su2's hash differs from the stored one
@@ -128,7 +128,8 @@ def _refuse_if_moved(run: dict, settings: dict) -> None:
     """Raises RemeshRefused naming everything the run was meshed by that differs now."""
     if run["su2_sha256"] is None:
         raise RemeshRefused(f"run {run['run_id']} has no mesh to rebuild (status {run['status']})")
-    checks = (("shape version", settings["shape_version"], SHAPE_VERSION),
+    shapes = settings["shape_version"]  # its order and nose are the run's own; only the pipeline's revision must hold
+    checks = (("shape version", shapes, f"{shapes.rpartition('-')[0]}-{SHAPE_REVISION}"),
               ("sampler version", settings["sampler_version"], SAMPLER_VERSION),
               ("config schema", run["config_schema_fp"], Optim_config_schema_fp()),
               ("c2d executable", settings["mesher_sha256"], Optim_mesher_sha256()))

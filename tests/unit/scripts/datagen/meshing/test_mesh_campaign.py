@@ -18,16 +18,19 @@ import pytest
 
 from scripts.datagen.meshing import campaign as mesh_campaign
 from src.datagen.constants import SLOT_MEMORY_CAP_MB, WATCHDOG_S, WORKERS
+from src.datagen.geometry.common.constants import SHAPE_VERSION
 from src.datagen.geometry.common.paths import Geom_paths
 from src.datagen.meshing.optimizer.batch.campaign import CampaignResult
 from src.datagen.meshing.optimizer.batch.runner import BatchStopped
 
 
-def _known(names, db=None):
-    unknown = [n for n in names if n not in ("naca0012", "naca4412")]
+def _known(names, db=None, shape_version=SHAPE_VERSION):
+    if shape_version != SHAPE_VERSION:
+        raise ValueError(f"{db} holds no shapes under {shape_version}")
+    unknown = [n for n in names or () if n not in ("naca0012", "naca4412")]
     if unknown:
-        raise ValueError(f"no shape under the current shape version for {', '.join(unknown)}")
-    return [(n, None) for n in names]
+        raise ValueError(f"no shape under {shape_version} for {', '.join(unknown)}")
+    return [(n, None) for n in names or ("naca0012", "naca4412")]
 
 
 @pytest.fixture
@@ -88,13 +91,15 @@ def test_settings_reach_the_campaign(campaign, tmp_path, capsys):
 @pytest.mark.parametrize("args, says", [
     (["--golden-jmax", "150"], "unrecognized arguments"),
     (["--set", "cal_set=a,b"], "campaign does not read cal_set"),
-    (["--set", "cst_order=10"], "cst_order cannot be set for a run yet"),
+    (["--set", "cst_order=10"], "holds no shapes under cst10-r1"),
+    (["--set", "cst_nose=pointy"], "cst_nose is one of separate, shared, lem, not 'pointy'"),
     (["--set", "nope=1"], "no setting 'nope'"),
     (["--set", "rung2_budget=5.5"], "rung2_budget takes an int, not '5.5'"),
     (["--set", "gate_skew_max"], "a setting is key=value"),
     (["--set", "gate_skew_max=0.2", "--set", "gate_skew_max=0.3"], "gate_skew_max is set twice"),
     (["--workers", "4", "--set", "workers=5"], "workers is given twice: --workers 4 and --set workers=5"),
-], ids=["not an option", "not read here", "read at load", "unknown", "wrong type", "no value", "twice", "flag too"])
+], ids=["not an option", "not read here", "no shapes at that order", "no such nose", "unknown", "wrong type",
+        "no value", "twice", "flag too"])
 def test_a_setting_it_cannot_take_is_a_usage_error(campaign, tmp_path, capsys, args, says):
     assert mesh_campaign.main(["--db", str(tmp_path / "meshing.sqlite"), *args]) == 2
 

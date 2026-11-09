@@ -48,8 +48,9 @@ def Optim_remesh_airfoils(store: RunStore, names: Optional[Sequence[str]], out_r
     Raises:
         ValueError: If a name has no stored shape, before anything is meshed
     """
-    settings_id = Optim_build_settings(**(overrides or {}))["settings_id"]
-    shapes = Optim_load_shapes(names, geometry_db)
+    settings = Optim_build_settings(**(overrides or {}))
+    settings_id = settings["settings_id"]
+    shapes = Optim_load_shapes(names, geometry_db, settings["shape_version"])
     finished = store.finished_airfoils(settings_id)
     progress, outcomes = Progress(len(shapes)), []
     for name, shape in shapes:

@@ -18,8 +18,10 @@
 
 # settings:                          values of src/datagen/constants.py for this run, named in lower case; each stage
 #   gate_skew_max: 0.22              takes those it reads. A stage's own `settings:` sets them for it alone, over these.
-#   rung2_budget: 60                 The campaign and the re-mesh must agree: the re-mesh finds the campaign's meshes
-#                                    by their settings. Left out, every value is the constant's
+#   rung2_budget: 60                 A stage reading what an earlier one wrote must agree with it on what both read:
+#   cst_order: 10                    the re-mesh with the campaign, a mesh stage with the ingest (a CST order or nose
+#                                    names the shapes; the shared manifest takes only the constants'). Left out, every
+#                                    value is the constant's
 
 machine_check:                       # does this machine sample and mesh like the reference? ~1 min
   enabled: true                      # false: a warning, and this run does not check

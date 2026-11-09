@@ -187,6 +187,7 @@ class IngestSummary(BaseModel):
     started_at: str
     source_root: str
     shape_version: str
+    fit_tol: float  # the fit gate's limit [c]
     git_commit: str
     dry_run: bool
     items: list[IngestItem] = []

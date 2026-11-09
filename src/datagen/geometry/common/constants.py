@@ -3,10 +3,10 @@ Fixed values the geometry pipeline builds and gates airfoils with; the ones that
 nose and fit tolerance, the sampler's limits) are in `src/datagen/constants.py`.
 
 Imports only that. A change to anything in the shape block changes the stored shapes, so it must come
-with a new `SHAPE_VERSION`.
+with a new `SHAPE_REVISION`.
 """
 
-from src.datagen.constants import CST_ORDER
+from src.datagen.constants import CST_NOSE, CST_ORDER
 
 #region CST shape
 
@@ -14,10 +14,19 @@ from src.datagen.constants import CST_ORDER
 CST_N1 = 0.5
 CST_N2 = 1.0
 
-# Names the normalize -> close -> fit -> render pipeline behind a stored shape, CST_ORDER and CST_NOSE
-# included; bump the revision on any change to it (tests/unit/datagen/geometry/test_geom_shape_version.py
-# fails until you do)
-SHAPE_VERSION = f"cst{CST_ORDER}-r1"
+# The revision of the normalize -> close -> fit -> render pipeline behind a stored shape; bump it on any change
+# to it (tests/unit/datagen/geometry/test_geom_shape_version.py fails until you do)
+SHAPE_REVISION = "r1"
+
+
+def Geom_shape_version(order: int, nose) -> str:
+    """The name shapes fitted at a CST order and nose are stored under: `cst8-r1` (lem), `cst10separate-r1`."""
+    nose = getattr(nose, "value", nose)
+    return f"cst{order}{'' if nose == 'lem' else nose}-{SHAPE_REVISION}"
+
+
+# The constants' own, which the shared manifest holds
+SHAPE_VERSION = Geom_shape_version(CST_ORDER, CST_NOSE)
 
 
 #endregion

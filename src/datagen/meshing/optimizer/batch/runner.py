@@ -79,27 +79,32 @@ class SlotLost(RuntimeError):
     """A worker that died, hung or hit its memory cap, reported as its airfoil's error."""
 
 
-def Optim_load_shapes(names: Optional[Sequence[str]] = None, db=None) -> list[tuple[str, ShapeRecord]]:
+def Optim_load_shapes(names: Optional[Sequence[str]] = None, db=None,
+                      shape_version: str = SHAPE_VERSION) -> list[tuple[str, ShapeRecord]]:
     """
-    The airfoils' stored shapes under the current shape version.
+    The airfoils' stored shapes under a shape version.
 
     Args:
         names (Sequence[str] | None): The airfoils to load, in this order; every stored one, by name, if None
         db (str | Path | None): The geometry manifest, the repo's own by default
+        shape_version (str): The run's (`settings.Optim_shape_version`), the constants' by default
 
     Returns:
         list[tuple[str, ShapeRecord]]: (name, shape) pairs
 
     Raises:
-        ValueError: If a name has no shape under the current shape version (every such name listed)
+        ValueError: If the manifest holds no shape under the version, or a name has none (every such name listed)
     """
     with GeometryStore.open(db, read_only=True) as geometry:
-        shapes = {geometry.name_of(s.geometry_id): s for s in geometry.shapes(SHAPE_VERSION)}
+        shapes = {geometry.name_of(s.geometry_id): s for s in geometry.shapes(shape_version)}
+        if not shapes:
+            raise ValueError(f"{geometry.path} holds no shapes under {shape_version}: ingest at its CST order and "
+                             f"nose first")
     if names is None:
         return sorted(shapes.items())
     unknown = [name for name in names if name not in shapes]
     if unknown:
-        raise ValueError(f"no shape under {SHAPE_VERSION} for {', '.join(unknown)}")
+        raise ValueError(f"no shape under {shape_version} for {', '.join(unknown)}")
     return [(name, shapes[name]) for name in names]
 
 

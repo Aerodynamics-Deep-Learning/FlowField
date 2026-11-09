@@ -34,6 +34,7 @@ from src.datagen.meshing.common.schemas import MeshBackend, MeshTopology
 from src.datagen.meshing.optimizer.common import constants as C
 from src.datagen.meshing.optimizer.common.settings import (
     OVERRIDABLE, STUDY_KEYS, Optim_build_settings, Optim_config_schema_fp, Optim_mesher_sha256, Optim_pinned,
+    Optim_shape_version,
 )
 from src.datagen.meshing.optimizer.common.space import KNOBS
 from src.datagen.meshing.optimizer.evaluate import sampling
@@ -107,6 +108,12 @@ def _read(row, key):
 @pytest.mark.parametrize("column", OVERRIDABLE)
 def test_each_overridable_column_moves_the_id(exe, column):
     default = Optim_build_settings()
+    if column in ("cst_order", "cst_nose"):  # both name the shapes studied, folding into shape_version
+        new = {"cst_order": D.CST_ORDER + 1, "cst_nose": "separate"}[column]
+        row = Optim_build_settings(**{column: new})
+        assert row["shape_version"] == Optim_shape_version({column: new}) != default["shape_version"]
+        assert row["settings_id"] != default["settings_id"]
+        return
     old = _read(default, column)
     if column == "smoothing_defaults":  # those given, over the rest
         new, expected = {"alfa": 0.7}, {**old, "alfa": 0.7}
@@ -126,6 +133,8 @@ def test_a_setting_that_breaks_the_search_is_refused(exe):
         Optim_build_settings(smoothing_defaults={"alfa": 3.0})
     with pytest.raises(ValueError, match="smoothing_defaults has no radi"):
         Optim_build_settings(smoothing_defaults={"radi": 3.0})
+    with pytest.raises(ValueError, match="cst_nose is one of separate, shared, lem, not 'pointy'"):
+        Optim_build_settings(cst_nose="pointy")
 
 
 def test_the_settings_a_run_sets_are_the_constants_overridable(exe):

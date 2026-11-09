@@ -171,23 +171,24 @@ def _head(rows: list[CalibrationRow], folder, sweep: _Sweep) -> list[str]:
     return out
 
 
-def _shown(sweep: _Sweep, default_nose: Nose) -> Nose:
-    return Nose(default_nose) if Nose(default_nose) in sweep.noses else sweep.noses[0]
+def _shown(sweep: _Sweep, nose: Nose) -> Nose:
+    return Nose(nose) if Nose(nose) in sweep.noses else sweep.noses[0]
 
 
-def _edge_cases(sweep: _Sweep, shown: Nose) -> list[str]:
+def _edge_cases(sweep: _Sweep, shown: Nose, order: int) -> list[str]:
     """The airfoils whose surfaces cross at the nose shown, and those whose fit strays at the ingest's order."""
     crossing = [f"{r.name} ({_orders([f.order for f in r.fits if f.nose == shown and f.crossed])})"
                 for r in sweep.unique if any(f.nose == shown and f.crossed for f in r.fits)]
     out = [f"Surfaces cross at nose {shown.value}: {len(crossing)}" + (f": {', '.join(crossing)}" if crossing else "")]
-    if CST_ORDER in sweep.orders:
-        strays = [r.name for r in sweep.unique for f in r.fits if (f.nose, f.order) == (shown, CST_ORDER) and f.strays]
-        out.append(f"Strays at order {CST_ORDER}, nose {shown.value} (the ingest's order): {len(strays)}"
+    if order in sweep.orders:
+        strays = [r.name for r in sweep.unique for f in r.fits if (f.nose, f.order) == (shown, order) and f.strays]
+        out.append(f"Strays at order {order}, nose {shown.value} (the ingest's order): {len(strays)}"
                    + (f": {', '.join(strays)}" if strays else ""))
     return out + [""]
 
 
-def Geom_calibration_digest(rows: list[CalibrationRow], folder, default_nose: Nose = CST_NOSE) -> str:
+def Geom_calibration_digest(rows: list[CalibrationRow], folder, nose: Nose = CST_NOSE, order: int = CST_ORDER,
+                            fit_tol: float = CST_FIT_TOL) -> str:
     """
     The calibration as a log shows it: the ingest's configuration and its neighbours (an order either side
     at its nose, its order at the other noses) at the fit tolerance, then the edge cases. Around the
@@ -196,32 +197,34 @@ def Geom_calibration_digest(rows: list[CalibrationRow], folder, default_nose: No
     Args:
         rows (list[CalibrationRow]): `Geom_calibrate`'s output
         folder (str | Path): The folder it ran on, for the header
-        default_nose (Nose): The ingest's nose
+        nose (Nose): The ingest's nose
+        order (int): The ingest's order
+        fit_tol (float): The ingest's fit tolerance
 
     Returns:
         str: The digest's lines
     """
     sweep = _sweep(rows)
     out = _head(rows, folder, sweep)
-    shown = _shown(sweep, default_nose)
-    centre = min(sweep.orders, key=lambda o: (abs(o - CST_ORDER), o))
+    shown = _shown(sweep, nose)
+    centre = min(sweep.orders, key=lambda o: (abs(o - order), o))
     picked = [(shown, centre + d) for d in (-1, 0, 1)] + [(n, centre) for n in sweep.noses if n is not shown]
-    out.append(f"Tolerance {CST_FIT_TOL:.0e}c, over the {len(sweep.unique)} unique geometries; max_dev [c]; "
+    out.append(f"Tolerance {fit_tol:.0e}c, over the {len(sweep.unique)} unique geometries; max_dev [c]; "
                f"formulas = the {len(sweep.families)} formula shapes' worst")
     out.append(f"{'order':>5}  {'nose':<8} {'kept':>5} {'over':>5} {'cross':>5} {'strays':>6} "
                f"{'median':>8} {'p90':>8} {'worst':>8} {'formulas':>9}")
-    for nose, order in (c for c in picked if c in sweep.configs):
-        c = _config(sweep.unique, nose, order)
-        kept = int((c.clean <= CST_FIT_TOL).sum())
-        worst = _family_worst(sweep.families, nose, order)
-        mark = "  <- the ingest's" if (nose, order) == (Nose(default_nose), CST_ORDER) else ""
-        out.append(f"{order:>5}  {nose.value:<8} {kept:>5} {len(c.clean) - kept:>5} {c.crossed:>5} {c.strays:>6} "
+    for n, o in (c for c in picked if c in sweep.configs):
+        c = _config(sweep.unique, n, o)
+        kept = int((c.clean <= fit_tol).sum())
+        worst = _family_worst(sweep.families, n, o)
+        mark = "  <- the ingest's" if (n, o) == (Nose(nose), order) else ""
+        out.append(f"{o:>5}  {n.value:<8} {kept:>5} {len(c.clean) - kept:>5} {c.crossed:>5} {c.strays:>6} "
                    f"{_spread(c.dev)} {'-' if worst is None else format(worst, '.1e'):>9}{mark}")
     out.append("")
-    return "\n".join(out + _edge_cases(sweep, shown)).rstrip("\n")
+    return "\n".join(out + _edge_cases(sweep, shown, order)).rstrip("\n")
 
 
-def Geom_format_calibration(rows: list[CalibrationRow], folder, default_nose: Nose = CST_NOSE) -> str:
+def Geom_format_calibration(rows: list[CalibrationRow], folder, nose: Nose = CST_NOSE, order: int = CST_ORDER) -> str:
     """
     The calibration report: rejections before fitting, a summary per configuration (over unique
     geometries), the formula families' pure representation error, the airfoils whose surfaces cross or whose
@@ -230,7 +233,8 @@ def Geom_format_calibration(rows: list[CalibrationRow], folder, default_nose: No
     Args:
         rows (list[CalibrationRow]): `Geom_calibrate`'s output
         folder (str | Path): The folder it ran on, for the header
-        default_nose (Nose): The nose the edge cases and the per-airfoil table show
+        nose (Nose): The ingest's nose, which the edge cases and the per-airfoil table show
+        order (int): The ingest's order, which the strays line shows
 
     Returns:
         str: The report text
@@ -243,22 +247,22 @@ def Geom_format_calibration(rows: list[CalibrationRow], folder, default_nose: No
                "(two radii), shared = one A_0, lem = one A_0 plus Kulfan's LE term.")
     out.append(f"{'order':>5} {'nose':>8} {'fitted':>6} " + " ".join(f"{'<=' + format(t, 'g'):>7}" for t in _TOLS)
                + f" {'median':>8} {'p90':>8} {'max':>8} {'crossed':>7} {'strays':>6}")
-    for nose, order in sweep.configs:
-        c = _config(sweep.unique, nose, order)
+    for n, o in sweep.configs:
+        c = _config(sweep.unique, n, o)
         passes = " ".join(f"{int((c.clean <= t).sum()):>7d}" for t in _TOLS)
-        out.append(f"{order:>5} {nose.value:>8} {len(c.dev):>6} {passes} {_spread(c.dev)} {c.crossed:>7} {c.strays:>6}")
+        out.append(f"{o:>5} {n.value:>8} {len(c.dev):>6} {passes} {_spread(c.dev)} {c.crossed:>7} {c.strays:>6}")
     out.append("")
 
     if sweep.families:
         out.append(f"Formula families only ({len(sweep.families)} shapes, pure representation error): "
                    "worst max_dev [c]")
         out.append(f"{'order':>5} " + " ".join(f"{n.value:>9}" for n in sweep.noses))
-        for order in sweep.orders:
-            out.append(f"{order:>5} " + " ".join(f"{_family_worst(sweep.families, n, order):9.1e}" for n in sweep.noses))
+        for o in sweep.orders:
+            out.append(f"{o:>5} " + " ".join(f"{_family_worst(sweep.families, n, o):9.1e}" for n in sweep.noses))
         out.append("")
 
-    shown = _shown(sweep, default_nose)
-    out += _edge_cases(sweep, shown)
+    shown = _shown(sweep, nose)
+    out += _edge_cases(sweep, shown, order)
     out.append(f"Per airfoil, max_dev [1e-4 c] by order, nose {shown.value} "
                "(x: surfaces cross, s: strays, -: too few points):")
     out.append(f"{'source':40s} {'pts':>5} " + " ".join(f"{o:>7}" for o in sweep.orders))
@@ -282,7 +286,8 @@ def _orders(orders: list[int]) -> str:
     return ("order " if len(orders) == 1 else "orders ") + ", ".join(runs)
 
 
-def Geom_run_calibration(folder, out, orders=range(4, 13), workers: Optional[int] = None) -> str:
+def Geom_run_calibration(folder, out, orders=range(4, 13), workers: Optional[int] = None, *, order: int = CST_ORDER,
+                         nose: Nose = CST_NOSE, fit_tol: float = CST_FIT_TOL) -> str:
     """
     The calibration of `folder` at `orders`, its whole report written to `out`.
 
@@ -291,6 +296,7 @@ def Geom_run_calibration(folder, out, orders=range(4, 13), workers: Optional[int
         out (str | Path): The report file; its folder is made if missing
         orders (Iterable[int]): CST orders to fit
         workers (int | None): Parallel processes, one per core by default
+        order, nose, fit_tol: The ingest's, which the report and digest centre on
 
     Returns:
         str: Its digest, as a log shows it (`Geom_calibration_digest`)
@@ -298,5 +304,5 @@ def Geom_run_calibration(folder, out, orders=range(4, 13), workers: Optional[int
     rows = Geom_calibrate(folder, orders, workers=workers)
     out = Path(out)
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(Geom_format_calibration(rows, folder), encoding="utf-8", newline="\n")
-    return Geom_calibration_digest(rows, folder)
+    out.write_text(Geom_format_calibration(rows, folder, nose, order), encoding="utf-8", newline="\n")
+    return Geom_calibration_digest(rows, folder, nose, order, fit_tol)

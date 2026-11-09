@@ -10,6 +10,7 @@ stage's `--set` for what it reads, and `folder` the run's folder
 Step 2: Ensure a mistake in the config refuses the run, and the committed example plans
     - test_a_config_mistake_refuses_the_run
     - test_a_settings_mistake_refuses_the_run
+    - test_a_stage_and_the_one_whose_output_it_reads_must_agree
     - test_the_example_config_plans
 
 The stages' runs are the engine's tests'; these stop at the plan.
@@ -90,10 +91,22 @@ def test_a_settings_mistake_refuses_the_run(tmp_path):
     with pytest.raises(PlanError) as refused:
         Script_load_config(config)
     assert [(stage, text.split(":")[0]) for stage, text in refused.value.problems] == [
-        ("settings", "no setting 'nope'"), ("settings", "cst_order cannot be set for a run yet"),
-        ("campaign", "does not read cal_set"), ("remesh", "settings are `name"),
-        ("remesh", "gate_skew_max is left to constants.py here but 0.22 in campaign; the re-mesh finds the campaign's "
-                   "meshes by their settings, so both must set it alike")]
+        ("settings", "no setting 'nope'"), ("campaign", "does not read cal_set"), ("remesh", "settings are `name"),
+        ("remesh", "gate_skew_max is left to constants.py here but 0.22 in campaign, whose run store it reads; both "
+                   "must set it alike")]
+
+
+def test_a_stage_and_the_one_whose_output_it_reads_must_agree(tmp_path):
+    ingest = ("geometry_ingest:\n  enabled: true\n  settings:\n    cst_order: 10\n    cst_fit_tol: 0.002\n"
+              "machine_check:\n  enabled: false\n")
+
+    with pytest.raises(PlanError) as refused:
+        Script_load_config(_config(tmp_path, ingest + "campaign:\n  enabled: true\n"))
+    assert refused.value.problems == [("campaign", "cst_order is left to constants.py here but 10 in geometry_ingest, "
+                                                   "whose geometry manifest it reads; both must set it alike")]
+    for agrees in ("campaign:\n  enabled: true\n  settings:\n    cst_order: 10\n",  # cst_fit_tol is the ingest's own
+                   "campaign:\n  enabled: true\n  geometry_db: shared\n"):          # it reads another manifest
+        Script_load_config(_config(tmp_path, ingest + agrees))
 
 
 def test_folder_names_the_run_folder(tmp_path, data_root, capsys):

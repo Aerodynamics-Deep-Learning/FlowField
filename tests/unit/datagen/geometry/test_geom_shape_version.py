@@ -4,19 +4,20 @@ Tests that `SHAPE_VERSION` names the shapes stored under it: three fixed airfoil
 
 Step 1: Ensure a change to the stored shapes comes with a new shape version
     - test_shapes_match_their_version
+    - test_the_version_names_the_order_and_any_nose_but_lem
 
 A failure means the normalize -> close -> fit -> render pipeline now makes different shapes. If that
-was meant, bump the revision in `SHAPE_VERSION` (common/constants.py) and pin the values the failure
-prints under the new version; otherwise undo the change.
+was meant, bump `SHAPE_REVISION` (common/constants.py) and pin the values the failure prints under the
+new version; otherwise undo the change.
 """
 
 import numpy as np
 
 from src.datagen.geometry.build.add import Geom_add_airfoil
 from src.datagen.geometry.build.families import _family_contour
-from src.datagen.geometry.common.constants import SHAPE_VERSION
+from src.datagen.geometry.common.constants import SHAPE_REVISION, SHAPE_VERSION, Geom_shape_version
 from src.datagen.geometry.common.io import Geom_write_dat
-from src.datagen.geometry.common.schemas import Family
+from src.datagen.geometry.common.schemas import Family, Nose
 
 # Per version, per airfoil: (upper, lower, LE weight, sum of |rendered coordinates|)
 _PINNED = {
@@ -70,6 +71,12 @@ def test_shapes_match_their_version(tmp_path):
         got = current[name]
         same = (np.allclose(got[0], upper, rtol=0, atol=1e-9) and np.allclose(got[1], lower, rtol=0, atol=1e-9)
                 and abs(got[2] - le_weight) <= 1e-9 and abs(got[3] - rendered) <= 1e-9 * rendered)
-        assert same, (f"{name} now makes a different shape under {SHAPE_VERSION}: bump the revision in "
-                      f"SHAPE_VERSION (common/constants.py), or undo the change. {pins}")
+        assert same, (f"{name} now makes a different shape under {SHAPE_VERSION}: bump SHAPE_REVISION "
+                      f"(common/constants.py), or undo the change. {pins}")
+
+
+def test_the_version_names_the_order_and_any_nose_but_lem():
+    assert Geom_shape_version(8, Nose.LEM) == f"cst8-{SHAPE_REVISION}"  # the shared manifest's name kept
+    assert Geom_shape_version(10, "separate") == f"cst10separate-{SHAPE_REVISION}"
+    assert Geom_shape_version(8, Nose.SHARED) == f"cst8shared-{SHAPE_REVISION}"
 # endregion

@@ -118,7 +118,8 @@ def stubs(tmp_path, monkeypatch):
     floors = []
     monkeypatch.setattr(cal, "Optim_n_star_search", lambda contour, s: floors.append(s) or FLOOR)
     monkeypatch.setattr(cal, "Optim_load_shapes",
-                        lambda names=None, db=None: [(n, stored_shape(n)) for n in names or ("naca0012",)])
+                        lambda names=None, db=None, shape_version=None: [(n, stored_shape(n))
+                                                                         for n in names or ("naca0012",)])
     return floors
 
 
@@ -363,7 +364,7 @@ def test_a_calibration_runs_every_rung_and_reports_it(stubs, tmp_path, monkeypat
 
 
 def test_rung_2_takes_the_airfoils_rung_1_found_over_a_shape_gate(stubs, tmp_path, monkeypatch, caplog):
-    monkeypatch.setattr(cal, "Optim_load_shapes", lambda names=None, db=None: [
+    monkeypatch.setattr(cal, "Optim_load_shapes", lambda names=None, db=None, shape_version=None: [
         (n, stored_shape(n)) for n in names or ("naca0012", "naca4412")])
     # skew 0.3 at the smoothing defaults, so at jmax*; a run's settings and method reach every rung
     _world(monkeypatch, lambda k: {**_sr_from(140)(k), **_skew_off_defaults(k)})

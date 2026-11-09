@@ -21,11 +21,11 @@ from src.datagen.geometry.common.paths import Geom_paths
 from src.datagen.meshing.optimizer.batch.remesh import RemeshOutcome
 
 
-def _known(names, db=None):
-    unknown = [n for n in names if n not in ("naca0012", "naca4412")]
+def _known(names, db=None, shape_version=None):
+    unknown = [n for n in names or () if n not in ("naca0012", "naca4412")]
     if unknown:
         raise ValueError(f"no shape under the current shape version for {', '.join(unknown)}")
-    return [(n, None) for n in names]
+    return [(n, None) for n in names or ("naca0012", "naca4412")]
 
 
 class _Store:

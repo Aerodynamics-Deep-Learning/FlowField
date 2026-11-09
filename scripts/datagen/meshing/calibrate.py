@@ -22,17 +22,18 @@ is refused before anything runs.
 import argparse
 import datetime
 import sys
+from functools import partial
 from pathlib import Path
 
 from scripts.datagen.engine import (
-    GEOMETRY_DB, Output, OutputKind, Script_check_names, Script_main, Script_names, Script_settings,
+    GEOMETRY_DB, Output, OutputKind, Script_check_names, Script_given, Script_main, Script_names, Script_settings,
     Script_settings_option, Stage, UsageError,
 )
 from src.datagen.constants import CAL_RUNG2_CAP, CAL_RUNG3_CAP, WORKERS
 from src.datagen.meshing.optimizer.batch.calibrate import CAL_KEYS, Method, Optim_run_calibration
 from src.datagen.meshing.optimizer.batch.runner import EXECUTION_KEYS, Optim_execution, Optim_load_shapes
 from src.datagen.meshing.optimizer.common.paths import CALIBRATION_DIR
-from src.datagen.meshing.optimizer.common.settings import STUDY_KEYS
+from src.datagen.meshing.optimizer.common.settings import STUDY_KEYS, Optim_shape_version
 
 # The study's settings but the budgets, which the calibration measures and runs to its own caps
 READS = (STUDY_KEYS - {"rung2_budget", "rung3_budget", "rung3_patience", "rung3_min_gain"}) | CAL_KEYS | EXECUTION_KEYS
@@ -73,7 +74,7 @@ def run(args: argparse.Namespace) -> int:
     settings = Script_settings(args, STAGE)
     if args.airfoils:
         try:
-            Optim_load_shapes(args.airfoils, args.geometry_db)
+            Optim_load_shapes(args.airfoils, args.geometry_db, Optim_shape_version(settings))
         except ValueError as e:
             raise UsageError(str(e)) from None
     execution = Optim_execution(settings)
@@ -91,7 +92,11 @@ def run(args: argparse.Namespace) -> int:
 
 
 def _check(args: argparse.Namespace, made_here: set) -> list[str]:
-    problems = Script_check_names(Optim_load_shapes, args, made_here)
+    try:  # the airfoils, under the shape version the run's CST order and nose name
+        load = partial(Optim_load_shapes, shape_version=Optim_shape_version(Script_given(STAGE, args)))
+        problems = Script_check_names(load, args, made_here)
+    except ValueError as e:
+        problems = [str(e)]
     today = Path(args.out) / f"{datetime.date.today().isoformat()}.sqlite"
     if today.exists():
         problems.append(f"{today} already holds today's calibration; give another folder")
