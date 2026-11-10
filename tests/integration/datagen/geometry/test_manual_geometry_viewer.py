@@ -3,17 +3,21 @@ Manual check of the geometry manifest: one matplotlib window showing an airfoil'
 (undigested) over its stored CST shape (digested), on one x/c, y/c plot, so a person can eyeball what
 the ingest did to it. Same convention as the meshing viewer: opt in with `pytest -m interactive`.
 
-A name is looked up among the accepted airfoils first, then the rejected ones, so `_SELECTION` can
-list either; a rejection stopped before its fit has no digested shape.
+The airfoils come from `test_manual_geometry_viewer.yaml` beside this file (gitignored, this machine's
+own), else the committed `test_manual_geometry_viewer.example.yaml`. A name is looked up among the
+accepted airfoils first, then the rejected ones, so the selection can list either; a rejection stopped
+before its fit has no digested shape.
 
 Keys:
-    1-9, 0   airfoil 1-10 of `_SELECTION`
+    1-9, 0   airfoil 1-10 of the selection
     n        source points as read / moved into the digested frame (normalized, not closed)
     z        whole airfoil / LE close-up / TE close-up
 The toolbar zoom and pan work as usual.
 
 Reads the repo's own manifest under `data/`; `test_viewer_selection_is_in_the_manifest` keeps the
-selection in step with it in every batch run.
+committed selection in step with it in every batch run.
+
+    python -m pytest tests/integration/datagen/geometry/test_manual_geometry_viewer.py -m interactive -n 0
 """
 
 from typing import NamedTuple, Optional
@@ -28,19 +32,11 @@ from src.datagen.geometry.common.paths import Geom_paths
 from src.datagen.geometry.common.constants import SHAPE_VERSION
 from src.datagen.geometry.common.schemas import RejectionRecord
 from src.datagen.geometry.manifest.store import GeometryStore
+from tests.viewer_config import load_selection
 
-_SELECTION = [
-    "naca4412",    # 4-digit family, built from its formula; its nose point is not the geometric LE
-    "naca001066",  # modified 4-digit, formula against a sparse 33-point file
-    "s4096",       # the largest gap pried closed (6.2%c), slanted TE base
-    "sc21010",     # source tilted 2.6 deg
-    "n24",         # source LE ~0.05c off (0, 0)
-    "fx69274",     # slanted TE base, stretched to x = 1
-    "goe09k",      # the sparsest file, 29 points
-    "s1221",       # high-lift section
-    "e387",        # a plain closed tabulated airfoil, the control case
-    "goe217",      # the worst accepted fit, 9.7e-4c
-]
+
+def _selection(example: bool = False) -> list[str]:
+    return [str(name) for name in load_selection(__file__, example=example)["airfoils"]]
 
 # Per view: the x window and the y it is centred on; the y window follows from the plot's shape
 _VIEWS = [("whole", (-0.05, 1.05), 0.0),
@@ -75,7 +71,7 @@ def _load(names) -> list[_Airfoil]:
     with GeometryStore.open(paths.db, read_only=True) as store:
         found = {n: _lookup(store, n) for n in names}
         missing = [n for n, f in found.items() if f is None or f[1] is None]
-        assert not missing, f"not in the manifest: {missing}; edit _SELECTION"
+        assert not missing, f"not in the manifest: {missing}; edit the viewer's .yaml"
         for name in names:
             geo, shape = found[name]
             raw = Geom_read_dat(paths.from_rel(geo.raw_path)).coords
@@ -93,9 +89,10 @@ def _load(names) -> list[_Airfoil]:
 
 
 def test_viewer_selection_is_in_the_manifest():
-    airfoils = _load(_SELECTION)
+    names = _selection(example=True)
+    airfoils = _load(names)
 
-    assert len(airfoils) == 10
+    assert len(airfoils) == len(names) <= 10
     assert all(a.digested[0].tolist() == [1.0, 0.0] for a in airfoils if a.digested is not None)
 
 
@@ -103,7 +100,9 @@ def test_viewer_selection_is_in_the_manifest():
 def test_geometry_viewer():
     import matplotlib.pyplot as plt
 
-    airfoils = _load(_SELECTION)
+    names = _selection()
+    assert len(names) <= 10, f"{len(names)} airfoils; keys 1-9, 0 reach ten"
+    airfoils = _load(names)
     state = {"index": 0, "normalized": False, "view": 0}
     fig, ax = plt.subplots(figsize=(13, 6.5))
     fig.subplots_adjust(left=0.06, right=0.98, top=0.88, bottom=0.12)
@@ -134,6 +133,8 @@ def test_geometry_viewer():
 
     def on_key(event):
         if event.key is not None and len(event.key) == 1 and event.key.isdigit():
+            if (int(event.key) - 1) % 10 >= len(airfoils):
+                return
             state["index"] = (int(event.key) - 1) % 10
         elif event.key == "n":
             state["normalized"] = not state["normalized"]

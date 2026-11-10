@@ -38,6 +38,10 @@ data/scratchpad/
 data/experiments/
 data/.machine_check.json
 
+# Interactive viewers: this machine's selection; each test's committed .example.yaml is the default
+tests/**/test_manual_*.yaml
+!tests/**/test_manual_*.example.yaml
+
 # External tools are user-installed, never committed: local paths live in tools.toml
 # (see tools.example.toml)
 tools.toml

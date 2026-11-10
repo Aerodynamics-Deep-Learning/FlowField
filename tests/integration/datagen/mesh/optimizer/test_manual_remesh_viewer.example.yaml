@@ -1,0 +1,29 @@
+# What the re-mesh viewer (test_manual_remesh_viewer.py) shows. Copy this file to
+# test_manual_remesh_viewer.yaml beside it (gitignored) and edit that one; it wins when it exists. This committed
+# copy names no store, since run stores live only on the machine that ran them.
+#
+# folders: up to five, keys 1-5; the left and right arrows move within one. Each folder is a store and any of
+# best, all_runs and manual, shown in the order written:
+#   store     a run store: its .sqlite, or the folder holding exactly one; relative to data/, or absolute
+#   best      airfoil names, each one's best run (one per settings row: a calibration store has a row per
+#             rung); left empty, every best run in the store
+#   all_runs  airfoil names, every run of each that produced a mesh, passed or not, in the order they ran
+#   manual    run ids, whole or their first 8 characters; quote them, since YAML reads some ('01234567') as
+#             numbers
+#   geometry  optional: the geometry manifest the store's shapes came from (its .sqlite, or a data root
+#             folder), relative to data/; by default the store's run folder's own geometry_ingest manifest,
+#             then the shared one, whichever holds the shape
+#
+# With no folders, the five newest run stores under data/, every best run in each.
+#
+# For example:
+# folders:
+#   - store: scratchpad/2026-11-10_092440_e2e4_for_cst/campaign
+#     best:                                   # every best run
+#   - store: scratchpad/2026-11-10_092440_e2e4_for_cst/campaign
+#     all_runs: [m27]                         # its ladder: golden, then the smoothing rung
+#   - store: scratchpad/2026-11-10_092440_e2e4_for_cst/mesh_calibrate
+#     best: [e376, fx69274]                   # each one's best per calibration rung
+#     manual: ['011b91ed']
+
+folders: []

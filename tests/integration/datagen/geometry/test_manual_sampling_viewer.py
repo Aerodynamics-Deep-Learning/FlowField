@@ -4,18 +4,22 @@ read from its .dat, its processed shape (the stored CST: normalized, closed, fit
 TE its mesher needs (handled), and the points sampled from it. Same convention as the geometry viewer:
 opt in with `pytest -m interactive`.
 
-Each `_CASES` entry is a stored airfoil's name with its TE handling ("te", and "gap" for a blunt or
-round one) and any sampling knobs (`SamplingFields`' names); what is left out takes the studies'
-defaults (the knobs' defaults, the gap TE_GAP).
+The cases come from `test_manual_sampling_viewer.yaml` beside this file (gitignored, this machine's
+own), else the committed `test_manual_sampling_viewer.example.yaml`. Each is a stored airfoil's name
+with its TE handling ("te", and "gap" for a blunt or round one) and any sampling knobs
+(`SamplingFields`' names); what is left out takes the studies' defaults (the knobs' defaults, the gap
+TE_GAP).
 
 Keys:
-    1-9   case 1-9 of `_CASES`
+    1-9   case 1-9 of the selection
     n     .dat points as read / moved into the processed frame (normalized, not closed)
     z     whole airfoil / LE close-up / TE close-up / TE cap close-up
 The toolbar zoom and pan work as usual.
 
-Reads the repo's own manifest under `data/`; `test_viewer_cases_sample` keeps `_CASES` in step with it,
-and with the sampler, in every batch run.
+Reads the repo's own manifest under `data/`; `test_viewer_cases_sample` keeps the committed cases in
+step with it, and with the sampler, in every batch run.
+
+    python -m pytest tests/integration/datagen/geometry/test_manual_sampling_viewer.py -m interactive -n 0
 """
 
 from typing import NamedTuple
@@ -34,14 +38,11 @@ from src.datagen.geometry.sample.contour import Geom_build_contour
 from src.datagen.geometry.sample.fields import SamplingFields
 from src.datagen.geometry.sample.sample import Geom_sample
 from src.datagen.meshing.optimizer.evaluate.sampling import TE_GAP
+from tests.viewer_config import load_selection
 
-_CASES = {
-    "naca4412": {"te": "round"},                                          # every default: ~600 points
-    "s1223":    {"te": "round", "dx_mid": 0.004, "te_ratio": 0.1},        # the steepest TE stored; te clamped
-    "mid012r":  {"te": "round", "le_ratio": 0.02, "cluster_width": 0.08},  # the sharpest nose stored
-    "e387":     {"te": "sharp", "cluster_width": 0.1},                    # the c2d C-grid's TE: no cap
-    "s4096":    {"te": "blunt", "gap": 0.006},                            # the gmsh C-mesh's TE: left open
-}
+
+def _cases(example: bool = False) -> dict:
+    return {str(name): dict(knobs or {}) for name, knobs in load_selection(__file__, example=example)["cases"].items()}
 
 # Per view: the x window and the y it is centred on, the y window following from the plot's shape; None
 # fits the window to the case's TE pins (tip and welds, or the open ends)
@@ -71,9 +72,9 @@ def _load(cases: dict) -> list[_Case]:
         for name, settings in cases.items():
             geo = store.get_geometry(name)
             shape = store.get_shape(geo.geometry_id, SHAPE_VERSION) if geo is not None else None
-            assert shape is not None, f"{name} has no stored shape under {SHAPE_VERSION}; edit _CASES"
+            assert shape is not None, f"{name} has no stored shape under {SHAPE_VERSION}; edit the viewer's .yaml"
             knobs = dict(settings)
-            te, gap = TETreatment(knobs.pop("te", "round")), knobs.pop("gap", TE_GAP)
+            te, gap = TETreatment(knobs.pop("te", "round")), float(knobs.pop("gap", TE_GAP))  # YAML reads 1e-3 as text
             fields = SamplingFields(**knobs)
             contour = Geom_build_contour(shape, te, gap)
             smp = Geom_sample(contour, fields)
@@ -99,17 +100,20 @@ def _load(cases: dict) -> list[_Case]:
 
 
 def test_viewer_cases_sample():
-    cases = _load(_CASES)
+    selection = _cases(example=True)
+    cases = _load(selection)
 
-    assert len(cases) == len(_CASES) <= 9
-    assert all(len(c.sampled) for c in cases), "a case's config was rejected; edit _CASES"
+    assert len(cases) == len(selection) <= 9
+    assert all(len(c.sampled) for c in cases), "a case's config was rejected; edit the .example.yaml"
 
 
 @pytest.mark.interactive
 def test_sampling_viewer():
     import matplotlib.pyplot as plt
 
-    cases = _load(_CASES)
+    selection = _cases()
+    assert len(selection) <= 9, f"{len(selection)} cases; keys 1-9 reach nine"
+    cases = _load(selection)
     state = {"index": 0, "normalized": False, "view": 0}
     fig, ax = plt.subplots(figsize=(13, 6.5))
     fig.subplots_adjust(left=0.06, right=0.98, top=0.88, bottom=0.12)
