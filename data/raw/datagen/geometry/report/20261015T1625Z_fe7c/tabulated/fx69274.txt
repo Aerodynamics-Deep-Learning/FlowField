@@ -1,0 +1,28 @@
+fx69274: added
+source   tabulated/fx69274.dat
+ingest   20261015T1625Z_fe7c, shape version cst8-r1, code 254a0bd
+
+identity
+  geometry_id  65ceef638b5defcc580a61f1385366ae90dbf9f78fa675ecf2d4de63d6e4c5bd
+  raw_hash     65ceef638b5defcc580a61f1385366ae90dbf9f78fa675ecf2d4de63d6e4c5bd, 94 points
+  family       none (tabulated)
+
+normalization (of the file)
+  LE           point 47, interpolated between two input points, at (-0.000001, 0.000293)
+  rotation     +0.0076 deg, scale 1.001608, x stretch upper 0.998394 lower 1.001611
+
+TE
+  closure      pried, source gap 1.458e-02 c
+
+CST (order 8, n1 0.5, n2 1)
+  upper        +0.298881 +0.372884 +0.467340 +0.433600 +0.447574 +0.399503 +0.390218 +0.328339 +0.224937
+  lower        -0.298881 -0.317807 -0.247464 -0.301854 -0.239622 -0.260394 -0.237526 -0.191077 -0.084484
+  LE term      +0.195944
+  fit          max 2.02e-04 c at x=0.9005 (limit 0.001), rms 4.24e-05 c, over 95 points
+  source       the file's points before closing are within 7.26e-03 c
+  TE wedge     17.51 deg
+
+files
+  raw          raw/datagen/geometry/raw/fx69274.dat
+  normalised   raw/datagen/geometry/normalised/cst8-r1/fx69274.dat
+  norm_hash    e228d44eafbc2dca121cfb7acb780cc311b2b8c6098fac1a0c40d333fc575756

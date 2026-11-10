@@ -1,0 +1,28 @@
+mh94: added
+source   tabulated/mh94.dat
+ingest   20261015T1625Z_fe7c, shape version cst8-r1, code 254a0bd
+
+identity
+  geometry_id  8e997781a914e1e462b02af445dd227f238f784468fcc4139c915322a1b7c7fa
+  raw_hash     8e997781a914e1e462b02af445dd227f238f784468fcc4139c915322a1b7c7fa, 68 points
+  family       none (tabulated)
+
+normalization (of the file)
+  LE           point 32, interpolated between two input points, at (-0.000017, -0.000015)
+  rotation     -0.0008 deg, scale 0.999983, x stretch upper 1.000000 lower 1.000000
+
+TE
+  closure      none, source gap 0.000e+00 c
+
+CST (order 8, n1 0.5, n2 1)
+  upper        +0.215675 -0.052129 +0.474286 +0.011242 +0.375030 +0.218873 +0.178400 +0.348260 +0.237564
+  lower        -0.215675 -0.485109 +0.128773 -0.573152 +0.220901 -0.496179 +0.072707 -0.216688 +0.050136
+  LE term      +0.735004
+  fit          max 3.30e-04 c at x=0.0470 (limit 0.001), rms 1.34e-04 c, over 69 points
+  source       the file's points before closing are within 3.30e-04 c
+  TE wedge     10.49 deg
+
+files
+  raw          raw/datagen/geometry/raw/mh94.dat
+  normalised   raw/datagen/geometry/normalised/cst8-r1/mh94.dat
+  norm_hash    ea94338c79e8da9cb3806e6556de8bd124150101b314e600b2d1463af27429f0

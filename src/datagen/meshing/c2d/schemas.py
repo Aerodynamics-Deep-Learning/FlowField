@@ -2,6 +2,7 @@ from pydantic import BaseModel, Field, model_validator
 from typing import Optional, Literal
 from enum import IntEnum, Enum
 
+from src.datagen.geometry.sample.fields import SamplingFields
 from src.datagen.schemas import Airfoil, Freestream
 
 class C2D_ExitFlag(IntEnum):
@@ -25,9 +26,11 @@ class C2D_Topology(str, Enum):
     OGRD = "OGRD"
     CGRD = "CGRD"
 
-class C2D_MeshingConfig(BaseModel):
+class C2D_MeshingConfig(SamplingFields):
     """
-    Contract for the configs of C2D.
+    Contract for the configs of C2D. Surface points come from the input as given (c2d runs in BUFF
+    mode); the sampling knobs inherited from `SamplingFields` set them, read by the sampler before
+    meshing, never by c2d.
     """
     model_config = {"extra": "forbid"}
 
@@ -37,32 +40,28 @@ class C2D_MeshingConfig(BaseModel):
     )
     slvr: Literal["HYPR", "ELLP"] = Field("HYPR", description="The solver option")
 
-    # Surface/wake resolution (fixed)
-    nsrf: int = Field(300, gt=10, le=1000, description="Number of points around the airfoil surface")
+    # Normal/wake resolution (fixed)
     jmax: int = Field(200, gt=10, description="Number of points normal to the surface (wall to farfield)")
-    nwke: int = Field(100, gt=1, description="Number of points along the wake")
-    lesp: float = Field(3.0e-4, gt=0.0, description="Leading-edge point spacing (fraction of chord)")
-    tesp: float = Field(3.0e-4, gt=0.0, description="Trailing-edge point spacing (fraction of chord)")
+    nwke: int = Field(100, gt=1, description="Number of points along the wake (C-grid only)")
 
-    # Farfield/domain sizing (fixed)
+    # Farfield/domain sizing (fixed); fdst, fwkl and fwki reach the elliptic solver only
     radi: float = Field(20.0, gt=0.0, description="Farfield radius, in chords")
-    fdst: float = Field(1.0, gt=0.0, description="Distance to the farfield boundary")
-    fwkl: float = Field(1.0, gt=0.0, description="Wake length, in chords")
-    fwki: float = Field(2.0, gt=0.0, description="Wake initial spacing factor")
+    fdst: float = Field(1.0, gt=0.0, description="O-grid farfield point spacing: 1 uniform, > 1 clustered toward the TE")
+    fwkl: float = Field(1.0, gt=0.0, description="C-grid farfield wake length, as a ratio of the wake's own")
+    fwki: float = Field(2.0, gt=0.0, description="C-grid farfield initial wake spacing, as a ratio of the wake's own")
 
-    # Boundary-layer physics (fixed)
+    # Boundary-layer physics (fixed); the runner writes the freestream's Re as c2d's `recd`
     ypls: float = Field(0.7, gt=0.0, description="Target y+ for the first cell")
-    recd: float = Field(5.0e6, gt=0.0, description="Reynolds number used to size the first cell")
+    cfrc: float = Field(0.5, ge=0.0, description="Reference length for the first cell's y+, as a fraction of the chord")
 
-    # Solver iteration controls (fixed)
-    stp1: int = Field(1000, gt=0, description="Coarse solver iterations")
-    stp2: int = Field(20, gt=0, description="Fine solver iterations")
-    nrmt: int = Field(1, ge=0, description="Normal-condition relaxation, top boundary")
-    nrmb: int = Field(1, ge=0, description="Normal-condition relaxation, bottom boundary")
-    cfrc: float = Field(0.5, ge=0.0, description="Cell-to-cell stretching factor near corners")
+    # Elliptic solver controls (fixed; HYPR ignores them)
+    stp1: int = Field(1000, gt=0, description="Initial grid smoothing iterations")
+    stp2: int = Field(20, gt=0, description="Final grid smoothing iterations")
+    nrmt: int = Field(1, ge=0, description="Top-surface point, counted from the TE, where the surface-normal condition starts")
+    nrmb: int = Field(1, ge=0, description="Bottom-surface point, counted from the TE, where the surface-normal condition starts")
+
+    # Recommended smoothing knobs (hyperbolic solver)
     epse: float = Field(0.0, ge=0.0, description="Explicit smoothing coefficient")
-
-    # Recommended smoothing knobs
     asmt: int = Field(40, ge=5, le=80, description="Area-smoothing sweeps")
     epsi: float = Field(20.0, ge=2.0, le=40.0, description="Implicit smoothing")
     funi: float = Field(0.02, ge=0.005, le=0.3, description="Farfield uniformity")
@@ -84,11 +83,13 @@ class C2D_In(BaseModel):
     topology: C2D_Topology
     meshing_config: C2D_MeshingConfig
     working_dir: str = Field(..., description="Directory where the generated mesh will be saved")
+    write_vtk: bool = Field(True, description="Also convert the .su2 to the diagnostic .vtk")
 
     @model_validator(mode="after")
     def _sync_topo_with_topology(self) -> "C2D_In":
         if self.meshing_config.topo is None:
-            self.meshing_config.topo = self.topology.value
+            # A copy: pydantic keeps the caller's instance, which may be reused for the other topology
+            self.meshing_config = self.meshing_config.model_copy(update={"topo": self.topology.value})
         elif self.meshing_config.topo != self.topology:
             raise ValueError(
                 f"topology={self.topology!r} does not match meshing_config.topo="

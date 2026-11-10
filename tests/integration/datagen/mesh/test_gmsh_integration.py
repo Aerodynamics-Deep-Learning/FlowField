@@ -1,13 +1,19 @@
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
+import numpy as np
 import pytest
 
-pytest.importorskip("gmsh", reason="gmsh Python SDK not installed")
-
-from src.datagen.meshing.gmsh.run import GMSH_MeshGenerator
+from src.datagen.utils.tools import find_tool
 from src.datagen.meshing.gmsh.schemas import GMSH_ExitFlag
-from src.datagen.meshing.common.quality import Common_evaluate_mesh_quality
-from src.datagen.meshing.common.schemas import MeshExitFlag
+from src.datagen.meshing.gmsh.utils import GMSH_get_mesh_height
+from src.datagen.meshing.common.constants import MARKER_AIRFOIL
+from src.datagen.meshing.common.entry import Common_GenerateMesh
+from src.datagen.meshing.common.quality import Common_evaluate_mesh_quality, _cell_metrics
+from src.datagen.meshing.common.schemas import MeshIn, MeshBackend, MeshTopology, MeshExitFlag
+from src.datagen.meshing.common.su2io import Common_read_su2
+
+pytestmark = pytest.mark.skipif(find_tool("gmsh") is None, reason="gmsh executable not found (set it in tools.toml)")
 
 
 def assert_no_inverted_cells(mesh_path):
@@ -15,10 +21,10 @@ def assert_no_inverted_cells(mesh_path):
     Replaces the old `out.min_mesh_quality > 0.0` check, which read gmsh's native minSICN off
     `GMSH_Out`. That field is gone: quality is scored centrally from the written `.su2`, so the
     equivalent here is the shared verdict reporting no inverted or zero-area cells. LOW_QUALITY is
-    deliberately tolerated; minSICN > 0 never implied the thresholds were met, and measured
-    2026-09-16 the C-mesh scores SUCCESS (max_skew 0.446) while the O-mesh scores LOW_QUALITY
-    (max_skew 0.909), so requiring SUCCESS would fail the O-mesh on an unrelated axis. The graded
-    comparison is `assert_not_worse_than_baseline`.
+    deliberately tolerated; minSICN > 0 never implied the thresholds were met, and both gmsh meshes
+    score LOW_QUALITY on known defects unrelated to inversion: the C-mesh on size ratio where its wake
+    meets the TE (~240), the O-mesh on skew at its sharp TE (0.909). The graded comparison is
+    `assert_not_worse_than_baseline`.
     """
     flag, quality, _ = Common_evaluate_mesh_quality(mesh_path)
     assert flag not in (MeshExitFlag.CONVERSION_FAIL, MeshExitFlag.UNACCEPTABLE_QUALITY), (
@@ -26,9 +32,9 @@ def assert_no_inverted_cells(mesh_path):
     )
 
 
-def test_gmsh_integration(sterile_gmsh_input, mesh_quality_baseline):
+def test_gmsh_integration(gmsh_cmesh, mesh_quality_baseline):
 
-    out = GMSH_MeshGenerator(sterile_gmsh_input)
+    out = gmsh_cmesh.out
 
     error_msg = "No exception file generated."
 
@@ -54,12 +60,13 @@ def test_gmsh_integration(sterile_gmsh_input, mesh_quality_baseline):
     mesh_quality_baseline.assert_not_worse_than_baseline(mesh_file_vtk)
 
 
-def test_gmsh_omesh_integration(sterile_gmsh_omesh_input):
-    """O-mesh counterpart to `test_gmsh_integration`; no baseline comparison, since Emre's
-    reference mesh is a C-mesh, not an O-mesh; this just checks the O-mesh path (real, sharp-TE
-    airfoil geometry, no mocking) structurally succeeds end to end."""
+def test_gmsh_omesh_integration(gmsh_omesh):
+    """O-mesh counterpart to `test_gmsh_integration`; no baseline comparison, since the gmsh O-mesh
+    is known LOW_QUALITY at the TE and Emre's reference (an O-grid, 699 x 250 nodes) would only
+    restate that; this just checks the O-mesh path (real, sharp-TE airfoil geometry, no mocking)
+    structurally succeeds end to end. Meshed without its `.vtk`: the C-mesh's shows gmsh writing one."""
 
-    out = GMSH_MeshGenerator(sterile_gmsh_omesh_input)
+    out = gmsh_omesh.out
 
     error_msg = "No exception file generated."
 
@@ -71,12 +78,57 @@ def test_gmsh_omesh_integration(sterile_gmsh_omesh_input):
     assert out.mesh_path is not None
 
     mesh_file_su2 = Path(out.mesh_path)
-    mesh_file_vtk = Path(out.mesh_path_vtk)
 
     assert mesh_file_su2.exists(), f"SU2 mesh file was not written to disk at {mesh_file_su2}"
     assert mesh_file_su2.stat().st_size > 0, "SU2 mesh file is empty"
-    assert mesh_file_vtk.exists(), f"VTK mesh file was not written to disk at {mesh_file_vtk}"
-    assert mesh_file_vtk.stat().st_size > 0, "VTK mesh file is empty"
 
     assert_no_inverted_cells(mesh_file_su2)
+
+
+def test_gmsh_omesh_first_cell_follows_target_yplus(gmsh_omesh):
+    """The O-mesh's wall spacing comes from `GMSH_get_mesh_height`, the same as the C-mesh's. Height is
+    the wall-adjacent cell's area over its wall edge, i.e. wall-normal, so leaning cells read lower.
+    The 10% upper slack is transfinite interpolation stretching the seam's spacing where the circle
+    sits farther from the wall than the seam is long (measured ~4% over at mid-chord)."""
+    data, out = gmsh_omesh
+    assert out.flag == GMSH_ExitFlag.SUCCESS, f"GMSH O-mesh failed with flag {out.flag}"
+
+    h_first = GMSH_get_mesh_height(data.freestream.Re, data.airfoil.chord, data.meshing_config.target_yplus)
+    nodes, quads, _tris, markers = Common_read_su2(out.mesh_path)
+    wall_edges = {frozenset(e) for e in markers[MARKER_AIRFOIL]}
+    area = np.abs(_cell_metrics(nodes[quads])[0])
+
+    heights = []
+    for q, a in zip(quads, area):
+        for k in range(4):
+            i, j = q[k], q[(k + 1) % 4]
+            if frozenset((i, j)) in wall_edges:
+                heights.append(a / np.linalg.norm(nodes[j] - nodes[i]))
+    heights = np.asarray(heights)
+
+    assert len(heights) == len(wall_edges), "Not every wall edge has an adjacent quad"
+    assert heights.max() <= 1.1 * h_first, f"First cell {heights.max():.3e} exceeds h_first={h_first:.3e}"
+    assert np.median(heights) >= 0.5 * h_first, f"First cell median {np.median(heights):.3e} is far below h_first={h_first:.3e}"
+
+
+def test_gmsh_runs_concurrently_from_worker_threads(sterile_gmsh_input):
+    """gmsh runs as its own process per mesh, so worker threads can drive it concurrently, which the
+    in-process SDK could not (one global gmsh per process, main thread only). Two runs at once, in
+    separate run dirs, through `Common_GenerateMesh`, must each produce the same mesh."""
+    runs = []
+    for i in range(2):
+        working_dir = Path(sterile_gmsh_input.working_dir) / f"run{i}"
+        working_dir.mkdir()
+        runs.append(MeshIn(
+            airfoil=sterile_gmsh_input.airfoil, freestream=sterile_gmsh_input.freestream,
+            working_dir=str(working_dir), backend=MeshBackend.GMSH,
+            topology=MeshTopology.CGRD, mesh_config=sterile_gmsh_input.meshing_config, write_vtk=False,
+        ))
+    with ThreadPoolExecutor(2) as ex:
+        outs = list(ex.map(Common_GenerateMesh, runs))
+
+    for out in outs:
+        assert out.flag in (MeshExitFlag.SUCCESS, MeshExitFlag.LOW_QUALITY), out.flag
+    assert outs[0].num_nodes == outs[1].num_nodes
+    assert Path(outs[0].mesh_path).read_bytes() == Path(outs[1].mesh_path).read_bytes()
 

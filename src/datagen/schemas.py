@@ -1,15 +1,28 @@
-from pydantic import BaseModel, Field
-import torch
+from pydantic import BaseModel, Field, field_serializer, field_validator
+import numpy as np
 from typing import Optional
 
 class Airfoil(BaseModel):
     model_config = {"arbitrary_types_allowed": True}
 
-    airfoil_name: Optional[str] = Field(None, description="Name of the airfoil used")
-    coords_tensor: torch.Tensor = Field(..., description="The geometry tensor of the airfoil in Selig format")
+    airfoil_name: str = Field("not_given", min_length=1, description="Name of the airfoil used, both meshing backends build their output filenames from it")
+    coords: np.ndarray = Field(..., description="The airfoil's coordinates in Selig format, (N, 2), float64")
     coords_path: Optional[str] = Field(None, description="The path to the geometry file in Selig format, ending with .dat")
     chord: float = Field(1, gt=0.0, description="The chord length of the parameterized airfoil")
-    le_idx: int = Field(..., description="The index within the tensor that defines the leading edge")
+    le_idx: int = Field(..., description="The index within the coords that defines the leading edge")
+
+    @field_validator("coords", mode="before")
+    @classmethod
+    def _as_float64(cls, v):
+        # Lists and float32 arrays alike; shape and values are checked by the consumers (meshing's entry)
+        try:
+            return np.asarray(v, dtype=np.float64)
+        except (TypeError, ValueError) as e:  # pydantic reports a ValueError, a TypeError would escape it
+            raise ValueError(f"coords must be numeric: {e}") from e
+
+    @field_serializer("coords", when_used="json")
+    def _as_list(self, v):
+        return v.tolist()
 
 class Freestream(BaseModel):
 

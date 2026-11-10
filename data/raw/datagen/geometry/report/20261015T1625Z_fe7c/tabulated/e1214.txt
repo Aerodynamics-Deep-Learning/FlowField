@@ -1,0 +1,28 @@
+e1214: added
+source   tabulated/e1214.dat
+ingest   20261015T1625Z_fe7c, shape version cst8-r1, code 254a0bd
+
+identity
+  geometry_id  10b74aca94e1c472bc9df1f9864185f6b86dfa292121db88707be3dcdd39d73e
+  raw_hash     10b74aca94e1c472bc9df1f9864185f6b86dfa292121db88707be3dcdd39d73e, 61 points
+  family       none (tabulated)
+
+normalization (of the file)
+  LE           point 30, interpolated between two input points, at (-0.000018, 0.001040)
+  rotation     +0.0596 deg, scale 0.999982, x stretch upper 1.000000 lower 1.000000
+
+TE
+  closure      none, source gap 0.000e+00 c
+
+CST (order 8, n1 0.5, n2 1)
+  upper        +0.243052 +0.295221 +0.352190 +0.273566 +0.241343 +0.271282 +0.155555 +0.190164 +0.173444
+  lower        -0.243052 -0.367404 -0.145971 -0.266879 -0.018657 -0.278140 -0.016241 -0.157807 -0.092586
+  LE term      +0.355879
+  fit          max 2.87e-04 c at x=0.9846 (limit 0.001), rms 1.03e-04 c, over 62 points
+  source       the file's points before closing are within 2.87e-04 c
+  TE wedge     15.13 deg
+
+files
+  raw          raw/datagen/geometry/raw/e1214.dat
+  normalised   raw/datagen/geometry/normalised/cst8-r1/e1214.dat
+  norm_hash    101fdd63f01a5a233c393a8a020735a1fefcf48d9598efa3e37e97b14e8f3a3b

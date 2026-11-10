@@ -1,0 +1,28 @@
+k3: added
+source   tabulated/k3.dat
+ingest   20261015T1625Z_fe7c, shape version cst8-r1, code 254a0bd
+
+identity
+  geometry_id  de3bf028e4cd969cea50c439756c2f798f46d3783daf44e1f2d4b7538a8b9874
+  raw_hash     de3bf028e4cd969cea50c439756c2f798f46d3783daf44e1f2d4b7538a8b9874, 183 points
+  family       none (tabulated)
+
+normalization (of the file)
+  LE           point 113, interpolated between two input points, at (-0.000018, -0.000762)
+  rotation     +0.9328 deg, scale 0.999850, x stretch upper 1.000062 lower 0.999938
+
+TE
+  closure      pried, source gap 7.639e-03 c
+
+CST (order 8, n1 0.5, n2 1)
+  upper        +0.291171 +0.377917 +0.046455 +0.444544 -0.039679 +0.546292 +0.109671 +0.454906 +0.324775
+  lower        -0.291171 +0.109589 -0.682922 +0.411561 -0.909581 +0.340265 -0.239066 -0.055328 +0.240911
+  LE term      -0.570476
+  fit          max 8.13e-04 c at x=0.0363 (limit 0.001), rms 2.74e-04 c, over 184 points
+  source       the file's points before closing are within 4.13e-03 c
+  TE wedge     4.45 deg
+
+files
+  raw          raw/datagen/geometry/raw/k3.dat
+  normalised   raw/datagen/geometry/normalised/cst8-r1/k3.dat
+  norm_hash    e29d9bb7d337da18d76209c4186386ec07f7062fcb293cc2c752cf3115b376ff

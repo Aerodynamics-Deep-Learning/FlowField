@@ -7,23 +7,29 @@ import logging
 
 import numpy as np
 
-from .schemas import MeshQualitySummary, MeshExitFlag
-from .constants import SKEWNESS_LIMIT, ORTHO_MIN, JACOBIAN_LIMIT, ASPECT_RATIO_LIMIT
-# The four cell-shape gates `_analyze_su2` applies together, all as worst-cell values: equiangle
-# skewness, orthogonal quality, scaled Jacobian, and aspect ratio `constants.py` carries the logic 
-# for meshes each was calibrated against.
+from .schemas import MeshQualitySummary, MeshExitFlag, QualityLimits
+from .su2io import Common_read_su2
+from .constants import (
+    SKEWNESS_LIMIT, ORTHO_MIN, JACOBIAN_LIMIT, ASPECT_RATIO_LIMIT, SIZE_RATIO_LIMIT, MARKER_AIRFOIL,
+)
+# The five gates `_analyze_su2` applies together, all as worst values: equiangle skewness,
+# orthogonal quality, scaled Jacobian, aspect ratio, and the neighbour size ratio. `constants.py`
+# carries the meshes each was calibrated against.
 
 logger = logging.getLogger(__name__)
 
 
-def Common_evaluate_mesh_quality(mesh_path: str | None) -> tuple[MeshExitFlag, MeshQualitySummary | None, int | None]:
+def Common_evaluate_mesh_quality(mesh_path: str | None, count_limits: QualityLimits | None = None
+                                 ) -> tuple[MeshExitFlag, MeshQualitySummary | None, int | None]:
     """
     The single `.su2` based quality verdict both backends converge on. This reads the `.su2` file directly
-    and owns UNACCEPTABLE_QUALITY/LOW_QUALITY/SUCCESS.
+    and owns UNACCEPTABLE_QUALITY/LOW_QUALITY/SUCCESS, plus CONVERSION_FAIL for a `.su2` SU2 cannot use.
 
     Args:
         mesh_path (str | none): Mesh path either string or none
-    
+        count_limits (QualityLimits | None): Limits the summary's distributions count bad cells
+            against; None counts against constants.py. Never changes the verdict
+
     Returns:
         MeshExitFlag, MeshQualitySummary | None, int | None: Mesh success flag, quality summary dict, num of nodes
     """
@@ -32,7 +38,7 @@ def Common_evaluate_mesh_quality(mesh_path: str | None) -> tuple[MeshExitFlag, M
         return MeshExitFlag.CONVERSION_FAIL, None, None
 
     try:
-        a = _analyze_su2(mesh_path)
+        a = _analyze_su2(mesh_path, count_limits)
         if a["ncell"] == 0:
             logger.warning("Mesh at %s parsed but declares no cells.", mesh_path)
             return MeshExitFlag.CONVERSION_FAIL, None, None
@@ -41,6 +47,11 @@ def Common_evaluate_mesh_quality(mesh_path: str | None) -> tuple[MeshExitFlag, M
         logger.exception("Could not analyze the .su2 mesh at %s", mesh_path)
         return MeshExitFlag.CONVERSION_FAIL, None, None
 
+    # SU2 loads a mesh with unmarked boundary edges without a warning and gives them no boundary condition
+    if a["unmarked"] > 0:
+        logger.warning("Mesh at %s has %d boundary edges in no marker.", mesh_path, a["unmarked"])
+        return MeshExitFlag.CONVERSION_FAIL, quality, a["nnode"]
+
     # A folded corner is as unusable to a solver as an inverted cell, so it joins `neg` on the severe
     # verdict rather than the graded one; the other three gates only ever grade down to LOW_QUALITY.
     if a["neg"] > 0 or a["min_jac"] <= 0.0:
@@ -48,53 +59,6 @@ def Common_evaluate_mesh_quality(mesh_path: str | None) -> tuple[MeshExitFlag, M
     if not a["acceptable"]:
         return MeshExitFlag.LOW_QUALITY, quality, a["nnode"]
     return MeshExitFlag.SUCCESS, quality, a["nnode"]
-
-
-def _read_su2(path):
-    """Reads a 2D .su2 mesh. Returns nodes (N,2), quads (list of 4-idx),
-    tris (list of 3-idx), and markers {tag: [(a,b),...]}."""
-    nodes = []
-    quads = []
-    tris = []
-    markers = {}
-    with open(path) as f:
-        # Strip before testing for '%', or an indented comment parses as data
-        lines = [s for s in (ln.strip() for ln in f) if s and not s.startswith("%")]
-    i = 0
-    n = len(lines)
-    while i < n:
-        t = lines[i].split()
-        key = t[0].upper()
-        if key == "NELEM=":
-            ne = int(t[1]); i += 1
-            for _ in range(ne):
-                p = lines[i].split(); et = int(p[0])
-                if et == 9:
-                    quads.append([int(p[1]), int(p[2]), int(p[3]), int(p[4])])
-                elif et == 5:
-                    tris.append([int(p[1]), int(p[2]), int(p[3])])
-                i += 1
-            continue
-        if key == "NPOIN=":
-            npn = int(t[1]); i += 1
-            for _ in range(npn):
-                p = lines[i].split()
-                nodes.append([float(p[0]), float(p[1])])
-                i += 1
-            continue
-        if key == "MARKER_TAG=":
-            tag = t[1]; i += 1
-            me = int(lines[i].split()[1]); i += 1
-            seg = []
-            for _ in range(me):
-                p = lines[i].split(); seg.append((int(p[1]), int(p[2]))); i += 1
-            markers[tag] = seg
-            continue
-        i += 1
-    return (np.asarray(nodes, float),
-            np.asarray(quads, int) if quads else np.zeros((0, 4), int),
-            np.asarray(tris, int) if tris else np.zeros((0, 3), int),
-            markers)
 
 
 def _cell_metrics(P):
@@ -130,35 +94,44 @@ def _cos(u, v):
         np.linalg.norm(u, axis=1) * np.linalg.norm(v, axis=1), 1e-30)
 
 
-def _orthogonal_quality(nodes, blocks):
+def _faces(nnode, blocks):
     """
-    Orthogonal quality per cell, in the order `blocks` lists them.
+    Every cell face, in the order `blocks` lists the cells: its two nodes, its owning cell, and the
+    face-index pairs (i0, i1) that are the two sides of one interior face.
     """
-    nodes = np.asarray(nodes, dtype=np.float64)
-    centroids = []; face_a = []; face_b = []; face_cell = []
+    face_a = []; face_b = []; face_cell = []
     offset = 0
     for conn, _k in blocks:
         M, k = conn.shape
-        centroids.append(nodes[conn].mean(axis=1))
         face_a.append(conn.ravel())
         face_b.append(np.roll(conn, -1, axis=1).ravel())
         face_cell.append(np.repeat(np.arange(offset, offset + M), k))
         offset += M
-    centroid = np.concatenate(centroids)
     fa = np.concatenate(face_a); fb = np.concatenate(face_b); fc = np.concatenate(face_cell)
+
+    # Two faces carrying the same node pair are the two sides of one interior face; sorting by that
+    # pair puts them adjacent. A non-manifold edge (>2 uses) would only get its first two sides
+    # paired, which neither backend's structured output produces.
+    key = np.minimum(fa, fb).astype(np.int64) * nnode + np.maximum(fa, fb)
+    order = np.argsort(key, kind="stable")
+    shared = np.flatnonzero(key[order][:-1] == key[order][1:])
+    return fa, fb, fc, order[shared], order[shared + 1]
+
+
+def _orthogonal_quality(nodes, blocks, faces=None):
+    """
+    Orthogonal quality per cell, in the order `blocks` lists them. `faces` is `_faces`' result, if already built.
+    """
+    nodes = np.asarray(nodes, dtype=np.float64)
+    centroid = np.concatenate([nodes[conn].mean(axis=1) for conn, _k in blocks])
+    fa, fb, fc, i0, i1 = _faces(len(nodes), blocks) if faces is None else faces
 
     A = nodes[fa]; B = nodes[fb]
     edge = B - A
     normal = np.stack([edge[:, 1], -edge[:, 0]], axis=1)   # outward while the cell is wound CCW
     score = _cos(normal, 0.5 * (A + B) - centroid[fc])
 
-    # Neighbour term. Two faces carrying the same node pair are the two sides of one interior face;
-    # sorting by that pair puts them adjacent. A non-manifold edge (>2 uses) would only get its first
-    # two sides paired, which neither backend's structured output produces.
-    key = np.minimum(fa, fb).astype(np.int64) * len(nodes) + np.maximum(fa, fb)
-    order = np.argsort(key, kind="stable")
-    shared = np.flatnonzero(key[order][:-1] == key[order][1:])
-    i0 = order[shared]; i1 = order[shared + 1]
+    # Neighbour term, across each interior face
     joins = centroid[fc[i1]] - centroid[fc[i0]]
     score[i0] = np.minimum(score[i0], _cos(normal[i0], joins))
     score[i1] = np.minimum(score[i1], _cos(normal[i1], -joins))
@@ -171,11 +144,55 @@ def _orthogonal_quality(nodes, blocks):
     return np.concatenate(out)
 
 
-def _analyze_su2(su2_path):
+def _size_ratio(nnode, blocks, area, faces=None):
     """
-    Reads a `.su2` and reduces it to the per-mesh quality metrics the verdict is built on.
+    Larger over smaller cell area across each interior face. `area` is per cell in `blocks` order;
+    `faces` is `_faces`' result, if already built.
     """
-    nodes, quads, tris, markers = _read_su2(su2_path)
+    _fa, _fb, fc, i0, i1 = _faces(nnode, blocks) if faces is None else faces
+    a0 = np.abs(area[fc[i0]]); a1 = np.abs(area[fc[i1]])
+    return np.maximum(a0, a1) / np.maximum(np.minimum(a0, a1), 1e-30)
+
+
+def _distribution(v, where, limit, high_is_bad, wall):
+    """
+    One metric's `MetricDistribution` fields: median, the values 99% / 99.9% of `v` are at least as
+    good as, the count past `limit`, and the worst value's location (`where` is (len(v), 2)) and
+    distance to the `wall` nodes (None without them). None for an empty `v`.
+    """
+    if not len(v):
+        return None
+    if high_is_bad:
+        worst = int(np.argmax(v)); t99, t999 = np.percentile(v, (99.0, 99.9)); n_bad = int(np.sum(v > limit))
+    else:
+        worst = int(np.argmin(v)); t99, t999 = np.percentile(v, (1.0, 0.1)); n_bad = int(np.sum(v < limit))
+    x, y = where[worst]
+    dwall = None if wall is None else float(np.min(np.hypot(wall[:, 0] - x, wall[:, 1] - y)))
+    return dict(p50=float(np.median(v)), t99=float(t99), t999=float(t999), n_bad=n_bad,
+                x=float(x), y=float(y), dwall=dwall)
+
+
+def _unmarked_boundary_edges(nnode, blocks, markers):
+    """
+    Number of cell faces used by exactly one cell that no marker lists, in either node order.
+    """
+    faces = [np.stack([conn.ravel(), np.roll(conn, -1, axis=1).ravel()], axis=1) for conn, _k in blocks]
+    if not faces:
+        return 0
+    faces = np.sort(np.concatenate(faces), axis=1).astype(np.int64)
+    key, count = np.unique(faces[:, 0] * nnode + faces[:, 1], return_counts=True)
+    marked = np.asarray([e for edges in markers.values() for e in edges], np.int64).reshape(-1, 2)
+    marked = np.sort(marked, axis=1)
+    return int(np.isin(key[count == 1], marked[:, 0] * nnode + marked[:, 1], invert=True).sum())
+
+
+def _analyze_su2(su2_path, count_limits=None):
+    """
+    Reads a `.su2` and reduces it to the per-mesh quality metrics the verdict is built on, plus each
+    metric's distribution with bad cells counted against `count_limits` (constants.py if None).
+    """
+    limits = count_limits or QualityLimits()
+    nodes, quads, tris, markers = Common_read_su2(su2_path)
     # One list, in the order everything below is concatenated in `_orthogonal_quality` indexes
     # cells by that same order, so the two must not drift apart
     blocks = [(conn, k) for conn, k in ((quads, 4), (tris, 3)) if len(conn)]
@@ -189,24 +206,45 @@ def _analyze_su2(su2_path):
     ar = np.concatenate(ar_all) if ar_all else np.zeros(0)
     area = np.concatenate(area_all) if area_all else np.zeros(0)
     jac = np.concatenate(jac_all) if jac_all else np.zeros(0)
-    ortho = _orthogonal_quality(nodes, blocks) if blocks else np.zeros(0)
+    faces = _faces(len(nodes), blocks) if blocks else None
+    ortho = _orthogonal_quality(nodes, blocks, faces) if blocks else np.zeros(0)
+    size_ratio = _size_ratio(len(nodes), blocks, area, faces) if blocks else np.zeros(0)
     ncell = len(skew)
     neg = int(np.sum(area <= 0))
     max_skew = float(skew.max()) if ncell else 0.0
     min_ortho = float(ortho.min()) if ncell else 1.0
     max_ar = float(ar.max()) if ncell else 0.0
     min_jac = float(jac.min()) if ncell else 1.0
-    # `ncell > 0` first: with no cells the rest pass vacuously (0 skew/ar, 0 neg, 1.0 ortho/jac)
+    max_size_ratio = float(size_ratio.max()) if len(size_ratio) else 1.0  # No interior face, no jump
+    # `ncell > 0` first: with no cells the rest pass vacuously (0 skew/ar, 0 neg, 1.0 ortho/jac/size ratio)
     ok = (ncell > 0 and (neg == 0) and (max_skew <= SKEWNESS_LIMIT) and (min_ortho >= ORTHO_MIN)
-          and (min_jac >= JACOBIAN_LIMIT) and (max_ar <= ASPECT_RATIO_LIMIT))
+          and (min_jac >= JACOBIAN_LIMIT) and (max_ar <= ASPECT_RATIO_LIMIT)
+          and (max_size_ratio <= SIZE_RATIO_LIMIT))
+
+    # Cell metrics sit at cell centroids, the size ratio at its interior face's midpoint
+    centroid = face_mid = np.zeros((0, 2))
+    if blocks:
+        fa, fb, _fc, i0, _i1 = faces
+        centroid = np.concatenate([nodes[conn].mean(axis=1) for conn, _k in blocks])
+        face_mid = 0.5 * (nodes[fa[i0]] + nodes[fb[i0]])
+    wall_edges = markers.get(MARKER_AIRFOIL)
+    wall = nodes[np.unique(np.asarray(wall_edges, dtype=np.int64))] if wall_edges else None
     return dict(nodes=nodes, polys=polys, skew=skew, ar=ar, area=area, jac=jac,
                 ncell=ncell, nnode=len(nodes), nquad=len(quads), ntri=len(tris),
                 neg=neg, max_skew=max_skew, min_ortho=min_ortho, max_ar=max_ar, min_jac=min_jac,
-                markers={k: len(v) for k, v in markers.items()}, acceptable=ok)
+                max_size_ratio=max_size_ratio,
+                skew_dist=_distribution(skew, centroid, limits.skew_max, True, wall),
+                ortho_dist=_distribution(ortho, centroid, limits.ortho_min, False, wall),
+                jac_dist=_distribution(jac, centroid, limits.jac_min, False, wall),
+                size_ratio_dist=_distribution(size_ratio, face_mid, limits.size_ratio_max, True, wall),
+                markers={k: len(v) for k, v in markers.items()},
+                unmarked=_unmarked_boundary_edges(len(nodes), blocks, markers), acceptable=ok)
 
 def _summary_from_analysis(a) -> dict:
     """
     Narrow an `analyze_su2()` result to the fields `common.schemas.MeshQualitySummary` needs.
     """
     return dict(ncell=a["ncell"], max_skew=a["max_skew"], min_ortho=a["min_ortho"],
-                min_jac=a["min_jac"], max_ar=a["max_ar"], acceptable=a["acceptable"])
+                min_jac=a["min_jac"], max_ar=a["max_ar"], max_size_ratio=a["max_size_ratio"],
+                acceptable=a["acceptable"], neg=a["neg"], skew_dist=a["skew_dist"],
+                ortho_dist=a["ortho_dist"], jac_dist=a["jac_dist"], size_ratio_dist=a["size_ratio_dist"])

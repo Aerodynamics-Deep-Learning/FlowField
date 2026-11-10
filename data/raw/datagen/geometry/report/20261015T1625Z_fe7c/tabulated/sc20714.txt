@@ -1,0 +1,28 @@
+sc20714: added
+source   tabulated/sc20714.dat
+ingest   20261015T1625Z_fe7c, shape version cst8-r1, code 254a0bd
+
+identity
+  geometry_id  b22416687954fa5865d98e2ee717e95cc2d1392638a36644272910da5e0ca393
+  raw_hash     b22416687954fa5865d98e2ee717e95cc2d1392638a36644272910da5e0ca393, 205 points
+  family       none (tabulated)
+
+normalization (of the file)
+  LE           point 102, interpolated between two input points, at (0.000003, 0.000395)
+  rotation     +0.7674 deg, scale 0.999913, x stretch upper 1.000047 lower 0.999953
+
+TE
+  closure      pried, source gap 6.999e-03 c
+
+CST (order 8, n1 0.5, n2 1)
+  upper        +0.234620 +0.098017 +0.302839 +0.025435 +0.364232 +0.081487 +0.331992 +0.241637 +0.322535
+  lower        -0.234620 -0.066508 -0.322901 +0.038434 -0.345651 -0.119744 -0.132178 +0.132430 +0.283643
+  LE term      -0.011828
+  fit          max 2.98e-04 c at x=0.0405 (limit 0.001), rms 9.97e-05 c, over 206 points
+  source       the file's points before closing are within 3.50e-03 c
+  TE wedge     2.04 deg
+
+files
+  raw          raw/datagen/geometry/raw/sc20714.dat
+  normalised   raw/datagen/geometry/normalised/cst8-r1/sc20714.dat
+  norm_hash    cd1679dfc295cffce87ea633ad1670290406ed089edc4adf1038d7dcc9be6208

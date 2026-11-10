@@ -5,28 +5,7 @@ to whichever backend `MeshIn.backend` names, and normalizes both backends' resul
 contract. The gmsh and c2d packages are for `common/` to reach into, not for callers to.
 """
 
-from .schemas import (
-    MeshIn,
-    MeshOut,
-    MeshBackend,
-    MeshTopology,
-    MeshExitFlag,
-    MeshQualitySummary,
-    MeshGeoDeviationSummary,
-)
-
-# `entry` is imported lazily, mirroring both backends' __init__: it pulls in `gmsh.run`, which
-# raises without the gmsh SDK installed, so an eager import here would put that requirement on
-# anyone who only wanted a schema.
-def __getattr__(name):
-    if name == "Common_GenerateMesh":
-        from .entry import Common_GenerateMesh
-
-        return Common_GenerateMesh
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
-
-__all__ = [
-    "Common_GenerateMesh",
+_SCHEMAS = (
     "MeshIn",
     "MeshOut",
     "MeshBackend",
@@ -34,4 +13,19 @@ __all__ = [
     "MeshExitFlag",
     "MeshQualitySummary",
     "MeshGeoDeviationSummary",
-]
+)
+
+# Both imported lazily: `entry` pulls in both runners, and `schemas` both backends' schemas, neither of which
+# anyone who only wanted a constant should have to load.
+def __getattr__(name):
+    if name == "Common_GenerateMesh":
+        from .entry import Common_GenerateMesh
+
+        return Common_GenerateMesh
+    if name in _SCHEMAS:
+        from . import schemas
+
+        return getattr(schemas, name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+__all__ = ["Common_GenerateMesh", *_SCHEMAS]

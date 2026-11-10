@@ -1,0 +1,30 @@
+usa33: rejected (fit_tolerance)
+source   tabulated/usa33.dat
+ingest   20261015T1625Z_fe7c, shape version cst8-r1, code 254a0bd
+
+fit misses a point by 1.03e-03c at x=0.0507 (limit 0.001)
+
+identity
+  geometry_id  cdcbf3518a3d17eb9c63e1e980f09c92d5e7b6116cef8441a8f6275aa6f2703e
+  raw_hash     cdcbf3518a3d17eb9c63e1e980f09c92d5e7b6116cef8441a8f6275aa6f2703e, 33 points
+  family       none (tabulated)
+
+normalization (of the file)
+  LE           point 16, interpolated between two input points, at (-0.000187, 0.003652)
+  rotation     +0.2092 deg, scale 0.999806, x stretch upper 1.000000 lower 1.000000
+
+TE
+  closure      none, source gap 0.000e+00 c
+
+CST (order 8, n1 0.5, n2 1)
+  upper        +0.284053 +0.208042 +0.464630 +0.071533 +0.572314 +0.016179 +0.425146 +0.124457 +0.297942
+  lower        -0.284053 -0.103150 -0.075528 +0.119438 -0.383766 +0.242139 -0.410446 +0.027831 -0.198143
+  LE term      +0.248559
+  fit          max 1.03e-03 c at x=0.0507 (limit 0.001), rms 4.06e-04 c, over 34 points
+  source       the file's points before closing are within 1.03e-03 c
+  TE wedge     27.80 deg
+
+files
+  raw          raw/datagen/geometry/rejected/cdcbf351/usa33.dat
+  normalised   raw/datagen/geometry/normalised/cst8-r1/rejected/cdcbf351/usa33.dat
+  norm_hash    06929804b0e2e528c4393bc010d8dc1ce4c4c0e1f1aef0f6557bc87df785a7b5

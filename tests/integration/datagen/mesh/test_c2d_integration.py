@@ -3,16 +3,23 @@ from pathlib import Path
 
 from src.datagen.meshing.c2d.run import C2D_MeshGenerator, C2D_find_exe
 from src.datagen.meshing.c2d.schemas import C2D_ExitFlag
+from src.datagen.meshing.common.constants import (
+    SKEWNESS_LIMIT, ORTHO_MIN, JACOBIAN_LIMIT, ASPECT_RATIO_LIMIT, SIZE_RATIO_LIMIT,
+)
+from src.datagen.meshing.common.quality import Common_evaluate_mesh_quality
+from src.datagen.meshing.common.schemas import MeshExitFlag
 
 pytestmark = pytest.mark.skipif(
     C2D_find_exe() is None, reason="c2d executable not built in this environment"
 )
 
 
-def test_c2d_integration(sterile_c2d_input, mesh_quality_baseline):
-
-    out = C2D_MeshGenerator(sterile_c2d_input)
-
+def _assert_scored(out) -> None:
+    """
+    Checks the `.su2` was written, and holds it to the shared verdict at strict SUCCESS, which
+    includes every boundary edge sitting in a marker. Both c2d grids clear every gate with room, so
+    anything less is a regression.
+    """
     error_msg = "No exception file generated."
     if out.flag == C2D_ExitFlag.FATAL_ERROR and len(out.verbose_list) > 2 and out.verbose_list[2]:
         with open(out.verbose_list[2], "r") as f:
@@ -24,13 +31,45 @@ def test_c2d_integration(sterile_c2d_input, mesh_quality_baseline):
     assert out.mesh_path is not None
 
     mesh_file_su2 = Path(out.mesh_path)
-    mesh_file_vtk = Path(out.mesh_path_vtk)
 
     assert mesh_file_su2.exists(), f"SU2 mesh file was not written to disk at {mesh_file_su2}"
     assert mesh_file_su2.stat().st_size > 0, "SU2 mesh file is empty"
+
+    flag, quality, _ = Common_evaluate_mesh_quality(mesh_file_su2)
+    assert flag == MeshExitFlag.SUCCESS, (
+        f"Mesh generated but the shared quality pass rejected it: {flag.name}, {quality}"
+    )
+
+
+def test_c2d_integration(c2d_ogrid, mesh_quality_baseline):
+    """The O-grid, and the c2d mesh written with its `.vtk`, which the baseline is read from."""
+    _assert_scored(c2d_ogrid.out)
+
+    mesh_file_vtk = Path(c2d_ogrid.out.mesh_path_vtk)
     assert mesh_file_vtk.exists(), f"VTK mesh file was not written to disk at {mesh_file_vtk}"
     assert mesh_file_vtk.stat().st_size > 0, "VTK mesh file is empty"
 
     # Compare the generated mesh's quality against Emre's baseline
     # (example_naca0012.vtk), the same way the gmsh integration test does.
     mesh_quality_baseline.assert_not_worse_than_baseline(mesh_file_vtk)
+
+
+def test_c2d_cgrd_integration(c2d_cgrid):
+    """C-grid counterpart on the sharp-TE fixture, the only test that meshes this pairing."""
+
+    _assert_scored(c2d_cgrid.out)
+
+
+def test_c2d_over_coarsened_grid_fails_on_size_ratio(sterile_c2d_input):
+    """A cell-count search coarsens until a gate stops it. At jmax=30 every per-cell gate still
+    passes while nearly every radial neighbour pair grows ~2.7x, so the size ratio is what rejects it."""
+    config = sterile_c2d_input.meshing_config.model_copy(update={"jmax": 30})
+    out = C2D_MeshGenerator(sterile_c2d_input.model_copy(update={"meshing_config": config, "write_vtk": False}))
+    assert out.flag == C2D_ExitFlag.SUCCESS, f"c2d failed with flag {out.flag}"
+
+    flag, quality, _ = Common_evaluate_mesh_quality(out.mesh_path)
+
+    assert flag == MeshExitFlag.LOW_QUALITY, quality
+    assert quality.max_size_ratio > SIZE_RATIO_LIMIT
+    assert quality.max_skew <= SKEWNESS_LIMIT and quality.min_ortho >= ORTHO_MIN
+    assert quality.min_jac >= JACOBIAN_LIMIT and quality.max_ar <= ASPECT_RATIO_LIMIT

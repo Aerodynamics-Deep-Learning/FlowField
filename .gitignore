@@ -25,6 +25,7 @@ wandb/
 
 # Agents
 .claude/
+.claude_audits/
 CLAUDE.md
 
 # Parquet files
@@ -32,7 +33,16 @@ CLAUDE.md
 
 /tests/datagen/meshing/gmsh/test_sicn/old
 
-# C2D executable (built/installed locally per an upcoming setup script; never commit
-# the binary itself: see src/datagen/meshing/c2d/run.py:C2D_find_exe)
-src/datagen/meshing/c2d/bin/*
-!src/datagen/meshing/c2d/bin/.gitkeep
+# Datagen script runs: unnamed outputs (the scratchpad), named experiments, this machine's machine-check stamp
+data/scratchpad/
+data/experiments/
+data/.machine_check.json
+
+# Interactive viewers: this machine's selection; each test's committed .example.yaml is the default
+tests/**/test_manual_*.yaml
+!tests/**/test_manual_*.example.yaml
+
+# External tools are user-installed, never committed: local paths live in tools.toml
+# (see tools.example.toml)
+tools.toml
+*.exe
