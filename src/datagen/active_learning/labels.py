@@ -122,6 +122,7 @@ class Verdict(NamedTuple):
     """What a chain of tries decided: a row, nothing (`row` None), or nothing yet (`pending`)."""
     row: Optional[MeshRow]
     pending: bool
+    preflight: Optional[str]= None
 
 
 class MeshRows(NamedTuple):
@@ -130,6 +131,7 @@ class MeshRows(NamedTuple):
     conflicts: list[MeshConflict]
     pending: list[str]  # first attempt_ids
     orphans: list[str] # # chains whose first attempt isn't in the log
+    preflight: list[str] # # attempt_ids the mesher refused before meshing
 
 
 
@@ -249,7 +251,7 @@ def AL_mesh_training_rows(attempts: Iterable[MeshAttempt], production: Productio
     are listed by their first attempt_id.
 
     If a the first attempt is missing for any reason in the chain, there are added as orphan chains 
-    
+
     Args:
         attempts (Iterable[MeshAttempt]): Logged tries, in log order
         production (ProductionMesh): The settings labels hold for
@@ -262,13 +264,15 @@ def AL_mesh_training_rows(attempts: Iterable[MeshAttempt], production: Productio
         chains.setdefault(a.rerun_of or a.attempt_id, []).append(a)
 
     by_shape: dict[tuple[str, str], list[MeshRow]] = {}
-    pending, orphans = [], []
+    pending, orphans, preflight = [], [], []
     for first_id, tries in chains.items():
         tries.sort(key=lambda t: (t.rerun_of is not None, t.seq)) # sort the chain
         if tries[0].rerun_of is not None: # add it as a orphan if the fist attmept is missinng on the chain     
             orphans.append(first_id)
             continue
         verdict = AL_chain_verdict(tries, production)
+        if verdict.preflight:
+            preflight.append(verdict.preflight)
         if verdict.pending:
             pending.append(first_id)
         elif verdict.row is not None:
