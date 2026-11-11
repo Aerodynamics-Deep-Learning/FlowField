@@ -126,7 +126,9 @@ class Verdict(NamedTuple):
 
 
 class MeshRows(NamedTuple):
-    """The training rows, the shapes left out for conflicting, and the chains still awaiting a try."""
+    """The training rows, the shapes left out for conflicting, and the chains still awaiting a try, orphans for missing first
+       attempt logs, and preflight to catch the prefligh hits.
+    """
     rows: list[MeshRow]
     conflicts: list[MeshConflict]
     pending: list[str]  # first attempt_ids
@@ -214,10 +216,9 @@ def AL_chain_verdict(tries: list[MeshAttempt], production: ProductionMesh) -> Ve
     """
     if not tries:
         raise ValueError("chain needs at least one attempt, got none")
+    
     first = tries[0]
 
-
-    first = tries[0]
     if first.rerun_of is not None or any(t.rerun_of != first.attempt_id for t in tries[1:]):
         raise ValueError(f"not one chain: {[(t.attempt_id, t.rerun_of) for t in tries]}")
     if not _is_production(first, production):
@@ -255,14 +256,16 @@ def AL_mesh_training_rows(attempts: Iterable[MeshAttempt], production: Productio
     left out of the rows and reported, so one bad shape can't stop the build; chains still undecided
     are listed by their first attempt_id.
 
-    If a the first attempt is missing for any reason in the chain, there are added as orphan chains 
+    If a chain is missing its first attempt from logs for any reason, it is listed in the orphans. 
+    
+    An attempt the mesher refused before meshing in `preflight`: the geometry rules should have caught it.
 
     Args:
         attempts (Iterable[MeshAttempt]): Logged tries, in log order
         production (ProductionMesh): The settings labels hold for
 
     Returns:
-        MeshRows: The rows, the conflicts, and the pending chains
+        MeshRows: The rows, the conflicts, and the pending chains, the orphans and the preflight hits
     """
     chains: dict[str, list[MeshAttempt]] = {}
     for a in attempts:
@@ -289,7 +292,7 @@ def AL_mesh_training_rows(attempts: Iterable[MeshAttempt], production: Productio
             conflicts.append(MeshConflict(geometry_id=geometry_id, settings_id=settings_id, rows=found))
         else:
             rows.append(found[0])
-    return MeshRows(rows, conflicts, pending, orphans)
+    return MeshRows(rows, conflicts, pending, orphans, preflight)
 
 
 def _is_production(attempt: MeshAttempt, production: ProductionMesh) -> bool:
