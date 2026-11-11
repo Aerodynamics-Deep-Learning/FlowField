@@ -85,6 +85,7 @@ class MeshAttempt(BaseModel):
     the mesher (a rule rejection or an aborted slot); `passed` and `failed_gates` are set when it meshed.
     """
     attempt_id: str
+    seq: int = 0 # tracks the position in the run log 
     geometry_id: str
     cst: CSTParams
     settings_id: str
@@ -128,6 +129,8 @@ class MeshRows(NamedTuple):
     rows: list[MeshRow]
     conflicts: list[MeshConflict]
     pending: list[str]  # first attempt_ids
+    orphans: list[str] # # chains whose first attempt isn't in the log
+
 
 
 class _Try(str, Enum):
@@ -245,6 +248,8 @@ def AL_mesh_training_rows(attempts: Iterable[MeshAttempt], production: Productio
     left out of the rows and reported, so one bad shape can't stop the build; chains still undecided
     are listed by their first attempt_id.
 
+    If a the first attempt is missing for any reason in the chain, there are added as orphan chains 
+    
     Args:
         attempts (Iterable[MeshAttempt]): Logged tries, in log order
         production (ProductionMesh): The settings labels hold for
@@ -257,8 +262,12 @@ def AL_mesh_training_rows(attempts: Iterable[MeshAttempt], production: Productio
         chains.setdefault(a.rerun_of or a.attempt_id, []).append(a)
 
     by_shape: dict[tuple[str, str], list[MeshRow]] = {}
-    pending = []
+    pending, orphans = [], []
     for first_id, tries in chains.items():
+        tries.sort(key=lambda t: (t.rerun_of is not None, t.seq)) # sort the chain
+        if tries[0].rerun_of is not None: # add it as a orphan if the fist attmept is missinng on the chain     
+            orphans.append(first_id)
+            continue
         verdict = AL_chain_verdict(tries, production)
         if verdict.pending:
             pending.append(first_id)
@@ -271,7 +280,7 @@ def AL_mesh_training_rows(attempts: Iterable[MeshAttempt], production: Productio
             conflicts.append(MeshConflict(geometry_id=geometry_id, settings_id=settings_id, rows=found))
         else:
             rows.append(found[0])
-    return MeshRows(rows, conflicts, pending)
+    return MeshRows(rows, conflicts, pending, orphans)
 
 
 def _is_production(attempt: MeshAttempt, production: ProductionMesh) -> bool:
