@@ -212,6 +212,11 @@ def AL_chain_verdict(tries: list[MeshAttempt], production: ProductionMesh) -> Ve
     Raises:
         ValueError: If the tries aren't one chain, or a try is missing what its kind needs
     """
+    if not tries:
+        raise ValueError("chain needs at least one attempt, got none")
+    first = tries[0]
+
+
     first = tries[0]
     if first.rerun_of is not None or any(t.rerun_of != first.attempt_id for t in tries[1:]):
         raise ValueError(f"not one chain: {[(t.attempt_id, t.rerun_of) for t in tries]}")
@@ -226,7 +231,7 @@ def AL_chain_verdict(tries: list[MeshAttempt], production: ProductionMesh) -> Ve
         if kind is _Try.TRANSIENT:
             continue
         if kind is _Try.NO_ROW:
-            return Verdict(None, False)
+            return Verdict(None, False, None if t.geometry_rejected else t.attempt_id)
         if kind is _Try.VERDICT:
             return Verdict(_verdict_row(t), False)  # a rerun that meshes labels the shape itself
         if failed is None:
