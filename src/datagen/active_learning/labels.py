@@ -30,7 +30,7 @@ from pydantic import BaseModel
 from src.datagen.geometry.common.constants import CST_N1, CST_N2, CST_ORDER
 from src.datagen.geometry.common.schemas import CSTParams, Nose
 from src.datagen.meshing.common.schemas import MeshExitFlag
-from src.datagen.active_learning.vector_funtions import AL_cst_to_free
+from src.datagen.active_learning.design_vector import AL_cst_to_free
 
 
 # How `c2d.run.C2D_generate_mesh` opens its log for each SUBPROCESS_FAIL cause

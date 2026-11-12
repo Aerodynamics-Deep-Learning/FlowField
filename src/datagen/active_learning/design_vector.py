@@ -6,12 +6,27 @@ Upper A_0..A_8, lower A_1..A_8 (its A_0 is -upper A_0, `CSTParams`' shared nose)
 
 import numpy as np
 
-from src.datagen.geometry.common.constants import CST_N1, CST_N2, CST_ORDER
+from src.datagen.geometry.common.constants import CST_N1, CST_N2, CST_ORDER, WEDGE_ATOL
 from src.datagen.geometry.common.schemas import CSTParams, Nose
 
 
 # Length of the model's input: 9 upper + 8 lower + the LE weight at order 8
 N_FREE = 2 * CST_ORDER + 2
+
+
+def AL_te_wedge_gap(cst: CSTParams) -> float:
+    """
+    The TE wedge as a gap in coefficient units, upper A_N - lower A_N; not an angle. It has the sign of
+    `parametrization.Geom_cst_te_wedge` (the angle in degrees) since atan is increasing.
+
+    Args:
+        cst (CSTParams): The shape
+
+    Returns:
+        float: The gap [coefficient units]: 0 for a cusp, negative when the surfaces meet crossed at the TE
+    """
+    return cst.upper[-1] - cst.lower[-1]
+
 
 def AL_cst_to_free(cst: CSTParams) -> np.ndarray:
     """
@@ -41,16 +56,27 @@ def AL_cst_to_free(cst: CSTParams) -> np.ndarray:
 def AL_free_to_cst(x: np.ndarray) -> CSTParams:
     """
     The design behind 18 free values, `AL_cst_to_free`'s inverse; `CSTParams` derives the lower A_0.
+    A TE gap below zero by rounding only is snapped to an exact cusp, as `Geom_check_thickness` refuses any
+    crossing.
 
     Args:
         x (np.ndarray): (N_FREE,) free values
 
     Returns:
         CSTParams: The LEM shape
+
+    Raises:
+        ValueError: For the wrong length, or a TE gap below -WEDGE_ATOL (the surfaces meet crossed)
     """
     x = np.asarray(x, dtype=np.float64)
     if x.shape != (N_FREE,):
         raise ValueError(f"need {N_FREE} free values, got shape {x.shape}")
     n = CST_ORDER + 1
-    return CSTParams(n1=CST_N1, n2=CST_N2, upper=x[:n].tolist(), lower=x[n:2 * n - 1].tolist(),
-                     le_weight=float(x[-1]), nose=Nose.LEM)
+    upper, lower = x[:n].tolist(), x[n:2 * n - 1].tolist()
+    gap = upper[-1] - lower[-1]
+    if gap < -WEDGE_ATOL:
+        raise ValueError(f"TE wedge gap must be >= 0 (upper A_N >= lower A_N), got {gap:.3e}: "
+                         f"the surfaces would meet crossed at the TE")
+    if gap < 0:
+        lower[-1] = upper[-1]  # rounding: an exact cusp
+    return CSTParams(n1=CST_N1, n2=CST_N2, upper=upper, lower=lower, le_weight=float(x[-1]), nose=Nose.LEM)

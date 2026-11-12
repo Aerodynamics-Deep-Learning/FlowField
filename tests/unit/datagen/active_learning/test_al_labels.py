@@ -22,10 +22,8 @@ Step 3: Ensure only production attempts that reached c2d are labelled
     - test_non_production_settings_make_no_row
     - test_rows_are_one_per_shape_and_settings
     - test_conflicting_shape_is_reported_not_raised
-Step 4: Ensure the input is the 18 free values of a LEM design with the pipeline's class exponents
+Step 4: Ensure a row's input is the shape's 18 free values (`test_al_design_vector`)
     - test_free_vector_has_18_values
-    - test_other_designs_refused
-    - test_free_vector_round_trips_stored_shapes
 """
 
 import subprocess
@@ -34,14 +32,11 @@ from unittest.mock import MagicMock, patch
 import numpy as np
 import pytest
 
+from src.datagen.active_learning.design_vector import N_FREE
 from src.datagen.active_learning.labels import (
-    FLAG_OUTCOME, LOG_CRASH, LOG_LAUNCH, LOG_TIMEOUT, N_FREE, AL_chain_verdict, AL_cst_to_free, AL_free_to_cst,
-    AL_mesh_training_rows, AL_needs_rerun, MeshAttempt, MeshOutcome, ProductionMesh,
+    FLAG_OUTCOME, LOG_CRASH, LOG_LAUNCH, LOG_TIMEOUT, AL_chain_verdict, AL_mesh_training_rows, AL_needs_rerun,
+    MeshAttempt, MeshOutcome, ProductionMesh,
 )
-from src.datagen.geometry.common.constants import SHAPE_VERSION
-from src.datagen.geometry.common.paths import Geom_paths
-from src.datagen.geometry.common.schemas import Nose
-from src.datagen.geometry.manifest.store import GeometryStore
 from src.datagen.meshing.c2d.run import C2D_generate_mesh
 from src.datagen.meshing.c2d.schemas import C2D_MeshingConfig
 from src.datagen.meshing.common.schemas import MeshExitFlag
@@ -227,25 +222,4 @@ def test_free_vector_has_18_values():
 
     assert N_FREE == 18 and x.shape == (18,) and x.dtype == np.float64
     assert x[0] == CUSP.upper[0] and x[9] == CUSP.lower[1] and x[-1] == CUSP.le_weight
-
-
-@pytest.mark.parametrize("update, match", [({"nose": Nose.SEPARATE}, "designs are LEM"),
-                                           ({"n1": 0.6}, "class exponents"),
-                                           ({"n2": 0.9}, "class exponents")])
-def test_other_designs_refused(update, match):
-    # n1/n2 aren't in the vector: unchecked, a shape differing only there would share another's 18 values
-    with pytest.raises(ValueError, match=match):
-        AL_cst_to_free(CUSP.model_copy(update=update))
-    with pytest.raises(ValueError, match="need 18 free values"):
-        AL_free_to_cst(np.zeros(19))
-
-
-def test_free_vector_round_trips_stored_shapes():
-    db = Geom_paths().db
-    if not db.is_file():
-        pytest.skip(f"no committed manifest at {db}")
-    with GeometryStore.open(db, read_only=True) as store:
-        csts = [r.cst for r in store.shapes(SHAPE_VERSION)]
-
-    assert csts and all(AL_free_to_cst(AL_cst_to_free(c)) == c for c in csts)
 # endregion

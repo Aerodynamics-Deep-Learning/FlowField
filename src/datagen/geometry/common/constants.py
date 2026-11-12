@@ -44,6 +44,10 @@ SUSPECT_ISOLATION = 4.0
 # rounding error only, anything further is refused. Every stored cst8-r1 shape is off by exactly 0
 NOSE_ATOL = 1e-10
 
+# How far below zero a design's TE wedge gap, upper A_N - lower A_N in coefficient units, may sit and still be
+# snapped to a cusp (`active_learning.design_vector`): rounding error only, anything further is a crossed TE
+WEDGE_ATOL = 1e-10
+
 #endregion
 
 #region Sampling
