@@ -29,6 +29,9 @@ Step 5: Ensure chains are put together from the log in any order, and a broken o
     - test_reruns_are_judged_in_seq_order
     - test_rerun_without_its_first_attempt_is_an_orphan
     - test_empty_chain_refused
+    - test_rerun_of_a_rerun_joins_its_chain
+    - test_rerun_of_links_that_loop_are_refused
+    - test_seq_is_required
 """
 
 import subprocess
@@ -36,6 +39,7 @@ from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
+from pydantic import ValidationError
 
 from src.datagen.active_learning.design_vector import N_FREE
 from src.datagen.active_learning.labels import (
@@ -55,7 +59,7 @@ _TOOLING_FLAGS = [f for f, o in FLAG_OUTCOME.items() if o is MeshOutcome.INFRA]
 
 
 def _attempt(flag=MeshExitFlag.SUCCESS, **fields) -> MeshAttempt:
-    base = dict(attempt_id="a1", geometry_id="cusp", cst=CUSP, settings_id=PRODUCTION.settings_id,
+    base = dict(attempt_id="a1", seq=0, geometry_id="cusp", cst=CUSP, settings_id=PRODUCTION.settings_id,
                 knobs=dict(PRODUCTION.knobs), entry_flag=flag)
     if flag is MeshExitFlag.SUCCESS:
         base["passed"] = True
@@ -67,7 +71,7 @@ def _subprocess(log: str, **fields) -> MeshAttempt:
 
 
 def _rerun(n: int, make=_attempt, *args, **fields) -> MeshAttempt:
-    return make(*args, attempt_id=f"a{n}", rerun_of="a1", **fields)
+    return make(*args, **{"attempt_id": f"a{n}", "seq": n - 1, "rerun_of": "a1", **fields})
 
 
 def _verdict(*tries):
@@ -263,4 +267,31 @@ def test_rerun_without_its_first_attempt_is_an_orphan():
 def test_empty_chain_refused():
     with pytest.raises(ValueError, match="at least one attempt"):
         AL_chain_verdict([], PRODUCTION)
+
+
+def test_rerun_of_a_rerun_joins_its_chain():
+    # a1 crashed, its rerun a2 didn't launch, and a3 reran a2: one chain, labelled by a3
+    first, launch = _subprocess(LOG_CRASH), _rerun(2, _subprocess, LOG_LAUNCH)
+    meshed = _rerun(3, rerun_of="a2")
+    out = AL_mesh_training_rows([meshed, launch, first], PRODUCTION)
+
+    assert [(r.attempt_id, r.label) for r in out.rows] == [("a3", 1)]
+    assert out.pending == [] and out.orphans == []
+    with pytest.raises(ValueError, match="not one chain"):  # a rerun before the try it repeats
+        AL_chain_verdict([first, meshed, launch], PRODUCTION)
+
+
+def test_rerun_of_links_that_loop_are_refused():
+    looped = [_attempt(attempt_id="a2", seq=1, rerun_of="a3"), _attempt(attempt_id="a3", seq=2, rerun_of="a2")]
+
+    with pytest.raises(ValueError, match="rerun_of links loop: a2 -> a3 -> a2"):
+        AL_mesh_training_rows(looped, PRODUCTION)
+
+
+def test_seq_is_required():
+    # Defaulted, every rerun would tie at 0 and be judged in list order without a word
+    fields = _attempt().model_dump(exclude={"seq"})
+
+    with pytest.raises(ValidationError, match="seq"):
+        MeshAttempt(**fields)
 # endregion

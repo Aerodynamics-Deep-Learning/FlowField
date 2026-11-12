@@ -4,6 +4,7 @@ Tests for `active_learning.design_vector`: the 18 free values a design is learne
 Step 1: Ensure only LEM designs with the pipeline's order and class exponents become vectors, and back
     - test_other_designs_refused
     - test_free_vector_round_trips_stored_shapes
+    - test_non_finite_values_refused
 Step 2: Ensure the TE wedge gap reads as the wedge angle does, and a crossed TE is refused
     - test_gap_sign_matches_the_angle_on_stored_shapes
     - test_gap_sign_matches_the_angle_at_the_edges
@@ -50,6 +51,16 @@ def test_other_designs_refused(update, match):
         AL_cst_to_free(CUSP.model_copy(update=update))
     with pytest.raises(ValueError, match="need 18 free values"):
         AL_free_to_cst(np.zeros(19))
+
+
+@pytest.mark.parametrize("bad", [np.nan, np.inf, -np.inf])
+@pytest.mark.parametrize("i", [0, 16])  # upper A_0; lower A_N, where a NaN also slips past the wedge rule
+def test_non_finite_values_refused(bad, i):
+    x = AL_cst_to_free(CUSP)
+    x[i] = bad
+
+    with pytest.raises(ValueError, match=rf"must be finite, .* at index \[{i}\]"):
+        AL_free_to_cst(x)
 
 
 def test_free_vector_round_trips_stored_shapes():

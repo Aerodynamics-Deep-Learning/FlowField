@@ -66,11 +66,15 @@ def AL_free_to_cst(x: np.ndarray) -> CSTParams:
         CSTParams: The LEM shape
 
     Raises:
-        ValueError: For the wrong length, or a TE gap below -WEDGE_ATOL (the surfaces meet crossed)
+        ValueError: For the wrong length, a NaN or infinity, or a TE gap below -WEDGE_ATOL (the surfaces
+            meet crossed)
     """
     x = np.asarray(x, dtype=np.float64)
     if x.shape != (N_FREE,):
         raise ValueError(f"need {N_FREE} free values, got shape {x.shape}")
+    if not np.isfinite(x).all():  # NaN passes every comparison below unnoticed
+        raise ValueError(f"free values must be finite, got a NaN or infinity at index "
+                         f"{np.flatnonzero(~np.isfinite(x)).tolist()}")
     n = CST_ORDER + 1
     upper, lower = x[:n].tolist(), x[n:2 * n - 1].tolist()
     gap = upper[-1] - lower[-1]

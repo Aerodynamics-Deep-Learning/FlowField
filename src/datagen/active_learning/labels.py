@@ -9,7 +9,8 @@ fixed design Re every shape is meshed at, so the input is the shape alone. So a 
     - its outcome is the shape's: a tooling failure (no exe, a launch error, an exception, an aborted
       slot) is never a 0
 
-A shape's tries form a chain: its first attempt and every rerun naming it in `rerun_of`, in log order.
+A shape's tries form a chain: its first attempt and every rerun whose `rerun_of` links lead back to it,
+in `seq` order.
 Tries that show nothing about the shape are transient: skipped, and the chain retried. That is a launch
 error, a log naming no cause, an aborted slot, and a tooling error (FATAL_ERROR, no exe, a caller bug),
 which needs fixing before its retry. The first informative try decides: a mesh verdict labels the shape,
@@ -27,10 +28,9 @@ from typing import Iterable, NamedTuple, Optional
 import numpy as np
 from pydantic import BaseModel
 
-from src.datagen.geometry.common.constants import CST_N1, CST_N2, CST_ORDER
-from src.datagen.geometry.common.schemas import CSTParams, Nose
-from src.datagen.meshing.common.schemas import MeshExitFlag
 from src.datagen.active_learning.design_vector import AL_cst_to_free
+from src.datagen.geometry.common.schemas import CSTParams
+from src.datagen.meshing.common.schemas import MeshExitFlag
 
 
 # How `c2d.run.C2D_generate_mesh` opens its log for each SUBPROCESS_FAIL cause
@@ -84,8 +84,10 @@ class MeshAttempt(BaseModel):
     the mesher (a rule rejection or an aborted slot); `passed` and `failed_gates` are set when it meshed.
     """
     attempt_id: str
-    seq: int = 0 # tracks the position in the run log 
-    geometry_id: str
+    seq: int                            # its position in the run log: a chain's tries are judged in this order
+    geometry_id: str                    # one per distinct shape: the ingest skips a file whose normalized
+                                        # coordinates match a stored shape's (`ingest.py`, norm_hash); the store's
+                                        # schema doesn't enforce it (norm_hash isn't UNIQUE)
     cst: CSTParams
     settings_id: str
     knobs: dict[str, float]
@@ -121,19 +123,19 @@ class Verdict(NamedTuple):
     """What a chain of tries decided: a row, nothing (`row` None), or nothing yet (`pending`)."""
     row: Optional[MeshRow]
     pending: bool
-    preflight: Optional[str]= None
+    preflight: Optional[str] = None  # the attempt_id the mesher refused before meshing
 
 
 class MeshRows(NamedTuple):
-    """The training rows, the shapes left out for conflicting, and the chains still awaiting a try, orphans for missing first
-       attempt logs, and preflight to catch the prefligh hits.
+    """
+    The training rows, the shapes left out for conflicting, the chains still awaiting a try, the chains
+    whose first attempt isn't in the log, and the attempts the mesher refused before meshing.
     """
     rows: list[MeshRow]
     conflicts: list[MeshConflict]
-    pending: list[str]  # first attempt_ids
-    orphans: list[str] # # chains whose first attempt isn't in the log
-    preflight: list[str] # # attempt_ids the mesher refused before meshing
-
+    pending: list[str]    # first attempt_ids
+    orphans: list[str]    # the missing first attempt_ids
+    preflight: list[str]  # attempt_ids, not first attempt_ids: the try that hit the flag
 
 
 class _Try(str, Enum):
@@ -159,7 +161,8 @@ def AL_chain_verdict(tries: list[MeshAttempt], production: ProductionMesh) -> Ve
     What a shape's chain of tries decides.
 
     Args:
-        tries (list[MeshAttempt]): The first attempt, then its reruns in log order
+        tries (list[MeshAttempt]): The first attempt, then its reruns in seq order, each rerun after the
+            try it names in `rerun_of`
         production (ProductionMesh): The settings labels hold for
 
     Returns:
@@ -172,10 +175,10 @@ def AL_chain_verdict(tries: list[MeshAttempt], production: ProductionMesh) -> Ve
     """
     if not tries:
         raise ValueError("chain needs at least one attempt, got none")
-    
     first = tries[0]
-
-    if first.rerun_of is not None or any(t.rerun_of != first.attempt_id for t in tries[1:]):
+    ids = [t.attempt_id for t in tries]
+    if (first.rerun_of is not None or len(set(ids)) != len(ids)
+            or any(t.rerun_of not in ids[:i] for i, t in enumerate(tries[1:], 1))):
         raise ValueError(f"not one chain: {[(t.attempt_id, t.rerun_of) for t in tries]}")
     if not _is_production(first, production):
         return Verdict(None, False)
@@ -210,30 +213,33 @@ def AL_mesh_training_rows(attempts: Iterable[MeshAttempt], production: Productio
 
     A shape labelled both ways (say it hung twice on a busy machine and meshed later on a quiet one) is
     left out of the rows and reported, so one bad shape can't stop the build; chains still undecided
-    are listed by their first attempt_id.
-
-    If a chain is missing its first attempt from logs for any reason, it is listed in the orphans. 
-    
-    An attempt the mesher refused before meshing in `preflight`: the geometry rules should have caught it.
+    are listed by their first attempt_id. A rerun of a rerun joins the chain its `rerun_of` links lead back
+    to; a chain whose first attempt is missing from the log is listed in the orphans. An attempt the mesher
+    refused before meshing is listed in `preflight`: the geometry rules should have caught it.
 
     Args:
-        attempts (Iterable[MeshAttempt]): Logged tries, in log order
+        attempts (Iterable[MeshAttempt]): Logged tries, in any order: each chain is put in seq order
         production (ProductionMesh): The settings labels hold for
 
     Returns:
-        MeshRows: The rows, the conflicts, and the pending chains, the orphans and the preflight hits
+        MeshRows: The rows, the conflicts, the pending chains, the orphans and the preflight hits
+
+    Raises:
+        ValueError: If `rerun_of` links loop, or a chain is broken (see `AL_chain_verdict`)
     """
+    attempts = list(attempts)
+    by_id = {a.attempt_id: a for a in attempts}
     chains: dict[str, list[MeshAttempt]] = {}
     for a in attempts:
-        chains.setdefault(a.rerun_of or a.attempt_id, []).append(a)
+        chains.setdefault(_chain_root(a, by_id), []).append(a)
 
     by_shape: dict[tuple[str, str], list[MeshRow]] = {}
     pending, orphans, preflight = [], [], []
     for first_id, tries in chains.items():
-        tries.sort(key=lambda t: (t.rerun_of is not None, t.seq)) # sort the chain
-        if tries[0].rerun_of is not None: # add it as a orphan if the fist attmept is missinng on the chain     
+        if first_id not in by_id:
             orphans.append(first_id)
             continue
+        tries.sort(key=lambda t: (t.rerun_of is not None, t.seq))
         verdict = AL_chain_verdict(tries, production)
         if verdict.preflight:
             preflight.append(verdict.preflight)
@@ -249,6 +255,20 @@ def AL_mesh_training_rows(attempts: Iterable[MeshAttempt], production: Productio
         else:
             rows.append(found[0])
     return MeshRows(rows, conflicts, pending, orphans, preflight)
+
+
+def _chain_root(a: MeshAttempt, by_id: dict[str, MeshAttempt]) -> str:
+    """The attempt_id a try's `rerun_of` links lead back to: a first attempt's, or a missing one's."""
+    path = [a.attempt_id]
+    while a.rerun_of is not None:
+        if a.rerun_of in path:  # the guard: a2 -> a3 -> a2 would walk forever
+            loop = path[path.index(a.rerun_of):] + [a.rerun_of]
+            raise ValueError(f"rerun_of links loop: {' -> '.join(loop)}")
+        if a.rerun_of not in by_id:
+            return a.rerun_of
+        path.append(a.rerun_of)
+        a = by_id[a.rerun_of]
+    return a.attempt_id
 
 
 def _is_production(attempt: MeshAttempt, production: ProductionMesh) -> bool:
