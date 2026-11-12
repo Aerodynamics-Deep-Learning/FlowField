@@ -24,6 +24,11 @@ Step 3: Ensure only production attempts that reached c2d are labelled
     - test_conflicting_shape_is_reported_not_raised
 Step 4: Ensure a row's input is the shape's 18 free values (`test_al_design_vector`)
     - test_free_vector_has_18_values
+Step 5: Ensure chains are put together from the log in any order, and a broken one doesn't stop the build
+    - test_rerun_listed_before_its_first_attempt
+    - test_reruns_are_judged_in_seq_order
+    - test_rerun_without_its_first_attempt_is_an_orphan
+    - test_empty_chain_refused
 """
 
 import subprocess
@@ -75,15 +80,15 @@ def test_every_flag_is_placed():
 
 
 def test_passing_the_production_gates_is_1():
-    row, pending = _verdict(_attempt())
+    row, pending, preflight = _verdict(_attempt())
 
-    assert not pending and row.label == 1 and row.failure_mode is None
+    assert not pending and preflight is None and row.label == 1 and row.failure_mode is None
     assert (row.geometry_id, row.settings_id, row.attempt_id) == ("cusp", PRODUCTION.settings_id, "a1")
 
 
 def test_success_failing_the_production_gates_is_0():
     # SUCCESS is the lenient entry limits (Jacobian >= 0.10); the study gates are stricter (>= 0.75)
-    row, _ = _verdict(_attempt(passed=False, failed_gates=["skew", "jac"]))
+    row, _, _ = _verdict(_attempt(passed=False, failed_gates=["skew", "jac"]))
 
     assert row.label == 0 and row.failure_mode == "gates:skew,jac"
     with pytest.raises(ValueError, match="no production gate verdict"):
@@ -92,19 +97,21 @@ def test_success_failing_the_production_gates_is_0():
 
 @pytest.mark.parametrize("flag", _DESIGN_FLAGS)
 def test_design_flags_are_0(flag):
-    row, _ = _verdict(_attempt(flag, passed=False, failed_gates=["size_ratio"]))
+    row, _, _ = _verdict(_attempt(flag, passed=False, failed_gates=["size_ratio"]))
 
     assert row.label == 0 and row.failure_mode == f"{flag.name}:size_ratio"
 
 
 @pytest.mark.parametrize("flag", _PREFLIGHT_FLAGS)
 def test_preflight_flags_make_no_row(flag):
-    assert _verdict(_attempt(flag)) == (None, False)  # settled: the geometry rules' job, not p_mesh's
+    # Settled with no row, and reported: the geometry rules should have caught it, not p_mesh
+    assert _verdict(_attempt(flag)) == (None, False, "a1")
+    assert AL_mesh_training_rows([_attempt(flag)], PRODUCTION).preflight == ["a1"]
 
 
 @pytest.mark.parametrize("flag", _TOOLING_FLAGS)
 def test_tooling_flags_are_retried(flag):
-    assert _verdict(_attempt(flag)) == (None, True)  # shows nothing about the shape: pending, not dropped
+    assert _verdict(_attempt(flag)) == (None, True, None)  # shows nothing about the shape: pending, not dropped
     assert _verdict(_attempt(flag), _rerun(2)).row.label == 1
 # endregion
 
@@ -136,20 +143,20 @@ def test_launch_error_is_retried(log):
 
 @pytest.mark.parametrize("log", [LOG_TIMEOUT, LOG_CRASH])
 def test_first_timeout_or_crash_waits_for_its_rerun(log):
-    assert _verdict(_subprocess(log)) == (None, True)
+    assert _verdict(_subprocess(log)) == (None, True, None)
 
 
 @pytest.mark.parametrize("first, again, mode", [(LOG_TIMEOUT, LOG_TIMEOUT, "c2d_hang"),
                                                 (LOG_CRASH, LOG_CRASH, "c2d_crash"),
                                                 (LOG_TIMEOUT, LOG_CRASH, "c2d_crash")])
 def test_reproduced_failure_is_0(first, again, mode):
-    row, pending = _verdict(_subprocess(first), _rerun(2, _subprocess, again))
+    row, pending, preflight = _verdict(_subprocess(first), _rerun(2, _subprocess, again))
 
-    assert not pending and row.label == 0 and row.failure_mode == mode and row.attempt_id == "a1"
+    assert not pending and preflight is None and row.label == 0 and row.failure_mode == mode and row.attempt_id == "a1"
 
 
 def test_failure_that_passes_on_rerun_is_labelled_by_the_rerun():
-    row, _ = _verdict(_subprocess(LOG_CRASH), _rerun(2))
+    row, _, _ = _verdict(_subprocess(LOG_CRASH), _rerun(2))
 
     assert row.label == 1 and row.attempt_id == "a2"  # the first failure was the machine's
     failed = _verdict(_subprocess(LOG_CRASH), _rerun(2, _attempt, MeshExitFlag.LOW_QUALITY, failed_gates=["skew"]))
@@ -179,18 +186,19 @@ def test_tries_must_be_one_chain():
 
 # region Step 3
 def test_rule_rejection_makes_no_row():
-    assert _verdict(_attempt(entry_flag=None, passed=None, geometry_rejected=True)) == (None, False)
+    # Caught by a rule, as it should be: not reported as a pre-flight hit
+    assert _verdict(_attempt(entry_flag=None, passed=None, geometry_rejected=True)) == (None, False, None)
     with pytest.raises(ValueError, match="no entry flag"):  # reached the mesher, yet nothing recorded
         _verdict(_attempt(entry_flag=None))
 
 
 def test_aborted_slot_is_retried():
-    assert _verdict(_attempt(entry_flag=None, passed=None, aborted=True)) == (None, True)
+    assert _verdict(_attempt(entry_flag=None, passed=None, aborted=True)) == (None, True, None)
 
 
 def test_non_production_settings_make_no_row():
-    assert _verdict(_attempt(settings_id="probe0042")) == (None, False)
-    assert _verdict(_attempt(knobs={**PRODUCTION.knobs, "jmax": 160.0})) == (None, False)
+    assert _verdict(_attempt(settings_id="probe0042")) == (None, False, None)
+    assert _verdict(_attempt(knobs={**PRODUCTION.knobs, "jmax": 160.0})) == (None, False, None)
 
 
 def test_rows_are_one_per_shape_and_settings():
@@ -222,4 +230,37 @@ def test_free_vector_has_18_values():
 
     assert N_FREE == 18 and x.shape == (18,) and x.dtype == np.float64
     assert x[0] == CUSP.upper[0] and x[9] == CUSP.lower[1] and x[-1] == CUSP.le_weight
+# endregion
+
+
+# region Step 5
+def test_rerun_listed_before_its_first_attempt():
+    first, rerun = _subprocess(LOG_CRASH, seq=0), _rerun(2, _subprocess, LOG_CRASH, seq=1)
+    normal, swapped = (AL_mesh_training_rows(a, PRODUCTION) for a in ([first, rerun], [rerun, first]))
+
+    assert [(r.attempt_id, r.label, r.failure_mode) for r in swapped.rows] == \
+           [(r.attempt_id, r.label, r.failure_mode) for r in normal.rows] == [("a1", 0, "c2d_crash")]
+    assert swapped[1:] == normal[1:] == ([], [], [], [])  # no conflicts, pending, orphans or preflight hits
+
+
+def test_reruns_are_judged_in_seq_order():
+    # Listed order says crash twice (0); seq says the meshing rerun came first, so it labels the shape (1)
+    first = _subprocess(LOG_CRASH, seq=0)
+    later_crash, earlier_mesh = _rerun(2, _subprocess, LOG_CRASH, seq=2), _rerun(3, seq=1)
+    (row,) = AL_mesh_training_rows([first, later_crash, earlier_mesh], PRODUCTION).rows
+
+    assert row.label == 1 and row.attempt_id == "a3"
+
+
+def test_rerun_without_its_first_attempt_is_an_orphan():
+    attempts = [_attempt(attempt_id="z2", rerun_of="z1", geometry_id="lost"), _attempt(geometry_id="other")]
+    out = AL_mesh_training_rows(attempts, PRODUCTION)  # doesn't raise
+
+    assert out.orphans == ["z1"]
+    assert [r.geometry_id for r in out.rows] == ["other"] and out.pending == []
+
+
+def test_empty_chain_refused():
+    with pytest.raises(ValueError, match="at least one attempt"):
+        AL_chain_verdict([], PRODUCTION)
 # endregion
