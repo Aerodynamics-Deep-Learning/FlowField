@@ -11,12 +11,12 @@ fixed design Re every shape is meshed at, so the input is the shape alone. So a 
 
 A shape's tries form a chain: its first attempt and every rerun whose `rerun_of` links lead back to it,
 in `seq` order.
-Tries that show nothing about the shape are transient: skipped, and the chain retried. That is a launch
-error, a log naming no cause, an aborted slot, and a tooling error (FATAL_ERROR, no exe, a caller bug),
-which needs fixing before its retry. The first informative try decides: a mesh verdict labels the shape,
-a rule rejection or pre-flight flag makes no row, and a timeout or crash, which can be the shape's or a
-busy machine's, waits for one informative rerun. A chain still waiting is pending (`AL_needs_rerun`),
-reported, never dropped.
+Tries that show nothing about the shape are skipped, and the chain left pending: retried now after a
+launch error, a log naming no cause or an aborted slot, but blocked on a fix after a tooling error
+(FATAL_ERROR, no exe, a caller bug), which would only repeat. The first informative try decides: a mesh
+verdict labels the shape, a rule rejection or pre-flight flag makes no row, and a timeout or crash, which
+can be the shape's or a busy machine's, waits for one informative rerun. A pending chain is reported,
+never dropped; `AL_needs_rerun` says which to schedule now.
 
 The model's input is the 18 free CST values (`AL_cst_to_free`): the upper A_0..A_8, the lower A_1..A_8
 (its A_0 is -upper A_0, `CSTParams`' shared nose) and the LE weight.
@@ -97,19 +97,20 @@ class MeshAttempt(BaseModel):
     passed: Optional[bool] = None
     failed_gates: list[str] = []
     mesher_log: Optional[str] = None
-    rerun_of: Optional[str] = None      # the first attempt of the chain this try repeats
+    rerun_of: Optional[str] = None      # the try this one repeats: the first attempt, or a rerun of it
 
 
 class MeshRow(BaseModel):
-    """One p_mesh training example."""
-    model_config = {"arbitrary_types_allowed": True}
-
+    """One p_mesh training example; `x` is a list so a row saves as JSON, `x_array` gives the model's input."""
     geometry_id: str
     settings_id: str
     attempt_id: str                     # the try that decided it
-    x: np.ndarray                       # (N_FREE,) `AL_cst_to_free`
+    x: list[float]                      # N_FREE values, `AL_cst_to_free`
     label: int                          # 1: passes the production gates
     failure_mode: Optional[str] = None  # why a 0 failed: the flag and the gates, or c2d_crash / c2d_hang
+
+    def x_array(self) -> np.ndarray:
+        return np.asarray(self.x, dtype=np.float64)
 
 
 class MeshConflict(BaseModel):
@@ -119,28 +120,38 @@ class MeshConflict(BaseModel):
     rows: list[MeshRow]
 
 
+class Pending(str, Enum):
+    """Why a chain is still undecided, which tells the scheduler whether to run its next try."""
+    RETRY = "retry"      # run the next try now: a launch error, an aborted slot, a timeout or crash to repeat
+    BLOCKED = "blocked"  # a tooling error (no exe, an exception, a caller bug): fix it, then retry
+
+
 class Verdict(NamedTuple):
-    """What a chain of tries decided: a row, nothing (`row` None), or nothing yet (`pending`)."""
+    """What a chain of tries decided: a row, nothing (`row` None), or nothing yet (`pending` set)."""
     row: Optional[MeshRow]
-    pending: bool
+    pending: Optional[Pending]
     preflight: Optional[str] = None  # the attempt_id the mesher refused before meshing
 
 
 class MeshRows(NamedTuple):
     """
-    The training rows, the shapes left out for conflicting, the chains still awaiting a try, the chains
-    whose first attempt isn't in the log, and the attempts the mesher refused before meshing.
+    The training rows, and every chain that made none it could have: the shapes left out for conflicting,
+    the chains still awaiting a try, those whose first attempt isn't in the log or whose log is broken,
+    and the attempts the mesher refused before meshing.
     """
     rows: list[MeshRow]
     conflicts: list[MeshConflict]
-    pending: list[str]    # first attempt_ids
-    orphans: list[str]    # the missing first attempt_ids
-    preflight: list[str]  # attempt_ids, not first attempt_ids: the try that hit the flag
+    retry: list[str]                 # first attempt_ids of chains to run the next try of now
+    blocked: list[str]               # first attempt_ids of chains waiting on a tooling fix
+    orphans: list[str]               # the missing first attempt_ids
+    broken: dict[str, str]           # first attempt_id (a loop's smallest) -> why the chain can't be judged
+    preflight_attempts: list[str]    # attempt_ids, not first attempt_ids: the try that hit the flag
 
 
 class _Try(str, Enum):
     """What one try shows on its own."""
-    TRANSIENT = "transient"  # nothing about the shape (tooling, an aborted slot): retry
+    RETRY = "retry"          # nothing about the shape (a launch error, an aborted slot): retry now
+    BLOCKED = "blocked"      # nothing about the shape, and a retry would repeat it (tooling): fix, then retry
     NO_ROW = "no_row"        # a rule rejection or pre-flight flag: settles the chain with no row
     C2D_FAIL = "c2d_fail"    # a timeout or crash: needs a second informative try
     VERDICT = "verdict"      # a mesh the gates judged: labels the shape
@@ -167,8 +178,8 @@ def AL_chain_verdict(tries: list[MeshAttempt], production: ProductionMesh) -> Ve
 
     Returns:
         Verdict: The row of the first try that labels the shape; no row for a rule rejection, a
-            pre-flight flag, or non-production settings; pending while only transient tries, or one
-            timeout or crash and transient tries, are in
+            pre-flight flag, or non-production settings; pending while only tries that show nothing, or
+            one timeout or crash and such tries, are in: blocked if the last was a tooling error, else retry
 
     Raises:
         ValueError: If the tries aren't one chain, or a try is missing what its kind needs
@@ -181,30 +192,32 @@ def AL_chain_verdict(tries: list[MeshAttempt], production: ProductionMesh) -> Ve
             or any(t.rerun_of not in ids[:i] for i, t in enumerate(tries[1:], 1))):
         raise ValueError(f"not one chain: {[(t.attempt_id, t.rerun_of) for t in tries]}")
     if not _is_production(first, production):
-        return Verdict(None, False)
+        return Verdict(None, None)
 
     failed: Optional[MeshAttempt] = None  # the first timeout or crash, awaiting its rerun
+    waiting = Pending.RETRY               # set by the last try: one after a tooling fix unblocks the chain
     for t in tries:
         if not _is_production(t, production):
             raise ValueError(f"rerun {t.attempt_id} ran under other settings than its first attempt")
         kind = _try_kind(t)
-        if kind is _Try.TRANSIENT:
+        if kind in (_Try.RETRY, _Try.BLOCKED):
+            waiting = Pending.RETRY if kind is _Try.RETRY else Pending.BLOCKED
             continue
         if kind is _Try.NO_ROW:
-            return Verdict(None, False, None if t.geometry_rejected else t.attempt_id)
+            return Verdict(None, None, None if t.geometry_rejected else t.attempt_id)
         if kind is _Try.VERDICT:
-            return Verdict(_verdict_row(t), False)  # a rerun that meshes labels the shape itself
+            return Verdict(_verdict_row(t), None)  # a rerun that meshes labels the shape itself
         if failed is None:
-            failed = t
+            failed, waiting = t, Pending.RETRY
             continue
         both_hung = all(AL_subprocess_cause(f.mesher_log) is SubprocessCause.TIMEOUT for f in (failed, t))
-        return Verdict(_row(failed, 0, "c2d_hang" if both_hung else "c2d_crash"), False)
-    return Verdict(None, True)
+        return Verdict(_row(failed, 0, "c2d_hang" if both_hung else "c2d_crash"), None)
+    return Verdict(None, waiting)
 
 
 def AL_needs_rerun(tries: list[MeshAttempt], production: ProductionMesh) -> bool:
-    """Whether a chain is still undecided: its next try should be scheduled."""
-    return AL_chain_verdict(tries, production).pending
+    """Whether to schedule a chain's next try now: undecided, and not blocked on a tooling fix."""
+    return AL_chain_verdict(tries, production).pending is Pending.RETRY
 
 
 def AL_mesh_training_rows(attempts: Iterable[MeshAttempt], production: ProductionMesh) -> MeshRows:
@@ -213,38 +226,57 @@ def AL_mesh_training_rows(attempts: Iterable[MeshAttempt], production: Productio
 
     A shape labelled both ways (say it hung twice on a busy machine and meshed later on a quiet one) is
     left out of the rows and reported, so one bad shape can't stop the build; chains still undecided
-    are listed by their first attempt_id. A rerun of a rerun joins the chain its `rerun_of` links lead back
-    to; a chain whose first attempt is missing from the log is listed in the orphans. An attempt the mesher
-    refused before meshing is listed in `preflight`: the geometry rules should have caught it.
+    are listed by their first attempt_id, apart by whether to retry now or after a tooling fix. A rerun of
+    a rerun joins the chain its `rerun_of` links lead back to; a chain whose first attempt is missing from
+    the log is listed in the orphans. A chain that can't be judged (its links loop, an attempt_id logged
+    twice with different contents, or anything `AL_chain_verdict` refuses) is listed in `broken` with the
+    reason, so one bad log row can't stop the build either; an attempt logged twice alike counts once. An
+    attempt the mesher refused before meshing is listed in `preflight_attempts`: the geometry rules should
+    have caught it.
 
     Args:
         attempts (Iterable[MeshAttempt]): Logged tries, in any order: each chain is put in seq order
         production (ProductionMesh): The settings labels hold for
 
     Returns:
-        MeshRows: The rows, the conflicts, the pending chains, the orphans and the preflight hits
-
-    Raises:
-        ValueError: If `rerun_of` links loop, or a chain is broken (see `AL_chain_verdict`)
+        MeshRows: The rows, and every chain that made none: by why
     """
-    attempts = list(attempts)
-    by_id = {a.attempt_id: a for a in attempts}
-    chains: dict[str, list[MeshAttempt]] = {}
+    by_id: dict[str, MeshAttempt] = {}
+    clashes: set[str] = set()  # attempt_ids logged twice with different contents
     for a in attempts:
-        chains.setdefault(_chain_root(a, by_id), []).append(a)
+        if by_id.setdefault(a.attempt_id, a) != a:
+            clashes.add(a.attempt_id)
+    chains: dict[str, list[MeshAttempt]] = {}
+    broken: dict[str, str] = {}
+    for a in by_id.values():
+        first_id, loop = _chain_root(a, by_id)
+        chains.setdefault(first_id, []).append(a)
+        if loop:
+            broken.setdefault(first_id, loop)
 
     by_shape: dict[tuple[str, str], list[MeshRow]] = {}
-    pending, orphans, preflight = [], [], []
+    retry, blocked, orphans, preflight = [], [], [], []
     for first_id, tries in chains.items():
+        if first_id in broken:
+            continue
         if first_id not in by_id:
             orphans.append(first_id)
             continue
+        if clashed := sorted(clashes.intersection(t.attempt_id for t in tries)):
+            broken[first_id] = f"logged twice with different contents: {', '.join(clashed)}"
+            continue
         tries.sort(key=lambda t: (t.rerun_of is not None, t.seq))
-        verdict = AL_chain_verdict(tries, production)
+        try:
+            verdict = AL_chain_verdict(tries, production)
+        except ValueError as e:
+            broken[first_id] = str(e)
+            continue
         if verdict.preflight:
             preflight.append(verdict.preflight)
-        if verdict.pending:
-            pending.append(first_id)
+        if verdict.pending is Pending.RETRY:
+            retry.append(first_id)
+        elif verdict.pending is Pending.BLOCKED:
+            blocked.append(first_id)
         elif verdict.row is not None:
             by_shape.setdefault((verdict.row.geometry_id, verdict.row.settings_id), []).append(verdict.row)
 
@@ -254,21 +286,26 @@ def AL_mesh_training_rows(attempts: Iterable[MeshAttempt], production: Productio
             conflicts.append(MeshConflict(geometry_id=geometry_id, settings_id=settings_id, rows=found))
         else:
             rows.append(found[0])
-    return MeshRows(rows, conflicts, pending, orphans, preflight)
+    return MeshRows(rows=rows, conflicts=conflicts, retry=retry, blocked=blocked, orphans=orphans, broken=broken,
+                    preflight_attempts=preflight)
 
 
-def _chain_root(a: MeshAttempt, by_id: dict[str, MeshAttempt]) -> str:
-    """The attempt_id a try's `rerun_of` links lead back to: a first attempt's, or a missing one's."""
+def _chain_root(a: MeshAttempt, by_id: dict[str, MeshAttempt]) -> tuple[str, Optional[str]]:
+    """
+    The attempt_id a try's `rerun_of` links lead back to (a first attempt's, or a missing one's), and
+    why the chain is broken if they loop instead: then the loop's smallest attempt_id, the same from
+    every try in or leading into it.
+    """
     path = [a.attempt_id]
     while a.rerun_of is not None:
         if a.rerun_of in path:  # the guard: a2 -> a3 -> a2 would walk forever
-            loop = path[path.index(a.rerun_of):] + [a.rerun_of]
-            raise ValueError(f"rerun_of links loop: {' -> '.join(loop)}")
+            loop = path[path.index(a.rerun_of):]
+            return min(loop), f"rerun_of links loop: {' -> '.join(loop + [a.rerun_of])}"
         if a.rerun_of not in by_id:
-            return a.rerun_of
+            return a.rerun_of, None
         path.append(a.rerun_of)
         a = by_id[a.rerun_of]
-    return a.attempt_id
+    return a.attempt_id, None
 
 
 def _is_production(attempt: MeshAttempt, production: ProductionMesh) -> bool:
@@ -279,17 +316,17 @@ def _try_kind(t: MeshAttempt) -> _Try:
     if t.geometry_rejected:
         return _Try.NO_ROW
     if t.aborted:
-        return _Try.TRANSIENT
+        return _Try.RETRY
     if t.entry_flag is None:
         raise ValueError(f"attempt {t.attempt_id} reached the mesher but has no entry flag")
     outcome = FLAG_OUTCOME[t.entry_flag]
     if outcome is MeshOutcome.PREFLIGHT:
         return _Try.NO_ROW
     if outcome is MeshOutcome.INFRA:
-        return _Try.TRANSIENT
+        return _Try.BLOCKED
     if outcome is MeshOutcome.BY_CAUSE:
         cause = AL_subprocess_cause(t.mesher_log)
-        return _Try.C2D_FAIL if cause in (SubprocessCause.TIMEOUT, SubprocessCause.CRASH) else _Try.TRANSIENT
+        return _Try.C2D_FAIL if cause in (SubprocessCause.TIMEOUT, SubprocessCause.CRASH) else _Try.RETRY
     return _Try.VERDICT
 
 
@@ -303,4 +340,4 @@ def _verdict_row(t: MeshAttempt) -> MeshRow:
 
 def _row(t: MeshAttempt, label: int, failure_mode: Optional[str]) -> MeshRow:
     return MeshRow(geometry_id=t.geometry_id, settings_id=t.settings_id, attempt_id=t.attempt_id,
-                   x=AL_cst_to_free(t.cst), label=label, failure_mode=failure_mode)
+                   x=AL_cst_to_free(t.cst).tolist(), label=label, failure_mode=failure_mode)
