@@ -126,6 +126,7 @@ class MeshAttempt(BaseModel):
     cst: CSTParams
     settings_id: str
     knobs: dict[str, float]
+    rules_version: str                  # `rules.RULES_VERSION` the rules ran at, before it reached the mesher
     geometry_rejected: bool = False     # `AL_geometry_rules` or `AL_mesh_rules` refused it
     aborted: bool = False               # its worker slot died, went silent or hit its cap
     entry_flag: Optional[MeshExitFlag] = None
@@ -139,6 +140,7 @@ class MeshRow(BaseModel):
     """One p_mesh training example; `x` is a list so a row saves as JSON, `x_array` gives the model's input."""
     geometry_id: str
     settings_id: str
+    rules_version: str                  # the rules the shape passed, so p_mesh is conditioned on them
     attempt_id: str                     # the try that decided it
     x: list[float]                      # N_FREE values, `AL_cst_to_free`
     label: int                          # 1: passes the production gates
@@ -146,6 +148,10 @@ class MeshRow(BaseModel):
 
     def x_array(self) -> np.ndarray:
         return np.asarray(self.x, dtype=np.float64)
+
+    def features(self) -> np.ndarray:
+        """What a classifier reads: the design alone (a p_conv row adds its conditions)."""
+        return self.x_array()
 
 
 class MeshConflict(BaseModel):
@@ -226,6 +232,8 @@ def AL_chain_verdict(tries: list[MeshAttempt], production: ProductionMesh) -> Ve
     if (first.rerun_of is not None or len(set(ids)) != len(ids)
             or any(t.rerun_of not in ids[:i] for i, t in enumerate(tries[1:], 1))):
         raise ValueError(f"not one chain: {[(t.attempt_id, t.rerun_of) for t in tries]}")
+    if len({t.rules_version for t in tries}) > 1:
+        raise ValueError(f"rules versions differ along the chain: {sorted({t.rules_version for t in tries})}")
     if not _is_production(first, production):
         return Verdict(None, None)
 
@@ -374,5 +382,6 @@ def _verdict_row(t: MeshAttempt) -> MeshRow:
 
 
 def _row(t: MeshAttempt, label: int, failure_mode: Optional[str]) -> MeshRow:
-    return MeshRow(geometry_id=t.geometry_id, settings_id=t.settings_id, attempt_id=t.attempt_id,
+    return MeshRow(geometry_id=t.geometry_id, settings_id=t.settings_id, rules_version=t.rules_version,
+                   attempt_id=t.attempt_id,
                    x=AL_cst_to_free(t.cst).tolist(), label=label, failure_mode=failure_mode)

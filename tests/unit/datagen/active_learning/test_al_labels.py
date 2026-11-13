@@ -35,7 +35,9 @@ Step 5: Ensure chains are put together from the log in any order, and a broken o
     - test_seq_is_required
     - test_attempt_logged_twice_alike_counts_once
     - test_broken_chain_is_reported_not_raised
-Step 6: Ensure the production settings come from one hashed row
+Step 6: Ensure a row carries its rules version, and the production settings come from one hashed row
+    - test_rules_version_is_required_and_carried
+    - test_chain_with_mixed_rules_versions_is_broken
     - test_production_reads_its_settings_row
     - test_production_refuses_a_row_its_id_does_not_hash
     - test_settings_hash_is_the_optimizers
@@ -53,6 +55,7 @@ from src.datagen.active_learning.labels import (
     FLAG_OUTCOME, LOG_CRASH, LOG_LAUNCH, LOG_TIMEOUT, AL_chain_verdict, AL_mesh_training_rows, AL_needs_rerun,
     MeshAttempt, MeshOutcome, MeshRow, Pending, ProductionMesh,
 )
+from src.datagen.active_learning.rules import RULES_VERSION
 from src.datagen.meshing.c2d.run import C2D_generate_mesh
 from src.datagen.meshing.c2d.schemas import C2D_MeshingConfig
 from src.datagen.meshing.common.schemas import MeshBackend, MeshExitFlag, MeshTopology
@@ -70,7 +73,7 @@ _TOOLING_FLAGS = [f for f, o in FLAG_OUTCOME.items() if o is MeshOutcome.INFRA]
 
 def _attempt(flag=MeshExitFlag.SUCCESS, **fields) -> MeshAttempt:
     base = dict(attempt_id="a1", seq=0, geometry_id="cusp", cst=CUSP, settings_id=PRODUCTION.settings_id,
-                knobs=dict(PRODUCTION.knobs), entry_flag=flag)
+                knobs=dict(PRODUCTION.knobs), rules_version=RULES_VERSION, entry_flag=flag)
     if flag is MeshExitFlag.SUCCESS:
         base["passed"] = True
     return MeshAttempt(**{**base, **fields})
@@ -357,6 +360,23 @@ def test_broken_chain_is_reported_not_raised(bad, reason):
 
 
 # region Step 6
+def test_rules_version_is_required_and_carried():
+    with pytest.raises(ValidationError, match="rules_version"):
+        MeshAttempt(**_attempt().model_dump(exclude={"rules_version"}))
+
+    row = _verdict(_attempt(rules_version="rules-r0")).row
+    assert row.rules_version == "rules-r0"
+    assert (row.features() == row.x_array()).all()  # what a classifier reads
+
+
+def test_chain_with_mixed_rules_versions_is_broken():
+    tries = [_subprocess(LOG_CRASH), _rerun(2, rules_version="rules-r0")]
+    out = AL_mesh_training_rows(tries + [_attempt(attempt_id="b1", geometry_id="other")], PRODUCTION)
+
+    assert list(out.broken) == ["a1"] and "rules versions differ" in out.broken["a1"]
+    assert [r.geometry_id for r in out.rows] == ["other"]
+
+
 def test_production_reads_its_settings_row():
     row = production_settings(te_gap=0.003)
     prod = ProductionMesh(settings=row, knobs=KNOBS)
