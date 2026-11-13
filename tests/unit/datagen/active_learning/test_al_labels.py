@@ -35,6 +35,10 @@ Step 5: Ensure chains are put together from the log in any order, and a broken o
     - test_seq_is_required
     - test_attempt_logged_twice_alike_counts_once
     - test_broken_chain_is_reported_not_raised
+Step 6: Ensure the production settings come from one hashed row
+    - test_production_reads_its_settings_row
+    - test_production_refuses_a_row_its_id_does_not_hash
+    - test_settings_hash_is_the_optimizers
 """
 
 import subprocess
@@ -51,11 +55,14 @@ from src.datagen.active_learning.labels import (
 )
 from src.datagen.meshing.c2d.run import C2D_generate_mesh
 from src.datagen.meshing.c2d.schemas import C2D_MeshingConfig
-from src.datagen.meshing.common.schemas import MeshExitFlag
+from src.datagen.meshing.common.schemas import MeshBackend, MeshExitFlag, MeshTopology
+from src.datagen.meshing.optimizer.common import settings as optim_settings
+from src.datagen.meshing.optimizer.common.constants import TE_GAP_DEFAULT
+from src.datagen.meshing.optimizer.common.settings import Optim_settings_hash
 from src.datagen.schemas import Airfoil
+from tests.active_learning_rows import KNOBS, PRODUCTION, production_settings
 from tests.geometry_shapes import CUSP
 
-PRODUCTION = ProductionMesh(settings_id="prod0001", knobs={"jmax": 147.0, "dx_mid": 0.006})
 _DESIGN_FLAGS = [f for f, o in FLAG_OUTCOME.items() if o is MeshOutcome.DESIGN_FAIL]
 _PREFLIGHT_FLAGS = [f for f, o in FLAG_OUTCOME.items() if o is MeshOutcome.PREFLIGHT]
 _TOOLING_FLAGS = [f for f, o in FLAG_OUTCOME.items() if o is MeshOutcome.INFRA]
@@ -346,4 +353,35 @@ def test_broken_chain_is_reported_not_raised(bad, reason):
 
     assert list(out.broken) == ["a1"] and reason in out.broken["a1"]
     assert [r.geometry_id for r in out.rows] == ["other"]  # the rest of the build goes on
+# endregion
+
+
+# region Step 6
+def test_production_reads_its_settings_row():
+    row = production_settings(te_gap=0.003)
+    prod = ProductionMesh(settings=row, knobs=KNOBS)
+
+    assert prod.settings_id == row["settings_id"] and prod.te_gap == 0.003
+    assert prod.backend is MeshBackend.C2D and prod.topology is MeshTopology.OGRD
+    assert PRODUCTION.te_gap == TE_GAP_DEFAULT
+
+
+def test_production_refuses_a_row_its_id_does_not_hash():
+    edited = {**production_settings(), "te_gap": 0.003}  # changed after hashing: the id says another gap
+    with pytest.raises(ValidationError, match="settings_id .* doesn't match"):
+        ProductionMesh(settings=edited, knobs=KNOBS)
+
+    missing = production_settings()
+    del missing["te_gap"]
+    missing["settings_id"] = Optim_settings_hash(missing)
+    with pytest.raises(ValidationError, match="te_gap"):
+        ProductionMesh(settings=missing, knobs=KNOBS)
+
+
+def test_settings_hash_is_the_optimizers():
+    with patch.object(optim_settings, "Optim_mesher_sha256", return_value="0" * 64):
+        row = optim_settings.Optim_build_settings()
+
+    assert Optim_settings_hash(row) == row["settings_id"]  # the id is over every column but itself
+    assert ProductionMesh(settings=row, knobs=KNOBS).settings_id == row["settings_id"]
 # endregion

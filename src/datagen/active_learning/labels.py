@@ -26,11 +26,12 @@ from enum import Enum
 from typing import Iterable, NamedTuple, Optional
 
 import numpy as np
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 
 from src.datagen.active_learning.design_vector import AL_cst_to_free
 from src.datagen.geometry.common.schemas import CSTParams
-from src.datagen.meshing.common.schemas import MeshExitFlag
+from src.datagen.meshing.common.schemas import MeshBackend, MeshExitFlag, MeshTopology
+from src.datagen.meshing.optimizer.common.settings import Optim_settings_hash
 
 
 # How `c2d.run.C2D_generate_mesh` opens its log for each SUBPROCESS_FAIL cause
@@ -73,9 +74,43 @@ FLAG_OUTCOME: dict[MeshExitFlag, MeshOutcome] = {
 
 
 class ProductionMesh(BaseModel):
-    """The settings p_mesh's labels hold for: the study's settings_id and the frozen c2d knobs."""
-    settings_id: str
+    """
+    The settings p_mesh's labels hold for: the study's settings row (`Optim_build_settings`) and the frozen
+    c2d knobs. The settings_id, mesher and TE are read off the one row, which must hash to its own id, so
+    they can't disagree.
+    """
+    settings: dict
     knobs: dict[str, float]
+
+    @model_validator(mode="after")
+    def _row_hashes_to_its_id(self):
+        missing = sorted({"settings_id", "backend", "topology", "te_gap", "cell_ceiling"} - set(self.settings))
+        if missing:
+            raise ValueError(f"settings row lacks {', '.join(missing)}")
+        if Optim_settings_hash(self.settings) != self.settings["settings_id"]:
+            raise ValueError(f"settings_id {self.settings['settings_id']} doesn't match the row's other columns "
+                             f"(they hash to {Optim_settings_hash(self.settings)}): edited after hashing?")
+        return self
+
+    @property
+    def settings_id(self) -> str:
+        return self.settings["settings_id"]
+
+    @property
+    def backend(self) -> MeshBackend:
+        return MeshBackend(self.settings["backend"])
+
+    @property
+    def topology(self) -> MeshTopology:
+        return MeshTopology(self.settings["topology"])
+
+    @property
+    def te_gap(self) -> float:
+        return float(self.settings["te_gap"])
+
+    @property
+    def cell_ceiling(self) -> int:
+        return int(self.settings["cell_ceiling"])
 
 
 class MeshAttempt(BaseModel):
@@ -91,7 +126,7 @@ class MeshAttempt(BaseModel):
     cst: CSTParams
     settings_id: str
     knobs: dict[str, float]
-    geometry_rejected: bool = False     # the geometry rules or the sampler's pre-check refused it
+    geometry_rejected: bool = False     # `AL_geometry_rules` or `AL_mesh_rules` refused it
     aborted: bool = False               # its worker slot died, went silent or hit its cap
     entry_flag: Optional[MeshExitFlag] = None
     passed: Optional[bool] = None

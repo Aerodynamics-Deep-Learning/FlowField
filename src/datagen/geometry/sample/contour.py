@@ -140,17 +140,39 @@ def Geom_build_contour(shape: ShapeRecord, te: TETreatment, gap: Optional[float]
         ContourError: If a blunt or round TE gets no positive gap, or a round TE's cap would leave its own
             side of y = 0
     """
+    return Geom_build_cst_contour(shape.cst, te, gap, geometry_id=shape.geometry_id,
+                                  shape_version=shape.shape_version)
+
+
+def Geom_build_cst_contour(cst: CSTParams, te: TETreatment, gap: Optional[float] = None, *, geometry_id: str,
+                           shape_version: str) -> Contour:
+    """
+    `Geom_build_contour` for a CST that isn't stored yet, such as a generated design: the same curve.
+
+    Args:
+        cst (CSTParams): The shape
+        te (TETreatment): The TE the mesher needs
+        gap (float): The study's TE gap [c], for a blunt or round TE; ignored for a sharp one
+        geometry_id (str): The id the contour reports
+        shape_version (str): The shape version it reports
+
+    Returns:
+        Contour: The curve, its pins, and for a round TE its caps and their spacing limit
+
+    Raises:
+        ContourError: As `Geom_build_contour`
+    """
     te = TETreatment(te)
     if te is TETreatment.SHARP:
         gap = None
     elif gap is None or not gap > 0.0:
         raise ContourError(f"a {te.value} TE needs a positive gap, got {gap}")
-    upper, lower = _Surface(shape.cst, True, gap or 0.0), _Surface(shape.cst, False, gap or 0.0)
+    upper, lower = _Surface(cst, True, gap or 0.0), _Surface(cst, False, gap or 0.0)
 
     weld_x = caps = te_cap_limit = None
     if te is TETreatment.ROUND:
         weld_x = 1.0 - WELD_OFFSET * gap
-        cap_u, cap_l = _caps(shape.cst, gap, weld_x)
+        cap_u, cap_l = _caps(cst, gap, weld_x)
         u_w = math.sqrt(weld_x)
         spec = [(cap_u, 1.0, 0.0), (upper, u_w, 0.0), (lower, 0.0, u_w), (cap_l, 0.0, 1.0)]
         kinds = [PinKind.TIP, PinKind.WELD_UPPER, PinKind.LE, PinKind.WELD_LOWER, PinKind.TIP]
@@ -181,7 +203,7 @@ def Geom_build_contour(shape: ShapeRecord, te: TETreatment, gap: Optional[float]
         offset += float(arc[-1])
 
     pins = tuple(Pin(k, float(s), (float(x), float(y))) for k, s, (x, y) in zip(kinds, starts + [offset], xys))
-    return Contour(geometry_id=shape.geometry_id, shape_version=shape.shape_version, te=te, gap=gap,
+    return Contour(geometry_id=geometry_id, shape_version=shape_version, te=te, gap=gap,
                    closed=te is not TETreatment.BLUNT, length=offset, pins=pins, weld_x=weld_x, caps=caps,
                    te_cap_limit=te_cap_limit, table_s=_frozen(np.concatenate(table_s)),
                    table_kappa=_frozen(np.concatenate(table_kappa)), _pieces=tuple(pieces),

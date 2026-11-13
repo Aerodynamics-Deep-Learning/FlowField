@@ -3,6 +3,7 @@ The study's settings row: every value a run is meshed and judged by, plus the me
 id. Two runs share a settings_id exactly when none of them differs.
 
     Optim_build_settings    the row, with the tunable columns optionally overridden
+    Optim_settings_hash     a row's settings_id, from its other columns
     Optim_mesher_sha256     the hash of the c2d executable in use
     Optim_pinned            every config field the search leaves alone, with its value
     Optim_config_schema_fp  a fingerprint of C2D_MeshingConfig, recorded on every run
@@ -93,8 +94,14 @@ def Optim_build_settings(**overrides) -> dict:
         else:
             value = float(value)
         values[key] = value
-    values["settings_id"] = hashlib.sha256(json.dumps(values, sort_keys=True).encode()).hexdigest()[:16]
+    values["settings_id"] = Optim_settings_hash(values)
     return values
+
+
+def Optim_settings_hash(values: dict) -> str:
+    """The settings_id of a settings row: the first 16 hex of the SHA-256 over every column but itself."""
+    rest = {k: v for k, v in values.items() if k != "settings_id"}
+    return hashlib.sha256(json.dumps(rest, sort_keys=True).encode()).hexdigest()[:16]
 
 
 def Optim_mesher_sha256() -> str:
