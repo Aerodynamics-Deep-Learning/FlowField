@@ -16,6 +16,11 @@ Follow-up for the sampler: f_mean and f_std are on the latent scale, which the f
 refit can double both without changing p much). So an optimistic score is formed there, f_mean + k * f_std,
 and only then turned into a probability (the logistic, averaged as `predict_proba` averages it); adding
 f_std to p, or comparing f_std across refits, mixes scales.
+
+Follow-up on calibration: on synthetic step data (labels 0.1 / 0.9 either side of a plane) the GP is
+under-confident at the extremes, mean p about 0.73 where the truth is 0.9. Check the reliability table
+(`calibration.AL_calibration_report`) on the first real labels; if it persists, recalibrate p out of fold
+(Platt or isotonic on `AL_grouped_kfold_predictions`). Until then, set no threshold to skip designs on p.
 """
 
 import logging
