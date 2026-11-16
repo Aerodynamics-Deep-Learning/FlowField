@@ -16,6 +16,7 @@ import numpy as np
 from src.datagen.meshing.common.constants import MARKER_AIRFOIL, MARKER_FARFIELD
 # The SU2 boundary names this writer stamps onto the mesh, shared with gmsh's physical groups and
 # with `solvers/su2/schemas.py`'s marker defaults.
+from src.datagen.meshing.common.su2io import Common_read_su2  # numpy-only, the parser the quality pass uses
 
 def read_plot3d_2d(path):
     """
@@ -140,38 +141,29 @@ def convert(p3d_path, nmf_path, su2_path, weld_tol=1e-8, verbose=False):
     # order="F": flat index = p + j0*imax  -> matches nid(p, j0)
     coords = np.column_stack([X.reshape(-1, order="F"), Y.reshape(-1, order="F")])
 
-    # weld coincident nodes (closes the wake cut) 
+    # weld coincident nodes (closes the wake cut): each maps to the first node sharing its rounded
+    # key; + 0.0 folds -0.0 into 0.0, as a tuple key does
     decimals = max(0, int(round(-np.log10(weld_tol))))
-    keys = {}
-    remap = np.arange(imax * jmax)
-    for k in range(imax * jmax):
-        key = (round(float(coords[k, 0]), decimals), round(float(coords[k, 1]), decimals))
-        if key in keys:
-            remap[k] = keys[key]
-        else:
-            keys[key] = k
+    _, first, inverse = np.unique(np.round(coords, decimals) + 0.0, axis=0, return_index=True,
+                                  return_inverse=True)
+    remap = first[inverse.ravel()]
     n_welded = int(np.sum(remap != np.arange(imax * jmax)))
     log("Welded %d coincident node(s) along cut/seam." % n_welded)
 
-    # build quad cells (no i-wrap)
-    elems = []
-    neg_before = 0
-    for j0 in range(jmax - 1):
-        for p in range(imax - 1):
-            n0 = int(remap[nid(p,     j0)])
-            n1 = int(remap[nid(p + 1, j0)])
-            n2 = int(remap[nid(p + 1, j0 + 1)])
-            n3 = int(remap[nid(p,     j0 + 1)])
-            if len({n0, n1, n2, n3}) < 4:
-                continue  # degenerate (collapsed at cut) -- skip
-            x = coords[[n0, n1, n2, n3], 0]
-            y = coords[[n0, n1, n2, n3], 1]
-            area = 0.5 * ((x[0]*y[1]-x[1]*y[0]) + (x[1]*y[2]-x[2]*y[1]) +
-                          (x[2]*y[3]-x[3]*y[2]) + (x[3]*y[0]-x[0]*y[3]))
-            if area < 0:
-                neg_before += 1
-                n1, n3 = n3, n1  # reverse -> CCW
-            elems.append((n0, n1, n2, n3))
+    # build quad cells (no i-wrap), j0 outer and p inner
+    j0, p = np.divmod(np.arange((jmax - 1) * (imax - 1)), imax - 1)
+    base = nid(p, j0)
+    n0, n1, n2, n3 = remap[base], remap[base + 1], remap[base + imax + 1], remap[base + imax]
+    # degenerate (collapsed at cut) -- skip
+    keep = (n0 != n1) & (n0 != n2) & (n0 != n3) & (n1 != n2) & (n1 != n3) & (n2 != n3)
+    n0, n1, n2, n3 = n0[keep], n1[keep], n2[keep], n3[keep]
+    x, y = coords[:, 0], coords[:, 1]
+    area = 0.5 * ((x[n0]*y[n1]-x[n1]*y[n0]) + (x[n1]*y[n2]-x[n2]*y[n1]) +
+                  (x[n2]*y[n3]-x[n3]*y[n2]) + (x[n3]*y[n0]-x[n0]*y[n3]))
+    neg = area < 0
+    n1, n3 = np.where(neg, n3, n1), np.where(neg, n1, n3)  # reverse -> CCW
+    elems = np.stack([n0, n1, n2, n3], axis=1)
+    neg_before = int(neg.sum())
     log("Built %d quads (%d reversed to CCW)." % (len(elems), neg_before))
 
     # markers from .nmf 
@@ -196,8 +188,11 @@ def convert(p3d_path, nmf_path, su2_path, weld_tol=1e-8, verbose=False):
            MARKER_FARFIELD, len(marker_edges[MARKER_FARFIELD])))
 
     # compact node numbering
-    used = sorted({n for e in elems for n in e})
-    old2new = {old: new for new, old in enumerate(used)}
+    used_mask = np.zeros(imax * jmax, dtype=bool)
+    used_mask[elems.ravel()] = True
+    used = np.flatnonzero(used_mask)
+    old2new = np.full(imax * jmax, -1)
+    old2new[used] = np.arange(len(used))
     new_coords = coords[used]
 
     # A collapsed cell can leave a marker edge on a node no surviving cell uses. That piece of
@@ -205,32 +200,28 @@ def convert(p3d_path, nmf_path, su2_path, weld_tol=1e-8, verbose=False):
     # (before this) raise KeyError mid-write and leave a truncated .su2 on disk.
     n_orphan = 0
     for tag, edges in marker_edges.items():
-        kept = [(na, nb) for na, nb in edges if na in old2new and nb in old2new]
-        n_orphan += len(edges) - len(kept)
-        marker_edges[tag] = kept
+        e = np.array(edges, dtype=int).reshape(-1, 2)
+        kept = (old2new[e] >= 0).all(axis=1)
+        n_orphan += int((~kept).sum())
+        marker_edges[tag] = old2new[e[kept]]
     if n_orphan:
         log("Dropped %d marker edge(s) left on collapsed cells." % n_orphan)
 
-    def mp(n):
-        return old2new[n]
-
-    # write SU2 
+    # write SU2: one %-format per block over a flat tuple, since per-row lists cost more in GC than the writing
+    cells = old2new[elems]
+    xs, ys = new_coords[:, 0].tolist(), new_coords[:, 1].tolist()
+    tags = [t for t in (MARKER_AIRFOIL, MARKER_FARFIELD) if len(marker_edges[t])]
+    out = ["%% SU2 mesh converted from C2D by plot3d_to_su2.py\n", "NDIME= 2\n",
+           "NELEM= %d\n" % len(cells), ("9 %d %d %d %d\n" * len(cells)) % tuple(cells.ravel().tolist()),
+           "NPOIN= %d\n" % len(used),
+           ("%.16e %.16e %d\n" * len(used)) % tuple(v for row in zip(xs, ys, range(len(used))) for v in row),
+           "NMARK= %d\n" % len(tags)]
+    for t in tags:
+        e = marker_edges[t]
+        out.append("MARKER_TAG= %s\nMARKER_ELEMS= %d\n" % (t, len(e)))
+        out.append(("3 %d %d\n" * len(e)) % tuple(e.ravel().tolist()))
     with open(su2_path, "w") as f:
-        f.write("%% SU2 mesh converted from C2D by plot3d_to_su2.py\n")
-        f.write("NDIME= 2\n")
-        f.write("NELEM= %d\n" % len(elems))
-        for e in elems:
-            f.write("9 %d %d %d %d\n" % (mp(e[0]), mp(e[1]), mp(e[2]), mp(e[3])))
-        f.write("NPOIN= %d\n" % len(used))
-        for k, (x, y) in enumerate(new_coords):
-            f.write("%.16e %.16e %d\n" % (x, y, k))
-        tags = [t for t in (MARKER_AIRFOIL, MARKER_FARFIELD) if marker_edges[t]]
-        f.write("NMARK= %d\n" % len(tags))
-        for t in tags:
-            f.write("MARKER_TAG= %s\n" % t)
-            f.write("MARKER_ELEMS= %d\n" % len(marker_edges[t]))
-            for (na, nb) in marker_edges[t]:
-                f.write("3 %d %d\n" % (mp(na), mp(nb)))
+        f.write("".join(out))
 
     log("Wrote %s  (%d nodes, %d elems, markers: %s)"
         % (su2_path, len(used), len(elems), ", ".join(tags)))
@@ -250,22 +241,14 @@ def write_vtk(nodes, quads, tris, path):
     tris = np.asarray(tris, int).reshape(-1, 3) if len(tris) else np.zeros((0, 3), int)
     ncell = len(quads) + len(tris)
     size = len(quads) * 5 + len(tris) * 4        # count + indices per cell
+    # one %-format per block over a flat tuple, as `convert` writes the .su2
+    out = ["# vtk DataFile Version 3.0\nC2D mesh\nASCII\n", "DATASET UNSTRUCTURED_GRID\n",
+           "POINTS %d float\n" % len(nodes), ("%.9e %.9e 0.0\n" * len(nodes)) % tuple(nodes.ravel().tolist()),
+           "CELLS %d %d\n" % (ncell, size), ("4 %d %d %d %d\n" * len(quads)) % tuple(quads.ravel().tolist()),
+           ("3 %d %d %d\n" * len(tris)) % tuple(tris.ravel().tolist()),
+           "CELL_TYPES %d\n" % ncell, "9\n" * len(quads), "5\n" * len(tris)]  # VTK_QUAD, VTK_TRIANGLE
     with open(path, "w") as f:
-        f.write("# vtk DataFile Version 3.0\nC2D mesh\nASCII\n")
-        f.write("DATASET UNSTRUCTURED_GRID\n")
-        f.write("POINTS %d float\n" % len(nodes))
-        for x, y in nodes:
-            f.write("%.9e %.9e 0.0\n" % (x, y))
-        f.write("CELLS %d %d\n" % (ncell, size))
-        for q in quads:
-            f.write("4 %d %d %d %d\n" % (q[0], q[1], q[2], q[3]))
-        for t in tris:
-            f.write("3 %d %d %d\n" % (t[0], t[1], t[2]))
-        f.write("CELL_TYPES %d\n" % ncell)
-        for _ in quads:
-            f.write("9\n")     # VTK_QUAD
-        for _ in tris:
-            f.write("5\n")     # VTK_TRIANGLE
+        f.write("".join(out))
     return dict(nodes=len(nodes), cells=ncell)
 
 
@@ -273,27 +256,6 @@ def su2_to_vtk(su2_path, vtk_path):
     """
     Read a 2D .su2 mesh and write it as .vtk.
     """
-    nodes, quads, tris = [], [], []
-    with open(su2_path) as f:
-        lines = [ln.strip() for ln in f if ln.strip() and not ln.startswith("%")]
-    i, n = 0, len(lines)
-    while i < n:
-        t = lines[i].split(); key = t[0].upper()
-        if key == "NELEM=":
-            ne = int(t[1]); i += 1
-            for _ in range(ne):
-                p = lines[i].split(); et = int(p[0])
-                if et == 9:
-                    quads.append([int(p[1]), int(p[2]), int(p[3]), int(p[4])])
-                elif et == 5:
-                    tris.append([int(p[1]), int(p[2]), int(p[3])])
-                i += 1
-            continue
-        if key == "NPOIN=":
-            npn = int(t[1]); i += 1
-            for _ in range(npn):
-                p = lines[i].split(); nodes.append([float(p[0]), float(p[1])]); i += 1
-            continue
-        i += 1
-    return write_vtk(np.array(nodes), quads, tris, vtk_path)
+    nodes, quads, tris, _ = Common_read_su2(su2_path)
+    return write_vtk(nodes, quads, tris, vtk_path)
 

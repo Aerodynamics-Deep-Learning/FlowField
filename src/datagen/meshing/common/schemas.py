@@ -6,6 +6,8 @@ Summary:
     - MeshOut: The output schema to the main handle function `entry::Common_GenerateMesh`
     - MeshExitFlag: The exit flag to keep track of meshing-success
     - MeshQualitySummary: Data schema that governs the quality summary no fail meshes
+    - QualityLimits: The limits the quality summary counts bad cells against, for reporting only
+    - MetricDistribution: One quality metric's spread over the mesh and where its worst value sits
     - MeshGeoDeviationSummary: Geometric deviation summary that quantifies diff between geometry and mesh
     - MeshBackend: Flag on which backend to use
     - MeshTopology: Flag on which meshing topology/grid structure to use
@@ -19,6 +21,7 @@ from pydantic import BaseModel, Field, model_validator
 from src.datagen.schemas import Airfoil, Freestream
 from src.datagen.meshing.gmsh.schemas import GMSH_CMeshingConfig, GMSH_OMeshingConfig
 from src.datagen.meshing.c2d.schemas import C2D_MeshingConfig
+from src.datagen.meshing.common.constants import SKEWNESS_LIMIT, ORTHO_MIN, JACOBIAN_LIMIT, SIZE_RATIO_LIMIT
 
 class MeshBackend(str, Enum):
     """Which meshing implementation to dispatch to."""
@@ -41,13 +44,13 @@ class MeshExitFlag(IntEnum):
     reading, since they are all evaluated last and rank by how unusable the mesh is instead.
     """
     INPUT_TENSOR_FAIL = -11      # malformed/NaN/Inf/non-chord-normalized airfoil geometry
-    INPUT_BLUNTING_FAIL = -10   # trailing-edge gap check
+    INPUT_CLOSURE_FAIL = -10    # TE closed/open state isn't what the (backend, topology) pairing requires
     INPUT_FREESTREAM_FAIL = -9  # alpha/Re/mach/altitude physicality
     INPUT_UNKNOWN_SOLVER = -8   # unknown solver
     EXECUTABLE_NOT_FOUND = -7   # c2d only: the C2D exe isn't built/found
     SUBPROCESS_FAIL = -6        # c2d only: the exe crashed or timed out
     FATAL_ERROR = -5            # unhandled exception in either backend
-    CONVERSION_FAIL = -4        # gmsh's extrusion produced 0 elements / c2d's p3d->su2 conversion failed
+    CONVERSION_FAIL = -4        # gmsh's extrusion produced 0 elements / c2d's p3d->su2 conversion failed / a boundary edge is in no marker
     UNACCEPTABLE_QUALITY = -3   # mesh produced but has inverted/zero-area cells (or minSICN <= 0) or quality that is unacceptable
     GEOMETRY_DEVIATION_FAIL = -2 # well-formed mesh, but its MARKER_AIRFOIL boundary does not reproduce the input geometry
     LOW_QUALITY = -1             # valid mesh, but exceeds the skew/growth/aspect-ratio acceptance thresholds
@@ -67,6 +70,17 @@ _CONFIG_FOR_PAIRING = {
 MeshingConfig = Union[GMSH_CMeshingConfig, GMSH_OMeshingConfig, C2D_MeshingConfig]
 
 
+class QualityLimits(BaseModel):
+    """
+    The limits `common.quality` counts bad cells against (`MetricDistribution.n_bad`). Reporting only:
+    the verdict always gates on `constants.py`, so a caller can count against stricter limits of its own.
+    """
+    skew_max: float = SKEWNESS_LIMIT
+    ortho_min: float = ORTHO_MIN
+    jac_min: float = JACOBIAN_LIMIT
+    size_ratio_max: float = SIZE_RATIO_LIMIT
+
+
 class MeshIn(BaseModel):
     """Backend-agnostic contract for the input to mesh generation."""
     # extra="forbid": mesh_config defaults when omitted, so a mistyped keyword would otherwise be
@@ -83,6 +97,11 @@ class MeshIn(BaseModel):
         "the pairing's own config class is instantiated with its defaults; a plain dict is "
         "coerced to that class. See `_resolve_mesh_config`."
     )
+    count_limits: QualityLimits = Field(
+        default_factory=QualityLimits, description="Limits the quality summary counts bad cells "
+        "against; the verdict itself always gates on constants.py"
+    )
+    write_vtk: bool = Field(True, description="Also write the diagnostic .vtk next to the .su2")
 
     @model_validator(mode="before")
     @classmethod
@@ -102,15 +121,26 @@ class MeshIn(BaseModel):
 
         config = raw.get("mesh_config")
         if config is None:
-            raw["mesh_config"] = expected()
+            config = expected()
         elif isinstance(config, dict):
-            raw["mesh_config"] = expected(**config)
+            config = expected(**config)
         elif not isinstance(config, expected):
             raise ValueError(
                 f"backend={pairing[0].value} with topology={pairing[1].value} requires "
                 f"{expected.__name__}, got {type(config).__name__}"
             )
-        return raw
+        return {**raw, "mesh_config": config}  # A copy: model_validate hands over the caller's own dict
+
+
+class MetricDistribution(BaseModel):
+    """One quality metric over the whole mesh: per cell, or per interior face for the size ratio."""
+    p50: float # Median
+    t99: float = Field(..., description="The value 99% of cells are at least as good as")
+    t999: float = Field(..., description="The value 99.9% of cells are at least as good as")
+    n_bad: int = Field(..., description="Cells (faces, for the size ratio) past the `QualityLimits` limit")
+    x: float # Worst cell's centroid (face's midpoint, for the size ratio)
+    y: float
+    dwall: Optional[float] = Field(..., description="Worst location's distance to the nearest MARKER_AIRFOIL node; None without that marker")
 
 
 class MeshQualitySummary(BaseModel):
@@ -120,7 +150,13 @@ class MeshQualitySummary(BaseModel):
     min_ortho: float = Field(..., description="Worst cell's orthogonal quality, measured off face normals against the centroid-to-face and centroid-to-centroid vectors. 1 is perfectly orthogonal, 0 degenerate, negative folded. Reads a cell's neighbours, so it is not derivable from that cell's own corner angles the way skewness is")
     min_jac: float = Field(..., description="Worst cell's scaled Jacobian: 1 is a right-angled corner, 0 a collapsed one, below 0 a corner folded back on itself. The one metric here that detects a tangled cell, which skewness reads as well-shaped")
     max_ar: float # Maximum aspect ratio, self explanatory, not as hard as ortho or jac
+    max_size_ratio: float = Field(..., description="Worst neighbour size jump: larger over smaller cell area across any interior face, 1 where neighbours match. The one gate that sees how abruptly cell size changes, which every other metric scores cell by cell")
     acceptable: bool
+    neg: Optional[int] = None # Inverted (non-positive area) cells
+    skew_dist: Optional[MetricDistribution] = None
+    ortho_dist: Optional[MetricDistribution] = None
+    jac_dist: Optional[MetricDistribution] = None
+    size_ratio_dist: Optional[MetricDistribution] = None # None with no interior face
 
 class MeshGeoDeviationSummary(BaseModel):
     """

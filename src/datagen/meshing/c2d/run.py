@@ -10,6 +10,7 @@ import os
 import subprocess
 
 from src.datagen.schemas import Airfoil
+from src.datagen.utils.tools import find_tool
 from src.datagen.meshing.c2d.convert import convert, su2_to_vtk
 from src.datagen.meshing.c2d.io import write_airfoil_dat, C2D_Write_Exception
 from src.datagen.meshing.c2d.schemas import C2D_In, C2D_Out, C2D_ExitFlag, C2D_MeshingConfig
@@ -53,7 +54,7 @@ def C2D_MeshGenerator(data: C2D_In) -> C2D_Out:
         # Try getting the mesh
         p3d_path, su2_path, vtk_path, nmf_path, log_text = C2D_generate_mesh(
             airfoil=data.airfoil, exe=exe, working_dir=data.working_dir,
-            config=data.meshing_config
+            config=data.meshing_config, Re=data.freestream.Re, write_vtk=data.write_vtk
         )
 
         if p3d_path is None:
@@ -106,8 +107,9 @@ def C2D_MeshGenerator(data: C2D_In) -> C2D_Out:
             pass
 
 
-def _te_is_sharp(dat_path: str, tol: float = 1e-5) -> bool:
-    """True if the airfoil's first and last points coincide (sharp TE)."""
+def _c2d_reads_closed(dat_path: str) -> bool:
+    """c2d's own closed-TE test on the written `.dat`: equal y at both ends (it snaps x itself).
+    c2d calls a closed contour "sharp" whatever its TE shape, and recommends CGRD for it."""
     pts = []
     with open(dat_path) as f:
         for line in f:
@@ -119,20 +121,20 @@ def _te_is_sharp(dat_path: str, tol: float = 1e-5) -> bool:
                     pass
     if len(pts) < 3:
         return False
-    (x0, y0), (x1, y1) = pts[0], pts[-1]
-    return ((x0 - x1) ** 2 + (y0 - y1) ** 2) ** 0.5 < tol
+    return pts[0][1] == pts[-1][1]
 
 
-def _write_grid_options(path: str, params: dict, name: str, topo: str, slvr: str) -> None:
+def _write_grid_options(path: str, params: dict, name: str, topo: str, slvr: str, Re: float) -> None:
     """Writes C2D's `grid_options.in` namelist directly from `params` (expected to
-    already be complete, `C2D_MeshingConfig.to_params()` always supplies every field)."""
+    already be complete, `C2D_MeshingConfig.to_params()` always supplies every field), with the
+    freestream's `Re` as c2d's `recd`, which sizes the first cell."""
     fmt = lambda v: str(int(v)) if isinstance(v, int) else repr(float(v))
     with open(path, "w") as f:
         f.write("&SOPT\n")
-        for k in ("nsrf", "lesp", "tesp", "radi", "nwke", "fdst", "fwkl", "fwki"):
+        for k in ("radi", "nwke", "fdst", "fwkl", "fwki"):
             f.write("  %s = %s\n" % (k, fmt(params[k])))
-        f.write("/\n&VOPT\n  name = '%s'\n" % name)
-        for k in ("jmax", "ypls", "recd", "stp1", "stp2", "nrmt", "nrmb",
+        f.write("/\n&VOPT\n  name = '%s'\n  recd = %s\n" % (name, fmt(Re)))
+        for k in ("jmax", "ypls", "stp1", "stp2", "nrmt", "nrmb",
                   "alfa", "epsi", "epse", "funi", "asmt", "cfrc"):
             f.write("  %s = %s\n" % (k, fmt(params[k])))
         f.write("  slvr = '%s'\n  topo = '%s'\n" % (slvr, topo))
@@ -140,17 +142,18 @@ def _write_grid_options(path: str, params: dict, name: str, topo: str, slvr: str
 
 
 def C2D_generate_mesh(airfoil: Airfoil, exe: str, working_dir: str, config: C2D_MeshingConfig,
-                      timeout: int = 300):
+                      Re: float, timeout: int = 300, write_vtk: bool = True):
     """
     Writes the airfoil to a `.dat` file, drives the C2D binary directly, and converts the
-    resulting grid to SU2/VTK. Mirrors `gmsh.run.GMSH_generate_cmesh`/`gmsh.run.GMSH_generate_omesh`'s roles 
+    resulting grid to SU2 (and VTK, unless `write_vtk` is False). Mirrors
+    `gmsh.run.GMSH_generate_cmesh`/`gmsh.run.GMSH_generate_omesh`'s roles
     in `GMSH_MeshGenerator`: performs the actual meshing work and returns only the artifact paths the
     caller needs, flagging and exception handling stay in `C2D_MeshGenerator`, the same split
-    GMSH uses.
+    GMSH uses. `Re` is the freestream's, which c2d sizes the first cell from, as gmsh does.
 
     Returns (p3d_path, su2_path, vtk_path, nmf_path, log_text). `su2_path`/`vtk_path`/`nmf_path`
-    are None if conversion didn't yield a `.su2`; all four paths are None if C2D itself
-    never produced a `.p3d`. `log_text` is C2D's captured stdout/stderr (or the caught
+    are None if conversion didn't yield a `.su2` (`vtk_path` also without `write_vtk`); all four
+    paths are None if C2D itself never produced a `.p3d`. `log_text` is C2D's captured stdout/stderr (or the caught
     launch/timeout error) and is always populated, mirroring how GMSH's own logger output is
     always available for `GMSH_MeshGenerator` to dump regardless of outcome.
     """
@@ -158,25 +161,17 @@ def C2D_generate_mesh(airfoil: Airfoil, exe: str, working_dir: str, config: C2D_
     dat_path = os.path.join(working_dir, f"{name}.dat")
     write_airfoil_dat(airfoil, dat_path)
 
-    # c2d prompts for an interactive y/n confirmation when the topo in grid_options.in
-    # disagrees with what it recommends for this airfoil's TE shape ("Sharp trailing edge: C-grid
-    # topology is recommended." / "Blunt trailing edge: O-grid topology is recommended.").
-    # Always honor the caller's requested topo as-is, warn that the mismatch may hurt mesh quality, 
-    # and auto-answer c2d's confirmation prompt so this headless pipeline doesn't hang waiting on it.
+    # c2d recommends CGRD for a closed contour and OGRD for an open one, and prompts y/n when `topo`
+    # disagrees; answer it so the headless run doesn't hang. The recommendation is not a quality
+    # judgement here, since BUFF needs a closed contour on either grid.
     topo = config.topo; slvr = config.slvr
-    recommended = "CGRD" if _te_is_sharp(dat_path) else "OGRD"
-    confirm = ""
-    if topo != recommended: # If the current setup does not match expected recommendation, do what needs to be done
-        logger.warning(
-            "%s: requested topo=%s but TE shape recommends topo=%s; auto-confirming c2d's "
-            "override prompt (mesh quality may suffer from the mismatch)",
-            name, topo, recommended,
-        )
-        confirm = "y\n"
+    recommended = "CGRD" if _c2d_reads_closed(dat_path) else "OGRD"
+    confirm = "y\n" if topo != recommended else ""
 
     _write_grid_options(os.path.join(working_dir, "grid_options.in"), config.to_params(),
-                        name, topo, slvr)
-    stdin_cmds = os.path.basename(dat_path) + "\n" + confirm + "grid\nsmth\nquit\n"
+                        name, topo, slvr, Re)
+    # BUFF meshes the input points as given: no c2d resampling, no TE fillet; it refuses an open contour
+    stdin_cmds = os.path.basename(dat_path) + "\n" + confirm + "grid\nbuff\nquit\n"
 
     try:
         proc = subprocess.run([exe], cwd=working_dir, input=stdin_cmds, text=True,
@@ -200,19 +195,14 @@ def C2D_generate_mesh(airfoil: Airfoil, exe: str, working_dir: str, config: C2D_
     if not os.path.isfile(su2_path):
         return p3d_path, None, None, None, log_text
 
+    if not write_vtk:
+        return p3d_path, su2_path, None, nmf_path, log_text
     su2_to_vtk(su2_path, vtk_path)
     return p3d_path, su2_path, vtk_path, nmf_path, log_text
 
 
-def C2D_find_exe(search_dirs=None):
-    """Locate the c2d executable (bin/ next to the package by default)."""
-    here = os.path.dirname(os.path.abspath(__file__))
-    dirs = search_dirs or [os.path.join(here, "bin"), here]
-    for d in dirs:
-        for name in ("c2d.exe", "c2d"):
-            p = os.path.join(d, name)
-            if os.path.isfile(p):
-                return os.path.abspath(p)
-    return None
+def C2D_find_exe():
+    """Locate the user-supplied c2d executable (`c2d` in tools.toml, see `utils.tools.find_tool`)."""
+    return find_tool("c2d")
 
 

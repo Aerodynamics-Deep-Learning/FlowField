@@ -1,13 +1,13 @@
 import time
 
-from .schemas import SU2_In, SU2_Out
+from .schemas import SU2_In, SU2_Out, SU2_ConvergenceFlag
 from .utils import SU2_StrategyIdentify, SU2_KeepDeleteVTU
 from .build_cfg.main import SU2_BuildCfg
 from .runcfd import SU2_RunCFD
 from .convergence import SU2_CheckConvergence
 from .data_handling.handler import SU2_ComprWipeData
 from .manifest import SU2_UpdateManifest
-from . import _validate_su2_existance
+from ...utils.tools import find_tool
 
 def SU2_Runner(su2_in: SU2_In) -> SU2_Out:
     """
@@ -19,11 +19,24 @@ def SU2_Runner(su2_in: SU2_In) -> SU2_Out:
     Returns:
         SU2_Out: The standard SU2 output agreement
     """
-    # Env check happens here
-    _validate_su2_existance()
-
     # Identifies the strategy first
     strategy = SU2_StrategyIdentify(su2_in.freestream)
+
+    # A missing solver is a flag, not an exception, returned before anything is written
+    exe = find_tool("su2_cfd", "SU2_CFD")
+    if exe is None:
+        return SU2_Out(
+            airfoil=su2_in.airfoil,
+            freestream=su2_in.freestream,
+            manifest_path=su2_in.manifest_path,
+            working_dir=su2_in.working_dir,
+            solver_cfg=su2_in.solver_cfg,
+            sim_id=su2_in.sim_id,
+            config_path_list=[],
+            strategy=strategy,
+            convergence=SU2_ConvergenceFlag.EXECUTABLE_NOT_FOUND,
+            compute_time=0.0
+        )
 
     # Using the identified solver strategy, builds the config files needed for the run
     config_path_list = SU2_BuildCfg(
@@ -39,7 +52,8 @@ def SU2_Runner(su2_in: SU2_In) -> SU2_Out:
     convergence_flag_temp, stdout, stderr = SU2_RunCFD(
         config_path_list=config_path_list,
         timeout_sec=su2_in.solver_cfg.timeout_sec,
-        strategy=strategy
+        strategy=strategy,
+        exe=exe
     )
     compute_time = time.perf_counter() - start_time
 

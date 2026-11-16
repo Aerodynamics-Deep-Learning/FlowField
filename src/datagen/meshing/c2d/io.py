@@ -20,7 +20,7 @@ def C2D_Write_Exception(exception: Exception, working_dir: str) -> str:
 
 def write_airfoil_dat(airfoil, path: str) -> str:
     """
-    Write an in-memory `Airfoil` (Selig-format coords_tensor, same ordering gmsh consumes) out
+    Write an in-memory `Airfoil` (Selig-format coords, same ordering gmsh consumes) out
     to an XFOIL-format `.dat` file, so c2d's exe (which only reads files) can use it.
 
     Written unscaled, unlike gmsh's CAD points: the exe re-normalizes whatever it reads back to
@@ -28,10 +28,8 @@ def write_airfoil_dat(airfoil, path: str) -> str:
 
     Returns the path written.
     """
-    name = airfoil.airfoil_name or "airfoil"
-    coords = airfoil.coords_tensor.detach().cpu().numpy()
     with open(path, "w") as f:
-        f.write(f"{name}\n")
-        for x, y in coords:
+        f.write(f"{airfoil.airfoil_name}\n")
+        for x, y in airfoil.coords:
             f.write(f"{float(x): .8f} {float(y): .8f}\n")
     return path

@@ -15,6 +15,7 @@ venv/
 
 # Logs and outputs
 *.log
+!data/examples/**/*.log
 
 # Tensorboard logs
 runs/*
@@ -25,6 +26,7 @@ wandb/
 
 # Agents
 .claude/
+.claude_audits/
 CLAUDE.md
 
 # Parquet files
@@ -32,7 +34,30 @@ CLAUDE.md
 
 /tests/datagen/meshing/gmsh/test_sicn/old
 
-# C2D executable (built/installed locally per an upcoming setup script; never commit
-# the binary itself: see src/datagen/meshing/c2d/run.py:C2D_find_exe)
-src/datagen/meshing/c2d/bin/*
-!src/datagen/meshing/c2d/bin/.gitkeep
+# Datagen script runs: unnamed outputs (the scratchpad), named experiments, this machine's machine-check stamp
+data/scratchpad/
+data/experiments/
+data/.machine_check.json
+
+# SQLite's rollback journals, which exist only while a store is being written
+*.sqlite-journal
+
+# Example runs: pure data files and per-file ingest reports stay local but for three airfoils' (the databases go
+# through Git LFS)
+data/examples/**/*.dat
+data/examples/**/*.su2
+data/examples/**/*.vtk
+data/examples/**/geometry_ingest/raw/*/**/*.txt
+!data/examples/**/geometry_ingest/raw/*/summary.txt
+!data/examples/**/naca0012.*
+!data/examples/**/s1223.*
+!data/examples/**/e376.*
+
+# Interactive viewers: this machine's selection; each test's committed .example.yaml is the default
+tests/**/test_manual_*.yaml
+!tests/**/test_manual_*.example.yaml
+
+# External tools are user-installed, never committed: local paths live in tools.toml
+# (see tools.example.toml)
+tools.toml
+*.exe

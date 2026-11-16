@@ -7,10 +7,10 @@ so a flawlessly meshed wrong boundary passes it. This module is the comparative 
 wall boundary back out of the written `.su2` and measures it against the input coordinates.
 
 The airfoil label and the input coordinates are assumed correct (the orchestrator validates those),
-so this answers if the mesher stayed on the curve it was given. Both backends
-resample: gmsh interpolates a spline through the input points and samples it at transfinite
-stations, and c2d redistributes inside the exe. Therefore, there is no point correspondence to rely on and
-every metric here is a curve-to-curve distance.
+so this answers if the mesher stayed on the curve it was given. gmsh's C-mesh resamples (a
+spline through the input points, sampled at transfinite stations), while c2d (BUFF) and gmsh's
+O-mesh mesh the input points as given. A resampling mesher has no point correspondence to rely on,
+so every metric here is a curve-to-curve distance.
 """
 
 import logging
@@ -19,7 +19,7 @@ import numpy as np
 
 from src.datagen.schemas import Airfoil
 from .schemas import MeshGeoDeviationSummary, MeshExitFlag
-from .quality import _read_su2  # shared .su2 parser; both verdict passes read the same file
+from .su2io import Common_read_su2  # both verdict passes read the same file with the same parser
 from .constants import MARKER_AIRFOIL, GEO_DEV_LIMIT
 # The SU2 tag of the no-slip wall, the boundary this pass scores (matched exactly, never
 # case-folded).
@@ -34,7 +34,7 @@ def Common_evaluate_mesh_geo_dev(mesh_path: str | None,
 
     Args:
         mesh_path (str | None): Path to the written `.su2` mesh
-        airfoil (Airfoil): The airfoil the mesh was built from; `coords_tensor` is chord-normalized
+        airfoil (Airfoil): The airfoil the mesh was built from; `coords` is chord-normalized
             and `chord` carries the physical size the mesh was built at
 
     Returns:
@@ -93,10 +93,10 @@ def Common_evaluate_mesh_geo_dev(mesh_path: str | None,
 def _reference_polyline(airfoil: Airfoil) -> np.ndarray:
     """
     The input contour as a closed polyline, chord-normalized: Selig order plus the wrap-around
-    segment. That last segment is the blunt TE face, which gmsh's C-mesh puts in MARKER_AIRFOIL;
-    for a sharp TE it is degenerate and behaves as a point.
+    segment. On an open contour that segment is the TE line gmsh's C-mesh puts in MARKER_AIRFOIL;
+    on a closed one it is degenerate and behaves as a point.
     """
-    ref = airfoil.coords_tensor.detach().cpu().numpy()[:, :2].astype(float)
+    ref = airfoil.coords[:, :2].astype(float)
     return np.vstack([ref, ref[:1]])
 
 
@@ -107,7 +107,7 @@ def _boundary_from_su2(mesh_path: str | None):
     Returns `(None, None)` when the marker is missing or empty. Node indices are remapped to the
     boundary's own numbering, so `nodes` holds only wall nodes.
     """
-    nodes, _quads, _tris, markers = _read_su2(mesh_path)
+    nodes, _quads, _tris, markers = Common_read_su2(mesh_path)
     segments = markers.get(MARKER_AIRFOIL)
     if not segments:
         logger.error("No %s marker in %s; tags present: %s",

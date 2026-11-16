@@ -1,0 +1,14 @@
+# What the sampling viewer (test_manual_sampling_viewer.py) shows, keys 1-9. Copy this file to
+# test_manual_sampling_viewer.yaml beside it (gitignored) and edit that one; it wins when it exists. This
+# committed copy is the default, and test_viewer_cases_sample keeps it in step with the manifest and the sampler.
+#
+# cases: up to nine stored airfoils, each with its TE handling (te: round, sharp or blunt; gap for a blunt or
+# round one) and any sampling knobs (dx_mid, le_ratio, te_ratio, cluster_width). Left out: the studies' defaults
+# (the knobs' own, gap TE_GAP).
+
+cases:
+  naca4412: {te: round}                                          # every default: ~600 points
+  s1223:    {te: round, dx_mid: 0.004, te_ratio: 0.1}            # the steepest TE stored; te clamped
+  mid012r:  {te: round, le_ratio: 0.02, cluster_width: 0.08}     # the sharpest nose stored
+  e387:     {te: sharp, cluster_width: 0.1}                      # the c2d C-grid's TE: no cap
+  s4096:    {te: blunt, gap: 0.006}                              # the gmsh C-mesh's TE: left open

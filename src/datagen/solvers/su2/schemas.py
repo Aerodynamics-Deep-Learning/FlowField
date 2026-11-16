@@ -13,6 +13,7 @@ class SU2_ConvergenceFlag(IntEnum):
     """
     TEMP = -10 # Placeholder flag within the pipeline
     UNKNOWN = -9 # For flags that are completely unknown/somehow avoided all the flagging checks
+    EXECUTABLE_NOT_FOUND = -3 # SU2_CFD not found (tools.toml), the solver never launched
     TIMEOUT = -2 # Self explanatory
     FATAL = -1 # A fatal error occured, e.g. missing file, no solution given at all
     DIVERGED = 0 # A complete/partial divergence of the solution

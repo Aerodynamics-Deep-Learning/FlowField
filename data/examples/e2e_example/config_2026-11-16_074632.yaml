@@ -1,0 +1,29 @@
+# An example end-to-end run of every datagen stage over the for_cst suite (190 files), every value constants.py's
+# own, for developers to see what a full pipeline run writes. Run from the repo root:
+#     python -m scripts.datagen.meshing.master data/examples/e2e_example.yaml
+
+folder: examples/e2e_example
+
+machine_check:
+  enabled: true
+
+geometry_calibrate:
+  enabled: true
+  folder: 'C:/Users/Ege Artan/OneDrive/Masaüstü/for_cst'
+  orders: 4-12
+
+geometry_ingest:
+  enabled: true
+  folder: 'C:/Users/Ege Artan/OneDrive/Masaüstü/for_cst'
+
+mesh_calibrate:
+  enabled: true
+  rungs: [1, 2, 3]
+
+campaign:
+  enabled: true
+  settings_label: example end-to-end run on for_cst
+
+remesh:
+  enabled: true
+  all: true

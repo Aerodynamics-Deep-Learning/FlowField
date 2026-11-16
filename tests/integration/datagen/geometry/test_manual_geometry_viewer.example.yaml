@@ -1,0 +1,17 @@
+# What the geometry viewer (test_manual_geometry_viewer.py) shows, keys 1-9, 0. Copy this file to
+# test_manual_geometry_viewer.yaml beside it (gitignored) and edit that one; it wins when it exists. This
+# committed copy is the default, and test_viewer_selection_is_in_the_manifest keeps it in step with the manifest.
+#
+# airfoils: up to ten names, looked up among the accepted airfoils first, then the rejected ones.
+
+airfoils:
+  - naca4412    # 4-digit family, built from its formula; its nose point is not the geometric LE
+  - naca001066  # modified 4-digit, formula against a sparse 33-point file
+  - s4096       # the largest gap pried closed (6.2%c), slanted TE base
+  - sc21010     # source tilted 2.6 deg
+  - n24         # source LE ~0.05c off (0, 0)
+  - fx69274     # slanted TE base, stretched to x = 1
+  - goe09k      # the sparsest file, 29 points
+  - s1221       # high-lift section
+  - e387        # a plain closed tabulated airfoil, the control case
+  - goe217      # the worst accepted fit, 9.7e-4c

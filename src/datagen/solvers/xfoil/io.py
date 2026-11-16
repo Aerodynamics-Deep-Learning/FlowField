@@ -1,14 +1,14 @@
-import torch
+import numpy as np
 
-def XFoil_Parse_Coords(coords_path: str) -> torch.Tensor:
+def XFoil_Parse_Coords(coords_path: str) -> np.ndarray:
     """
-    Convers the raw .dat file of the coords into a tensor of the form [N, [x, y]] in the Selig format
+    Convers the raw .dat file of the coords into an array of the form [N, [x, y]] in the Selig format
 
     Args:
         coords_path (str): The path string to the coords
 
     Returns:
-        torch.Tensor: The tensor of the form [N, [x, y]] in the Selig format, representing the coords of the airfoil
+        np.ndarray: The array of the form [N, [x, y]] in the Selig format, representing the coords of the airfoil
     """
     coords_temp = []
     with open(coords_path, "r") as f:
@@ -20,17 +20,17 @@ def XFoil_Parse_Coords(coords_path: str) -> torch.Tensor:
                     coords_temp.append([x, y])
                 except ValueError:
                     continue
-    return torch.tensor(coords_temp, dtype=torch.float32)
+    return np.array(coords_temp, dtype=np.float64)
 
-def XFoil_Parse_Cp(cp_file_path: str) -> torch.Tensor:
+def XFoil_Parse_Cp(cp_file_path: str) -> np.ndarray:
     """
-    Parses the outputted Cp file from XFoil, t get the final Cp distribution tensor of the form [N, [x, Cp]] in Selig
+    Parses the outputted Cp file from XFoil, t get the final Cp distribution array of the form [N, [x, Cp]] in Selig
 
     Args:
         cp_file_path (str): The path string to the Cp file outputted by XFoil
 
     Returns:
-        torch.Tensor: The tensor of the form [N, [x, Cp]] in the Selig format, representing the Cp distribution around the airfoil
+        np.ndarray: The array of the form [N, [x, Cp]] in the Selig format, representing the Cp distribution around the airfoil
     """
     Cp_temp = []
     with open(cp_file_path, "r") as f:
@@ -43,8 +43,8 @@ def XFoil_Parse_Cp(cp_file_path: str) -> torch.Tensor:
                     Cp_temp.append([x, Cp])
                 except ValueError:
                     continue
-    return torch.tensor(Cp_temp, dtype=torch.float32)
-    
+    return np.array(Cp_temp, dtype=np.float64)
+
 def XFoil_Write_Stdout(working_dir: str, stdout: str) -> str:
     """
     Writes the stdout of the entire run, returns the path it was written to
@@ -52,7 +52,7 @@ def XFoil_Write_Stdout(working_dir: str, stdout: str) -> str:
     Args:
         working_dir (str): The path string of the working directory
         stdout (str): The entire stdout printout
-    
+
     Returns:
         stdout_path (str): The path string of the saved stdout
     """
