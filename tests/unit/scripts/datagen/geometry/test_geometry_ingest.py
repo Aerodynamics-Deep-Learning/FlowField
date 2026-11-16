@@ -8,8 +8,6 @@ Step 2: Ensure a mistake in what was asked stops it before the ingest runs, and 
 constants.py's CST values
     - test_a_mistake_is_a_usage_error
     - test_the_shared_manifest_takes_only_the_constants_cst
-Step 3: Ensure an ingest into the shared manifest keeps the parity reference in step
-    - test_after_a_shared_ingest_the_reference_is_rewritten_or_flagged
 
 The ingest itself is a stand-in; it is tested in the geometry tiers.
 """
@@ -20,7 +18,6 @@ from types import SimpleNamespace
 import pytest
 
 from scripts.datagen.geometry import ingest as geometry_ingest
-from scripts.datagen.engine import Resolved
 from src.datagen.constants import CST_FIT_TOL, CST_NOSE, CST_ORDER
 
 _CONSTANTS = {"order": CST_ORDER, "nose": CST_NOSE, "fit_tol": CST_FIT_TOL}
@@ -29,7 +26,7 @@ _CONSTANTS = {"order": CST_ORDER, "nose": CST_NOSE, "fit_tol": CST_FIT_TOL}
 @pytest.fixture
 def ingest(monkeypatch):
     calls = []
-    summary = SimpleNamespace(summary_path="raw/datagen/geometry/report/x/summary.txt")
+    summary = SimpleNamespace(summary_path="raw/x/summary.txt")
     monkeypatch.setattr(geometry_ingest, "Geom_ingest_folder", lambda *args, **kw: calls.append((*args, kw)) or summary)
     monkeypatch.setattr(geometry_ingest, "Geom_format_digest", lambda s: "the digest")
     monkeypatch.setattr(geometry_ingest, "Geom_suspect_points", lambda s: ["a suspect point"])
@@ -73,40 +70,4 @@ def test_the_shared_manifest_takes_only_the_constants_cst(ingest, tmp_path, data
 
     assert geometry_ingest.main(["--data-root", "shared", "--dry-run", "--set", "cst_order=10"]) == 0  # writes nothing
     assert ingest[0][3]["order"] == 10
-# endregion
-
-
-# region Step 3
-class _Run:
-    def __init__(self, code=0):
-        self.said, self.relayed, self.code = [], [], code
-
-    def say(self, stage, level, text):
-        self.said.append((stage, level, text))
-
-    def relay(self, *args):
-        self.relayed.append(args)
-        return self.code
-
-
-@pytest.mark.parametrize("how, problem, passed, said", [
-    ("new", "stale", {"machine_check"}, None),
-    ("shared", None, {"machine_check"}, ("info", "still lists")),
-    ("shared", "the reference lists other airfoils: rewrite", set(), ("!", "the reference lists other airfoils")),
-    ("shared", "the reference lists other airfoils: rewrite", {"machine_check"}, ("!", "commit tests/")),
-], ids=["not shared", "still in step", "unchecked: flagged", "checked: rewritten"])
-def test_after_a_shared_ingest_the_reference_is_rewritten_or_flagged(monkeypatch, how, problem, passed, said):
-    monkeypatch.setattr(geometry_ingest, "Script_reference_problem", lambda: problem)
-    plan = SimpleNamespace(writes=[Resolved("data_root", None, how)], args=SimpleNamespace(dry_run=False))
-    run = _Run()
-
-    geometry_ingest._after(plan, passed, run)
-
-    if said is None:
-        assert run.said == [] and run.relayed == []
-        return
-    stage, level, text = run.said[-1]
-    assert (stage, level) == ("geometry_ingest", said[0]) and said[1] in text
-    rewrote = [("geometry_ingest", "scripts.datagen.meshing.machine_check", ["--rewrite"], "machine_check")]
-    assert run.relayed == (rewrote if problem and passed else [])
 # endregion

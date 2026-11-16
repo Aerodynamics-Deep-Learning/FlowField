@@ -1,6 +1,6 @@
 # What the re-mesh viewer (test_manual_remesh_viewer.py) shows. Copy this file to
 # test_manual_remesh_viewer.yaml beside it (gitignored) and edit that one; it wins when it exists. This committed
-# copy names no store, since run stores live only on the machine that ran them.
+# copy names no store, so no test reads data/; the entries below are the committed example run's.
 #
 # folders: up to five, keys 1-5; the left and right arrows move within one. Each folder is a store and any of
 # best, all_runs and manual, shown in the order written:
@@ -18,12 +18,13 @@
 #
 # For example:
 # folders:
-#   - store: scratchpad/2026-11-10_092440_e2e4_for_cst/campaign
+#   - store: examples/e2e_example/campaign
 #     best:                                   # every best run
-#   - store: scratchpad/2026-11-10_092440_e2e4_for_cst/campaign
+#   - store: examples/e2e_example/campaign
 #     all_runs: [m27]                         # its ladder: golden, then the smoothing rung
-#   - store: scratchpad/2026-11-10_092440_e2e4_for_cst/mesh_calibrate
+#   - store: examples/e2e_example/mesh_calibrate
 #     best: [e376, fx69274]                   # each one's best per calibration rung
-#     manual: ['011b91ed']
+#   - store: examples/e2e_example/campaign
+#     manual: ['e2ef8d53']                    # e376's golden run, failed on skew and size ratio
 
 folders: []

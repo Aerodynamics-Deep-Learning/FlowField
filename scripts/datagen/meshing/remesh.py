@@ -7,8 +7,9 @@ by --run, any run that meshed, best or not.
     python -m scripts.datagen.meshing.remesh (--airfoils a,b | --all | --run ID) [--out <folder>] [--vtk]
         [--db PATH] [--geometry-db PATH] [--set key=value ...]
 
-Left out, --out is a folder in the scratchpad (meshes are never kept in a committed place); --db is the repo's run
-store, `shared`, unless a campaign in the same run made one. Airfoils run one after another; one that cannot be
+Left out, --out is the run folder's remesh/, inside its campaign/ when a campaign in the same run wrote its store
+there (meshes are never kept in a committed place); --db is the repo's run store, `shared`, unless a campaign in the
+same run made one. Airfoils run one after another; one that cannot be
 re-meshed is warned of and the rest go on. By name, the delivered meshes' quality against the gates follows, as a
 table and as histograms in `<out>/quality.png`. The run store is only read, so this can run beside a campaign. Exit
 code 0 when every mesh was delivered, else 1.
@@ -39,7 +40,8 @@ def build_parser() -> argparse.ArgumentParser:
                        help="comma-separated names: each one's best run under the run's settings")
     which.add_argument("--all", action="store_true", help="every stored airfoil's best run under the run's settings")
     which.add_argument("--run", help="one run by id, any that meshed")
-    parser.add_argument("--out", type=Path, help="where each airfoil's folder goes (default: one in the scratchpad)")
+    parser.add_argument("--out", type=Path, help="where each airfoil's folder goes (default: the run folder's "
+                                                 "remesh/, inside this run's campaign/ if it has one)")
     parser.add_argument("--vtk", action="store_true", help="also deliver each .vtk")
     parser.add_argument("--db", type=Path, help="the run store to read (default: the repo's, `shared`)")
     parser.add_argument("--geometry-db", type=Path, help="the geometry manifest (default: the repo's, `shared`)")
@@ -92,7 +94,8 @@ def _check(args: argparse.Namespace, made_here: set) -> list[str]:
 
 STAGE = Stage(
     "remesh", "scripts.datagen.meshing.remesh", build_parser, run,
-    outputs=(Output("out", OutputKind.FOLDER, "re-mesh folder", exists="meshes of the same airfoils are replaced"),),
+    outputs=(Output("out", OutputKind.FOLDER, "re-mesh folder", exists="meshes of the same airfoils are replaced",
+                    within="campaign"),),
     inputs=(Input("db", "run store", shared=lambda: MESHING_DB, made_by=("campaign", "db")), GEOMETRY_DB),
     meshes=True, check=_check, reads=STUDY_KEYS)
 

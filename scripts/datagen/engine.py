@@ -6,7 +6,7 @@ What every datagen script shares, and the run it makes (scripts/datagen/README.m
              constants.py's values) checked against what it reads, every output decided (left out: the run
              folder's <stage>/; given: new or existing; `shared`: the committed one), this run's outputs handed to
              later stages' inputs, each stage's own checks, the warnings; any problem refuses the whole run
-    log      one log, `log.log` in the run's folder beside the config's copy (`config_<time>.yaml`, one per run),
+    log      one per run, `log_<start>.log` in the run's folder beside the config's copy (`config_<start>.yaml`),
              written and fsynced line by line;
              every line `HH:MM:SS [run|cmd] [plan|<stage>|summary] [info|!|!!|error] text`, the blocks opened by
              `===== PLAN =====`, `===== START <stage> =====` / `===== END <stage> =====` and `===== SUMMARY =====`
@@ -40,10 +40,11 @@ from src.datagen.geometry.common.paths import DATA_ROOT, REPO_ROOT, Geom_paths
 CHILD_ENV = "FLOWFIELD_STAGE_CHILD"
 SHARED = "shared"
 INTERRUPTED = 130
-LOG_NAME = "log.log"
-CONFIG_NAME = "config_{:%Y-%m-%d_%H%M%S}.yaml"  # the config's copy, named by the run's start
-HELP_TAIL = ("Through this script: the run gets a new folder in data/scratchpad/ holding its log (log.log) and every "
-             "output left out; `shared` names the committed store.")
+STAMP = "{:%Y-%m-%d_%H%M%S}"  # a run's start, naming its log and its config's copy
+LOG_NAME = "log_{}.log"
+CONFIG_NAME = "config_{}.yaml"
+HELP_TAIL = ("Through this script: the run gets a new folder in data/scratchpad/ holding its log (log_<start>.log) and "
+             "every output left out; `shared` names the committed store.")
 
 _LOGGED = re.compile(r"^\d\d:\d\d:\d\d (DEBUG|INFO|WARNING|ERROR|CRITICAL) (.*)$")
 _LEVEL_OF = {"DEBUG": "info", "INFO": "info", "WARNING": "!", "ERROR": "error", "CRITICAL": "error"}
@@ -81,6 +82,7 @@ class Output(NamedTuple):
     shared: Optional[Callable[[], Path]] = None    # what `shared` means; None: there is no shared one
     exists: str = "this run adds to it"            # what happens to one that exists
     dry_run: Optional[str] = None                  # a flag under which nothing is written
+    within: str = ""                               # left out: <stage>/ goes inside this stage's, if it wrote there
 
 
 class Input(NamedTuple):
@@ -111,7 +113,8 @@ def _manifest_of(data_root: Path) -> Path:
     return Geom_paths(data_root).db
 
 
-GEOMETRY_DB = Input("geometry_db", "geometry manifest", shared=lambda: Geom_paths().db,
+SHARED_GEOMETRY_DB = Geom_paths().db  # the committed manifest
+GEOMETRY_DB = Input("geometry_db", "geometry manifest", shared=lambda: SHARED_GEOMETRY_DB,
                     made_by=("geometry_ingest", "data_root"), from_output=_manifest_of)
 
 
@@ -345,8 +348,8 @@ def _run_folder(name, started, folder, notes, problems) -> Path:
     if path.is_file():
         problems.append(("plan", f"folder: {_show(path)} is a file, not a folder"))
     elif path.exists():
-        notes.append(("plan", "!", f"run folder: {_show(path)} exists; this run adds to its {LOG_NAME} and writes the "
-                                   f"outputs left out into it"))
+        notes.append(("plan", "!", f"run folder: {_show(path)} exists; this run logs beside the earlier runs and writes "
+                                   f"the outputs left out into it"))
     else:
         notes.append(("plan", "info", f"run folder: {_show(path)} (new)"))
     return path
@@ -356,7 +359,9 @@ def _output(stage, out, args, folder, started, made, notes, problems) -> Optiona
     value = getattr(args, out.option)
     dry = bool(out.dry_run and getattr(args, out.dry_run))
     if value is None:
-        path = folder / stage.name
+        host = folder / out.within
+        nested = out.within and any(s == out.within and p.is_relative_to(host) for (s, _), p in made.items())
+        path = (host if nested else folder) / stage.name
         if out.default_name:
             path = path / out.default_name.format(date=started.date().isoformat())
         said = f"nothing given, writing into the run folder: {_show(path)}"
@@ -638,17 +643,17 @@ def Script_execute(plan: RunPlan, *, in_process: bool) -> int:
 
 
 def _open(plan: RunPlan) -> tuple[RunLog, Optional[Path]]:
-    """The run's folder made, the config copied into it beside earlier runs' copies, its log opened."""
+    """The run's folder made, its log opened and the config copied, both named by its start beside earlier runs'."""
     plan.folder.mkdir(parents=True, exist_ok=True)
+    stamp, n = STAMP.format(plan.started), 1
+    while any((plan.folder / name.format(stamp)).exists() for name in (LOG_NAME, CONFIG_NAME)):  # same second
+        n += 1
+        stamp = f"{STAMP.format(plan.started)}_{n}"
     copy = None
     if plan.config is not None:
-        name, n = CONFIG_NAME.format(plan.started), 1
-        copy = plan.folder / name
-        while copy.exists():  # a run into the same folder in the same second
-            n += 1
-            copy = plan.folder / f"{name[:-len('.yaml')]}_{n}.yaml"
+        copy = plan.folder / CONFIG_NAME.format(stamp)
         shutil.copyfile(plan.config, copy)
-    return RunLog(plan.folder / LOG_NAME), copy
+    return RunLog(plan.folder / LOG_NAME.format(stamp)), copy
 
 
 def _marker(*words: str) -> str:

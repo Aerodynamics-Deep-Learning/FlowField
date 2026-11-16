@@ -6,6 +6,7 @@ Step 1: Ensure every output is decided before anything runs, and a later stage r
     - test_a_named_run_folder_holds_the_log_the_config_and_the_outputs_left_out
     - test_a_given_output_is_new_or_existing_and_shared_names_the_committed_one
     - test_a_later_stage_reads_what_an_earlier_one_wrote
+    - test_an_output_left_out_goes_inside_the_stage_it_names_when_that_one_wrote_into_the_run_folder
     - test_the_arguments_parse_back_to_the_same_options
 Step 2: Ensure a run with any problem is refused whole, before anything runs
     - test_every_problem_refuses_the_run
@@ -33,7 +34,7 @@ import subprocess
 import pytest
 
 from scripts.datagen import engine
-from scripts.datagen.engine import CHILD_ENV, LOG_NAME, PlanError, Script_argv, Script_main, Script_plan, Script_run
+from scripts.datagen.engine import CHILD_ENV, PlanError, Script_argv, Script_main, Script_plan, Script_run
 from tests.unit.scripts.datagen.engine_stages import MAKER, READER
 
 _LINE = re.compile(r"^\d\d:\d\d:\d\d \[(run|cmd)\] \[([a-z_]+)\] +\[(info|!|!!|error)\] +(.*)$")
@@ -49,7 +50,12 @@ def _lines(path):
 def _log(data_root, name):
     """The log of the run called `name`, in its scratchpad folder."""
     [run] = [p for p in (data_root / "scratchpad").iterdir() if p.name.endswith("_" + name)]
-    return run / LOG_NAME
+    return _only_log(run)
+
+
+def _only_log(folder):
+    [log] = folder.glob("log_*.log")
+    return log
 
 
 # region Step 1
@@ -59,8 +65,10 @@ def test_an_output_left_out_goes_into_a_new_run_folder_in_the_scratchpad(data_ro
     [run] = (data_root / "scratchpad").iterdir()
     assert re.fullmatch(r"\d{4}-\d\d-\d\d_\d{6}_solo", run.name)
     assert (run / "maker" / "made.txt").read_text() == "made"
-    assert sorted(p.name for p in run.iterdir()) == [LOG_NAME, "maker"]  # no config, stage folders data only
-    rows = _lines(run / LOG_NAME)
+    log = _only_log(run)
+    assert log.name == f"log_{run.name[:-len('_solo')]}.log"  # named by the run's start
+    assert sorted(p.name for p in run.iterdir()) == [log.name, "maker"]  # no config, stage folders data only
+    rows = _lines(log)
     assert ("run", "maker", "info", f"writes out: nothing given, writing into the run folder: {run / 'maker'}") in rows
     started = datetime.datetime.now()
     first = Script_plan("same", [(MAKER, [])], started=started).folder
@@ -78,13 +86,16 @@ def test_a_named_run_folder_holds_the_log_the_config_and_the_outputs_left_out(tm
     assert (folder / "maker" / "made.txt").exists() and not (data_root / "scratchpad").exists()
     copies = sorted(folder.glob("config_*.yaml"))  # one per run, even in the same second
     assert len(copies) == 2 and all(c.read_text(encoding="utf-8") == config.read_text(encoding="utf-8") for c in copies)
-    rows = _lines(folder / LOG_NAME)
-    assert len([t for *_, t in rows if t.startswith("===== PLAN =====")]) == 2  # used again: one log, two runs
-    assert [t.split(" as ")[-1] for *_, t in rows if t.startswith("config ")] == [c.name for c in copies]
-    assert ("run", "plan", "!", f"run folder: {folder.resolve()} exists; this run adds to its {LOG_NAME} and writes "
-                                f"the outputs left out into it") in rows
+    logs = sorted(folder.glob("log_*.log"))  # one per run too, named like its config's copy
+    assert [p.name[len("log_"):-len(".log")] for p in logs] == [c.name[len("config_"):-len(".yaml")] for c in copies]
+    first, second = (_lines(log) for log in logs)
+    assert [len([t for *_, t in rows if t.startswith("===== PLAN =====")]) for rows in (first, second)] == [1, 1]
+    assert [t.split(" as ")[-1] for rows in (first, second) for *_, t in rows if t.startswith("config ")] == \
+        [c.name for c in copies]
+    assert ("run", "plan", "!", f"run folder: {folder.resolve()} exists; this run logs beside the earlier runs and "
+                                f"writes the outputs left out into it") in second
     assert any(level == "!" and text.endswith("exists; this run writes into it")
-               for _, stage, level, text in rows if stage == "maker")
+               for _, stage, level, text in second if stage == "maker")
     with pytest.raises(PlanError, match="is a file, not a folder"):
         Script_plan("p", [(MAKER, [])], folder=config)
 
@@ -113,6 +124,15 @@ def test_a_later_stage_reads_what_an_earlier_one_wrote(tmp_path):
         Script_plan("p", [(READER, ["--src", str(tmp_path / "missing.txt")])])  # not made here, not there
 
 
+def test_an_output_left_out_goes_inside_the_stage_it_names_when_that_one_wrote_into_the_run_folder(tmp_path):
+    inside = READER._replace(outputs=(READER.outputs[0]._replace(within="maker"),))
+
+    plan = Script_plan("p", [(MAKER, []), (inside, [])])
+    assert plan.stages[1].args.out == plan.folder / "maker" / "reader" / "read.txt"
+    plan = Script_plan("p", [(MAKER, ["--out", str(tmp_path / "made")]), (inside, [])])
+    assert plan.stages[1].args.out == plan.folder / "reader" / "read.txt"  # the maker wrote elsewhere
+
+
 def test_the_arguments_parse_back_to_the_same_options(tmp_path):
     parser = MAKER.build_parser()
     args = parser.parse_args(["--out", str(tmp_path), "--exit", "0", "--raise", "boom"])
@@ -136,11 +156,12 @@ def test_every_problem_refuses_the_run(tmp_path, data_root, capsys):
     assert Script_run("bad", requested, in_process=True) == 2
 
     [run] = (data_root / "scratchpad").iterdir()
-    rows = _lines(run / LOG_NAME)
+    log = _only_log(run)
+    rows = _lines(log)
     assert rows[-1] == ("run", "summary", "error", "===== SUMMARY =====  refused, nothing was run: 2 problems")
     assert [(s, lvl) for _, s, lvl, t in rows if "invalid int value" in t or "unrecognized" in t] == \
         [("maker", "error"), ("reader", "error")]
-    assert [p.name for p in run.iterdir()] == [LOG_NAME]  # nothing ran, nothing made
+    assert [p.name for p in run.iterdir()] == [log.name]  # nothing ran, nothing made
 # endregion
 
 

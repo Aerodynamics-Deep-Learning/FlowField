@@ -15,6 +15,7 @@ venv/
 
 # Logs and outputs
 *.log
+!data/examples/**/*.log
 
 # Tensorboard logs
 runs/*
@@ -37,6 +38,20 @@ CLAUDE.md
 data/scratchpad/
 data/experiments/
 data/.machine_check.json
+
+# SQLite's rollback journals, which exist only while a store is being written
+*.sqlite-journal
+
+# Example runs: pure data files and per-file ingest reports stay local but for three airfoils' (the databases go
+# through Git LFS)
+data/examples/**/*.dat
+data/examples/**/*.su2
+data/examples/**/*.vtk
+data/examples/**/geometry_ingest/raw/*/**/*.txt
+!data/examples/**/geometry_ingest/raw/*/summary.txt
+!data/examples/**/naca0012.*
+!data/examples/**/s1223.*
+!data/examples/**/e376.*
 
 # Interactive viewers: this machine's selection; each test's committed .example.yaml is the default
 tests/**/test_manual_*.yaml

@@ -46,7 +46,6 @@ import pytest
 
 import src.datagen.meshing.optimizer.batch.runner as runner
 from src.datagen.constants import WATCHDOG_S
-from src.datagen.geometry.common.paths import Geom_paths
 from src.datagen.meshing.c2d.run import C2D_generate_mesh
 from src.datagen.meshing.optimizer.batch.runner import BatchStopped, Optim_load_shapes, Optim_run_airfoils, SlotLost
 from src.datagen.meshing.optimizer.batch.slots import MemoryState, Optim_slot_platform
@@ -97,11 +96,8 @@ def _running(store):
 
 # region Step 1
 @pytest.fixture
-def manifest():
-    db = Geom_paths().db
-    if not db.exists():
-        pytest.skip(f"no geometry manifest at {db}")
-    return db
+def manifest(airfoils_manifest):
+    return airfoils_manifest
 
 
 def test_load_shapes_reads_the_manifest(manifest):

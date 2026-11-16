@@ -10,8 +10,8 @@ keys are the stage script's options, `-` written as `_` (`--settings-label` as `
 each script lists them). `settings:` sets values of src/datagen/constants.py for the run, by their names in lower
 case: at the top for every stage that reads one, inside a stage's section for that stage alone, over the top's.
 Relative paths are under data/ and `shared` names a committed store. `folder:` names the
-run's folder, which holds its log (log.log), a copy of the config and every output left out, under <stage>/; left
-out, it is a new data/scratchpad/<time>_<config name>/. A stage reads what an earlier stage of the same run wrote
+run's folder, which holds its log (log_<start>.log), a copy of the config (config_<start>.yaml) and every output left
+out, under <stage>/; left out, it is a new data/scratchpad/<time>_<config name>/. A stage reads what an earlier stage of the same run wrote
 unless told otherwise. Everything is checked before anything runs; the first stage that fails stops the run.
 See scripts/datagen/README.md and master.example.yaml beside this file.
 """

@@ -16,10 +16,10 @@ The campaign and the manifest are stand-ins; the campaign is tested in the optim
 
 import pytest
 
+from scripts.datagen import engine
 from scripts.datagen.meshing import campaign as mesh_campaign
 from src.datagen.constants import SLOT_MEMORY_CAP_MB, WATCHDOG_S, WORKERS
 from src.datagen.geometry.common.constants import SHAPE_VERSION
-from src.datagen.geometry.common.paths import Geom_paths
 from src.datagen.meshing.optimizer.batch.campaign import CampaignResult
 from src.datagen.meshing.optimizer.batch.runner import BatchStopped
 
@@ -61,8 +61,8 @@ def test_the_options_reach_the_campaign(campaign, tmp_path, data_root, capsys):
     [scratch] = [p.parent for p in (data_root / "scratchpad").glob("*/campaign")]  # the run that left it out
     constants = {"overrides": {}, "watchdog_s": WATCHDOG_S, "cap_mb": SLOT_MEMORY_CAP_MB}
     assert calls == [(db, ["naca0012", "naca4412"], 2, work, "trial 3", {"geometry_db": manifest, **constants}),
-                     (scratch / "campaign" / "meshing.sqlite", None, WORKERS, None, None,
-                      {"geometry_db": Geom_paths().db, **constants})]
+                     (scratch / "campaign" / "campaign.sqlite", None, WORKERS, None, None,
+                      {"geometry_db": engine.SHARED_GEOMETRY_DB, **constants})]
     assert "the summary" in capsys.readouterr().out
 
 

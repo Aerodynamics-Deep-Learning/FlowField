@@ -299,7 +299,7 @@ def _inside(path: Path, folder: Path) -> bool:
 
 
 def _copy(src: Path, dst: Path) -> None:
-    """Copies byte for byte; a source that already is the copy (re-ingesting `raw/`) is left alone."""
+    """Copies byte for byte; a source that already is the copy (re-ingesting the stored copies) is left alone."""
     dst.parent.mkdir(parents=True, exist_ok=True)
     if dst.exists() and dst.samefile(src):
         return

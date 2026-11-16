@@ -16,8 +16,8 @@ from types import SimpleNamespace
 
 import pytest
 
+from scripts.datagen import engine
 from scripts.datagen.meshing import remesh as mesh_remesh
-from src.datagen.geometry.common.paths import Geom_paths
 from src.datagen.meshing.optimizer.batch.remesh import RemeshOutcome
 
 
@@ -78,7 +78,7 @@ def remesh(monkeypatch):
 def test_the_airfoils_best_runs_are_asked_for(remesh, db, tmp_path, data_root, capsys):
     out, manifest = tmp_path.resolve() / "out", tmp_path.resolve() / "geometry.sqlite"
     manifest.touch()
-    shared = {"with_vtk": False, "geometry_db": Geom_paths().db, "overrides": {}}
+    shared = {"with_vtk": False, "geometry_db": engine.SHARED_GEOMETRY_DB, "overrides": {}}
 
     assert mesh_remesh.main(["--airfoils", "naca4412,naca0012", "--out", str(out), "--vtk", "--db", str(db),
                              "--geometry-db", str(manifest)]) == 1
@@ -100,7 +100,7 @@ def test_one_run_is_asked_for_by_its_id(remesh, db, tmp_path, capsys):
     out = tmp_path.resolve() / "out"
 
     assert mesh_remesh.main(["--run", "r1", "--out", str(out), "--vtk", "--db", str(db)]) == 0
-    assert remesh == [("run", "r1", out, {"with_vtk": True, "geometry_db": Geom_paths().db})]
+    assert remesh == [("run", "r1", out, {"with_vtk": True, "geometry_db": engine.SHARED_GEOMETRY_DB})]
     printed = capsys.readouterr().out
     assert "Re-meshed 1 of 1" in printed and "the quality table" not in printed  # one run: no histograms
 # endregion

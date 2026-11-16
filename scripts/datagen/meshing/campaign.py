@@ -76,7 +76,7 @@ def _check(args: argparse.Namespace, made_here: set) -> list[str]:
 
 STAGE = Stage(
     "campaign", "scripts.datagen.meshing.campaign", build_parser, run,
-    outputs=(Output("db", OutputKind.FILE, "run store", default_name="meshing.sqlite", shared=lambda: MESHING_DB,
+    outputs=(Output("db", OutputKind.FILE, "run store", default_name="campaign.sqlite", shared=lambda: MESHING_DB,
                     exists="this run adds to it"),),
     inputs=(GEOMETRY_DB,),
     slots=True, meshes=True, check=_check, reads=READS, aliases=(("workers", "workers"),))

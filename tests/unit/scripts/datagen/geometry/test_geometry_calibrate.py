@@ -34,7 +34,7 @@ def test_the_options_reach_the_calibration(calibrate, tmp_path, data_root, capsy
     assert geometry_calibrate.main([str(tmp_path), "--out", str(out), "--orders", "4-6", "--workers", "2"]) == 0
     assert geometry_calibrate.main([str(tmp_path), "--set", "cst_order=10", "--set", "cst_nose=separate"]) == 0
     [scratch] = [p.parent for p in (data_root / "scratchpad").glob("*/geometry_calibrate")]  # the run that left it out
-    report = scratch / "geometry_calibrate" / f"{datetime.date.today().isoformat()}.txt"
+    report = scratch / "geometry_calibrate" / f"geometry_calibrate_{datetime.date.today().isoformat()}.txt"
     assert calibrate == [(here, out, range(4, 7), 2, constants),
                          (here, report, range(4, 13), None, {**constants, "order": 10, "nose": "separate"})]
     printed = capsys.readouterr().out

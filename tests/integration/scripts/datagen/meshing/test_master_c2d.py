@@ -5,8 +5,8 @@ Step 1: Ensure a config's campaign and re-mesh run as child processes, the re-me
 its mesh delivered on the stored hash, and the run logged, labelled, into its named run folder
     - test_a_campaign_then_its_remesh_through_the_master
 
-naca0012 from the repo's geometry manifest, one worker, the run folder and every output in a temporary folder and
-the machine check switched off (its own integration test is the parity test's); skipped without the manifest or c2d.
+naca0012 from the tests' airfoil manifest, one worker, the run folder and every output in a temporary folder and the
+machine check switched off (its own integration test is the parity test's); skipped without c2d.
 """
 
 import re
@@ -15,7 +15,6 @@ import pytest
 
 from scripts.datagen.engine import LOG_NAME
 from scripts.datagen.meshing import master as mesh_master
-from src.datagen.geometry.common.paths import Geom_paths
 from src.datagen.meshing.c2d.run import C2D_find_exe
 from src.datagen.meshing.optimizer.batch.runner import Optim_load_shapes
 from src.datagen.meshing.optimizer.common.settings import Optim_build_settings
@@ -27,24 +26,25 @@ _LINE = re.compile(r"^\d\d:\d\d:\d\d \[(run|cmd)\] \[([a-z_]+)\] +\[(info|!|!!|e
 
 # region Step 1
 @_needs_c2d
-def test_a_campaign_then_its_remesh_through_the_master(tmp_path, capsys):
-    if not Geom_paths().db.exists():
-        pytest.skip(f"no geometry manifest at {Geom_paths().db}")
-    here = tmp_path.resolve()
+def test_a_campaign_then_its_remesh_through_the_master(tmp_path, capsys, airfoils_manifest):
+    here, manifest = tmp_path.resolve(), airfoils_manifest.as_posix()
     folder, store, out = here / "run", here / "store" / "meshing.sqlite", here / "remeshed"
     config = here / "run.yaml"
     config.write_text(f"folder: {folder.as_posix()}\n"
                       f"machine_check:\n  enabled: false\n"
                       f"campaign:\n  enabled: true\n  airfoils: [naca0012]\n  workers: 1\n  db: {store.as_posix()}\n"
-                      f"remesh:\n  enabled: true\n  airfoils: [naca0012]\n  vtk: true\n  out: {out.as_posix()}\n",
+                      f"  geometry_db: {manifest}\n"
+                      f"remesh:\n  enabled: true\n  airfoils: [naca0012]\n  vtk: true\n  out: {out.as_posix()}\n"
+                      f"  geometry_db: {manifest}\n",
                       encoding="utf-8")
 
     assert mesh_master.main([str(config)]) == 0
 
     [copy] = folder.glob("config_*.yaml")
-    assert sorted(p.name for p in folder.iterdir()) == sorted([copy.name, LOG_NAME])  # every output was named
+    log = folder / LOG_NAME.format(copy.stem[len("config_"):])
+    assert sorted(p.name for p in folder.iterdir()) == sorted([copy.name, log.name])  # every output was named
     assert not list(here.rglob("*_run.log")) and not list(store.parent.glob("*.log")) and not list(out.glob("*.log"))
-    rows = [_LINE.match(row) for row in (folder / LOG_NAME).read_text(encoding="utf-8").splitlines()]
+    rows = [_LINE.match(row) for row in log.read_text(encoding="utf-8").splitlines()]
     assert all(rows)
     rows = [m.groups() for m in rows]
     assert ("cmd", "campaign", "info", "Airfoils: 1 passed") in rows  # a golden pass gets no line of its own
@@ -54,7 +54,7 @@ def test_a_campaign_then_its_remesh_through_the_master(tmp_path, capsys):
                                          "reproduces the reference") in rows
     assert [r[3] for r in rows if r[1] == "summary"][0].startswith("===== SUMMARY =====  finished in")
 
-    [(_, shape)] = Optim_load_shapes(["naca0012"])
+    [(_, shape)] = Optim_load_shapes(["naca0012"], db=airfoils_manifest)
     with RunStore.open(store, read_only=True) as runs:
         best = runs.run(runs.best(shape.geometry_id, Optim_build_settings()["settings_id"]))
     mesh = out / "naca0012" / "naca0012.su2"

@@ -7,14 +7,15 @@
 # them (the scripts named beside each section below).
 #
 # Paths: relative ones are under data/. `shared` names a committed store; write one only on purpose. The run's
-# folder (`folder:` below) holds its log, log.log, a copy of this file, config_<time>.yaml, and every output left
-# out, under <stage>/. A stage reads what an earlier stage of this run wrote unless you name something else.
+# folder (`folder:` below) holds its log, log_<start>.log, a copy of this file, config_<start>.yaml, and every output
+# left out, under <stage>/. A stage reads what an earlier stage of this run wrote unless you name something else.
 #
 # YAML: quote names YAML would read as something else (yes, no, on, off, 0012); write 1e-3 as 1.0e-3; indent with
 # spaces; in double quotes a backslash starts an escape, so write Windows paths with / or in single quotes.
 
 # folder: experiments/dx003          the run's folder; left out: a new data/scratchpad/<time>_<this file's name>/.
-#                                    Named again, it keeps one log (each run under its own PLAN) and resumes a campaign
+#                                    Named again, it gets each run's log and config beside the earlier ones and resumes
+#                                    a campaign
 
 # settings:                          values of src/datagen/constants.py for this run, named in lower case; each stage
 #   gate_skew_max: 0.22              takes those it reads. A stage's own `settings:` sets them for it alone, over these.
@@ -51,7 +52,7 @@ campaign:                            # every airfoil's best mesh (scripts/datage
   enabled: true
   workers: 6
   settings_label: trial 3, finer DX_MAX     # names the settings row, if this campaign records it first
-  db: experiments/dx003/meshing.sqlite      # writes; name it to resume a stopped campaign (shared = committed)
+  db: experiments/dx003/campaign.sqlite     # writes; name it to resume a stopped campaign (shared = committed)
   # airfoils: [naca0012, s1223]      left out: every accepted shape
   # geometry_db: shared              reads; default: this run's ingest, else shared
 

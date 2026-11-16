@@ -11,14 +11,13 @@ Step 2: Ensure a mistake in what was asked stops it before anything meshes
 The calibration and the manifest are stand-ins; the calibration is tested in the optimizer tiers.
 """
 
-import datetime
 from pathlib import Path
 
 import pytest
 
+from scripts.datagen import engine
 from scripts.datagen.meshing import calibrate as mesh_calibrate
 from src.datagen.constants import CAL_RUNG2_CAP, CAL_RUNG3_CAP, SLOT_MEMORY_CAP_MB, WATCHDOG_S, WORKERS
-from src.datagen.geometry.common.paths import Geom_paths
 from src.datagen.meshing.optimizer.batch.calibrate import CalibrationFiles, Method
 
 
@@ -56,8 +55,8 @@ def test_the_options_reach_the_calibration(calibrate, tmp_path, data_root, capsy
     assert left_out.name == "mesh_calibrate" and left_out.parent.parent == data_root / "scratchpad"  # its run folder
     constants = {"overrides": {}, "method": Method(), "watchdog_s": WATCHDOG_S, "cap_mb": SLOT_MEMORY_CAP_MB}
     assert calibrate == [(out, [1, 3], ["naca0012", "s1223"], 150, 30, 10, 2, manifest, work, constants),
-                         (left_out, [1, 2, 3], None, None, CAL_RUNG3_CAP, CAL_RUNG2_CAP, WORKERS, Geom_paths().db, None,
-                          constants)]
+                         (left_out, [1, 2, 3], None, None, CAL_RUNG3_CAP, CAL_RUNG2_CAP, WORKERS,
+                          engine.SHARED_GEOMETRY_DB, None, constants)]
     printed = capsys.readouterr().out
     assert "the report" not in printed and "r.txt; every run: r.sqlite" in printed  # the findings came per rung
 
@@ -79,16 +78,11 @@ def test_settings_reach_the_calibration(calibrate, tmp_path):
     (["--rungs", "4"], "rungs are numbers from 1,2,3, not '4'"),
     (["--rungs", "1,x"], "rungs are numbers from 1,2,3, not '1,x'"),
     (["--airfoils", "naca0012,naca9999"], "naca9999"),
-    (["--out", "TAKEN"], "already holds today's calibration"),
     (["--set", "rung2_budget=60"], "mesh_calibrate does not read rung2_budget"),  # it measures it
     (["--rung2-cap", "10", "--set", "cal_rung2_cap=20"], "cal_rung2_cap is given twice"),
-], ids=["rung 4", "rung unreadable", "unknown airfoil", "today's calibration there", "a budget", "cap twice"])
-def test_a_mistake_is_a_usage_error(calibrate, tmp_path, capsys, args, says):
-    taken = tmp_path / "taken"
-    taken.mkdir()
-    (taken / f"{datetime.date.today().isoformat()}.sqlite").touch()
-
-    assert mesh_calibrate.main([str(taken) if a == "TAKEN" else a for a in args]) == 2
+], ids=["rung 4", "rung unreadable", "unknown airfoil", "a budget", "cap twice"])
+def test_a_mistake_is_a_usage_error(calibrate, capsys, args, says):
+    assert mesh_calibrate.main(args) == 2
 
     assert says in capsys.readouterr().out and calibrate == []
 # endregion

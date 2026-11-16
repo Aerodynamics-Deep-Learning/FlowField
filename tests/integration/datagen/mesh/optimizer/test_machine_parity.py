@@ -1,17 +1,19 @@
 """
 Whether this machine makes the mesh study's inputs and meshes bit for bit as the reference machine did, i.e.:
 
-Step 1: Ensure the sampler gives every manifest airfoil the reference's points and figures
+Step 1: Ensure the sampler gives every reference airfoil the reference's points and figures
     - test_this_machine_samples_like_the_reference
 Step 2: Ensure c2d turns the calibration set's ten hard airfoils into the reference's meshes
     - test_this_machine_meshes_like_the_reference
 
 Run it on a new machine before a campaign or a re-mesh: a failure means meshes made here will not hash like
 the reference's, so runs stored elsewhere will not re-mesh here. The reference, `machine_parity.json` beside
-this file, holds per manifest airfoil the SHA-256 of its samples at three configs (points and reports), the n*
-grid's, the .su2 SHA-256 of the calibration set's golden meshes with the c2d executable's own, and the machine it
-was written on. Step 2 skips without c2d, or with another executable, whose meshes belong to another settings
-row. After a sampler or shape version change, or a new manifest, rewrite the reference on the reference machine:
+this file, holds every airfoil's shape as the repo's manifest had it when written, so the test reads nothing under
+data/; per airfoil the SHA-256 of its samples at three configs (points and reports), the n* grid's, the .su2 SHA-256
+of the calibration set's golden meshes with the c2d executable's own, and the machine it was written on. Step 2
+skips without c2d, or with another executable, whose meshes belong to another settings row. After a sampler or
+shape version change, or to take in the manifest's new airfoils, rewrite the reference on the reference machine
+from the repo's manifest:
     `python -m tests.integration.datagen.mesh.optimizer.test_machine_parity`
 """
 
@@ -29,7 +31,6 @@ from src.datagen.constants import (
     SMOOTHING_DEFAULTS,
 )
 from src.datagen.geometry.common.constants import SAMPLER_VERSION, SHAPE_VERSION
-from src.datagen.geometry.common.paths import Geom_paths
 from src.datagen.geometry.sample.fields import SamplingFields
 from src.datagen.geometry.sample.sample import Geom_sample
 from src.datagen.meshing.c2d.run import C2D_find_exe
@@ -40,6 +41,7 @@ from src.datagen.meshing.optimizer.evaluate.context import RunContext
 from src.datagen.meshing.optimizer.evaluate.executor import RunExecutor
 from src.datagen.meshing.optimizer.evaluate.sampling import Optim_build_study_contour
 from src.datagen.meshing.optimizer.search.nstar import _grid
+from tests.geometry_shapes import reference_shapes
 
 REFERENCE = Path(__file__).with_name("machine_parity.json")
 
@@ -56,10 +58,10 @@ def _nstar_grid_hash() -> str:
     return hashlib.sha256(json.dumps(grids).encode()).hexdigest()
 
 
-def _sample_hashes() -> dict:
-    """Per manifest airfoil, the SHA-256 over its samples' points and reports at CONFIGS."""
+def _sample_hashes(shapes) -> dict:
+    """Per airfoil, the SHA-256 over its samples' points and reports at CONFIGS."""
     out = {}
-    for name, shape in Optim_load_shapes():
+    for name, shape in shapes:
         contour = Optim_build_study_contour(shape, MeshBackend.C2D, MeshTopology.OGRD)
         h = hashlib.sha256()
         for knobs in CONFIGS:
@@ -71,11 +73,11 @@ def _sample_hashes() -> dict:
     return out
 
 
-def _mesh_hashes(work_root) -> dict:
+def _mesh_hashes(shapes, work_root) -> dict:
     """The .su2 SHA-256 of MESHED's golden meshes, through the study's executor."""
     rows = []
     executor = RunExecutor(RunContext.create(Optim_build_settings(), work_root), rows.append)
-    for name, shape in Optim_load_shapes(MESHED):
+    for name, shape in ((name, shape) for name, shape in shapes if name in MESHED):
         contour = Optim_build_study_contour(shape, MeshBackend.C2D, MeshTopology.OGRD)
         executor.run(ladder_id=None, geometry_id=shape.geometry_id, airfoil_name=name, contour=contour,
                      knobs={**CONFIGS[0], "jmax": JMAX, **SMOOTHING_DEFAULTS}, rung="manual", seq=0)
@@ -83,12 +85,11 @@ def _mesh_hashes(work_root) -> dict:
 
 
 def _reference() -> dict:
-    if not Geom_paths().db.exists():
-        pytest.skip(f"no geometry manifest at {Geom_paths().db}")
     ref = json.loads(REFERENCE.read_text())
     assert (ref["sampler_version"], ref["shape_version"]) == (SAMPLER_VERSION, SHAPE_VERSION), (
         f"the reference is for {ref['sampler_version']}/{ref['shape_version']}, the code is at "
         f"{SAMPLER_VERSION}/{SHAPE_VERSION}: rewrite it on the reference machine (see this module's docstring)")
+    assert ref.get("shapes"), "the reference holds no shapes: rewrite it on the reference machine"
     return ref
 
 
@@ -99,9 +100,9 @@ def _by(ref: dict) -> str:
 # region Step 1
 def test_this_machine_samples_like_the_reference():
     ref = _reference()
-    got = _sample_hashes()
+    got = _sample_hashes(reference_shapes(REFERENCE))
 
-    assert set(got) == set(ref["samples"]), "the manifest's airfoils are not the reference's: rewrite the reference"
+    assert set(got) == set(ref["samples"]), "the reference's shapes and samples name other airfoils: rewrite it"
     assert _nstar_grid_hash() == ref["nstar_grid"], "n*'s grid points differ from the reference's" + _by(ref)
     differ = sorted(name for name in got if got[name] != ref["samples"][name])
     assert not differ, f"{len(differ)} of {len(got)} airfoils sample differently here: {', '.join(differ)}" + _by(ref)
@@ -118,19 +119,21 @@ def test_this_machine_meshes_like_the_reference(tmp_path):
     if exe != ref_exe:
         pytest.skip(f"this c2d executable ({exe[:12]}) is not the reference's ({ref_exe[:12]})")
 
-    got, expected = _mesh_hashes(tmp_path), ref["c2d"]["meshes"]
+    got, expected = _mesh_hashes(reference_shapes(REFERENCE), tmp_path), ref["c2d"]["meshes"]
     assert set(got) == set(expected), "the reference meshed other airfoils: rewrite the reference"
     differ = sorted(name for name in got if got[name] != expected[name])
     assert not differ, f"{len(differ)} of {len(got)} airfoils mesh differently here: {', '.join(differ)}" + _by(ref)
 # endregion
 
 
-if __name__ == "__main__":
+if __name__ == "__main__":  # the writer: the repo's manifest's shapes, and what this machine makes of them
+    shapes = Optim_load_shapes()
     reference = {"sampler_version": SAMPLER_VERSION, "shape_version": SHAPE_VERSION, "written_on": socket.gethostname(),
-                 "nstar_grid": _nstar_grid_hash(), "samples": _sample_hashes()}
+                 "nstar_grid": _nstar_grid_hash(), "samples": _sample_hashes(shapes),
+                 "shapes": {name: shape.model_dump(mode="json") for name, shape in shapes}}
     if C2D_find_exe() is not None:
         with tempfile.TemporaryDirectory() as tmp:
-            reference["c2d"] = {"mesher_sha256": Optim_mesher_sha256(), "meshes": _mesh_hashes(tmp)}
+            reference["c2d"] = {"mesher_sha256": Optim_mesher_sha256(), "meshes": _mesh_hashes(shapes, tmp)}
     REFERENCE.write_text(json.dumps(reference, indent=1, sort_keys=True) + "\n")
     meshes = f", {len(reference['c2d']['meshes'])} meshes" if "c2d" in reference else ""
     print(f"{REFERENCE}: {len(reference['samples'])} airfoils{meshes}, written on {reference['written_on']}")

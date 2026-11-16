@@ -1,7 +1,8 @@
 """
 Calibrates the mesh study's ladder on real c2d meshes (src/datagen/meshing/optimizer/batch/calibrate.py): measures
-the numbers each rung runs on and writes the report they are chosen from to `<out>/<date>.txt`, every run kept
-beside it in `<out>/<date>.sqlite`. It recommends; it changes no constant.
+the numbers each rung runs on and writes the report they are chosen from to `<out>/mesh_calibrate_<start>.txt`, every
+run kept beside it in `<out>/mesh_calibrate_<start>.sqlite` (`<start>` its YYYY-MM-DD_HHMMSS). It recommends; it
+changes no constant.
 
     python -m scripts.datagen.meshing.calibrate [--out <folder> | --out shared] [--rungs 1,2,3] [--airfoils a,b]
         [--golden-jmax N] [--rung3-cap 300] [--rung2-cap 100] [--workers 6] [--geometry-db PATH] [--work-root DIR]
@@ -15,12 +16,10 @@ beside it in `<out>/<date>.sqlite`. It recommends; it changes no constant.
 Every rung runs under the study's settings: the constants (src/datagen/constants.py) but those a run sets (`--set`;
 the calibration's own are the cal_ ones). Rungs 2 and 3 start from the golden jmax rung 1 recommends when it runs
 alongside them; a given golden jmax wins over it, with a warning. Left out, --out is a folder in the scratchpad;
-`shared` is the repo's, data/raw/datagen/meshing/report/calibration. A folder already holding today's calibration
-is refused before anything runs.
+`shared` is the repo's, data/raw/datagen/meshing/report/calibration.
 """
 
 import argparse
-import datetime
 import sys
 from functools import partial
 from pathlib import Path
@@ -78,15 +77,12 @@ def run(args: argparse.Namespace) -> int:
         except ValueError as e:
             raise UsageError(str(e)) from None
     execution = Optim_execution(settings)
-    try:
-        files = Optim_run_calibration(
-            args.out, args.rungs, args.airfoils, settings.get("golden_jmax"),
-            settings.get("cal_rung3_cap", CAL_RUNG3_CAP), settings.get("cal_rung2_cap", CAL_RUNG2_CAP),
-            execution["workers"], args.geometry_db, args.work_root,
-            overrides={k: v for k, v in settings.items() if k in STUDY_KEYS and k != "golden_jmax"},
-            method=Method.of(settings), watchdog_s=execution["watchdog_s"], cap_mb=execution["cap_mb"])
-    except FileExistsError as e:
-        raise UsageError(str(e)) from None
+    files = Optim_run_calibration(
+        args.out, args.rungs, args.airfoils, settings.get("golden_jmax"),
+        settings.get("cal_rung3_cap", CAL_RUNG3_CAP), settings.get("cal_rung2_cap", CAL_RUNG2_CAP),
+        execution["workers"], args.geometry_db, args.work_root,
+        overrides={k: v for k, v in settings.items() if k in STUDY_KEYS and k != "golden_jmax"},
+        method=Method.of(settings), watchdog_s=execution["watchdog_s"], cap_mb=execution["cap_mb"])
     print(f"Report (every rung's tables): {files.report}; every run: {files.db}")  # findings logged per rung
     return 0
 
@@ -94,19 +90,15 @@ def run(args: argparse.Namespace) -> int:
 def _check(args: argparse.Namespace, made_here: set) -> list[str]:
     try:  # the airfoils, under the shape version the run's CST order and nose name
         load = partial(Optim_load_shapes, shape_version=Optim_shape_version(Script_given(STAGE, args)))
-        problems = Script_check_names(load, args, made_here)
+        return Script_check_names(load, args, made_here)
     except ValueError as e:
-        problems = [str(e)]
-    today = Path(args.out) / f"{datetime.date.today().isoformat()}.sqlite"
-    if today.exists():
-        problems.append(f"{today} already holds today's calibration; give another folder")
-    return problems
+        return [str(e)]
 
 
 STAGE = Stage(
     "mesh_calibrate", "scripts.datagen.meshing.calibrate", build_parser, run,
     outputs=(Output("out", OutputKind.FOLDER, "calibration folder", shared=lambda: CALIBRATION_DIR,
-                    exists="today's report and database go into it"),),
+                    exists="this calibration's report and database go into it beside the earlier ones"),),
     inputs=(GEOMETRY_DB,),
     slots=True, meshes=True, check=_check, reads=READS,
     aliases=(("golden_jmax", "golden_jmax"), ("rung3_cap", "cal_rung3_cap"), ("rung2_cap", "cal_rung2_cap"),

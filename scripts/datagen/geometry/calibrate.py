@@ -6,8 +6,8 @@ code the ingest uses, and writes the table the CST constants are chosen from
     python -m scripts.datagen.geometry.calibrate <folder> [--out <report file> | --out shared] [--orders 4-12]
         [--workers N] [--set key=value ...]
 
-Left out, --out is `<date>.txt` in the scratchpad; `shared` is the repo's calibration folder,
-data/raw/datagen/geometry/report/calibration/<date>.txt. The report centres on the ingest's CST order, nose and fit
+Left out, --out is the run folder's `geometry_calibrate_<date>.txt`; `shared` is the repo's calibration folder,
+data/raw/datagen/geometry/report/calibration/geometry_calibrate_<date>.txt. The report centres on the ingest's CST order, nose and fit
 tolerance: src/datagen/constants.py's but those a run sets (`--set`).
 """
 
@@ -57,13 +57,16 @@ def run(args: argparse.Namespace) -> int:
     return 0
 
 
+REPORT_NAME = "geometry_calibrate_{date}.txt"
+
+
 def _shared_report() -> Path:
-    return Geom_paths().calibration_dir / f"{datetime.date.today().isoformat()}.txt"
+    return Geom_paths().calibration_dir / REPORT_NAME.format(date=datetime.date.today().isoformat())
 
 
 STAGE = Stage(
     "geometry_calibrate", "scripts.datagen.geometry.calibrate", build_parser, run,
-    outputs=(Output("out", OutputKind.FILE, "CST calibration report", default_name="{date}.txt", shared=_shared_report,
+    outputs=(Output("out", OutputKind.FILE, "CST calibration report", default_name=REPORT_NAME, shared=_shared_report,
                     exists="this run overwrites it"),),
     inputs=(Input("folder", ".dat folder", folder=True),),
     check=lambda args, made_here: Script_cst_problems(Script_given(STAGE, args)), reads=READS)

@@ -4,9 +4,8 @@ The re-mesh on the real c2d, i.e.:
 Step 1: Ensure a stored best run is rebuilt bit for bit into its airfoil's folder, its .vtk alongside
     - test_a_best_run_is_remeshed_bit_for_bit
 
-naca0012 from the repo's geometry manifest is meshed once by the executor, at smoothing that passes the study's
-gates, and recorded as its best in a scratch run store; the airfoils' re-mesh then rebuilds it. Skipped without
-the manifest or c2d.
+naca0012 from the tests' airfoil manifest is meshed once by the executor, at smoothing that passes the study's gates,
+and recorded as its best in a scratch run store; the airfoils' re-mesh then rebuilds it. Skipped without c2d.
 """
 
 import os
@@ -14,7 +13,6 @@ import os
 import pytest
 
 from src.datagen.constants import DX_MAX
-from src.datagen.geometry.common.paths import Geom_paths
 from src.datagen.meshing.c2d.run import C2D_find_exe
 from src.datagen.meshing.common.schemas import MeshBackend, MeshTopology
 from src.datagen.meshing.optimizer.batch.remesh import Optim_remesh_airfoils
@@ -35,11 +33,9 @@ PASSING = {"dx_mid": DX_MAX, "le_ratio": 0.025, "te_ratio": 1.0, "cluster_width"
 
 # region Step 1
 @_needs_c2d
-def test_a_best_run_is_remeshed_bit_for_bit(tmp_path):
-    if not Geom_paths().db.exists():
-        pytest.skip(f"no geometry manifest at {Geom_paths().db}")
+def test_a_best_run_is_remeshed_bit_for_bit(tmp_path, airfoils_manifest):
     settings = Optim_build_settings()
-    [(name, shape)] = Optim_load_shapes(["naca0012"])
+    [(name, shape)] = Optim_load_shapes(["naca0012"], db=airfoils_manifest)
     contour = Optim_build_study_contour(shape, MeshBackend.C2D, MeshTopology.OGRD, gap=settings["te_gap"])
     rows = []
     RunExecutor(RunContext.create(settings, tmp_path / "work"), rows.append).run(
@@ -54,7 +50,7 @@ def test_a_best_run_is_remeshed_bit_for_bit(tmp_path):
 
     out = tmp_path / "out"
     with RunStore.open(db, read_only=True) as store:
-        [outcome] = Optim_remesh_airfoils(store, ["naca0012"], out, with_vtk=True)
+        [outcome] = Optim_remesh_airfoils(store, ["naca0012"], out, with_vtk=True, geometry_db=airfoils_manifest)
     assert outcome.error is None
     folder = out / "naca0012"
     assert sorted(os.listdir(folder)) == ["naca0012.su2", "naca0012.vtk"]  # no temp folder, no c2d side files

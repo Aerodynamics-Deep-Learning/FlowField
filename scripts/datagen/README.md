@@ -54,10 +54,10 @@ stage is the script's name in configs and logs.
 
 | Script (`python -m scripts.datagen.…`) | Stage | What it does | Reads | Writes | Time |
 |---|---|---|---|---|---|
-| `meshing.machine_check` | `machine_check` | runs the parity test; `--rewrite` writes the parity reference here instead | the shared manifest, c2d | the stamp (`--rewrite`: `machine_parity.json`) | ~1 min |
-| `geometry.calibrate <folder>` | `geometry_calibrate` | fits every file at CST orders 4-12 for choosing the CST constants | the `.dat` folder | `--out`: a report file | ~1 min for 190 files |
+| `meshing.machine_check` | `machine_check` | runs the parity test; `--rewrite` writes the parity reference here instead | `machine_parity.json` (`--rewrite`: the shared manifest), c2d | the stamp (`--rewrite`: `machine_parity.json`) | ~1 min |
+| `geometry.calibrate <folder>` | `geometry_calibrate` | fits every file at CST orders 4-12 for choosing the CST constants | the `.dat` folder | `--out`: a report file (`geometry_calibrate_<date>.txt`) | ~1 min for 190 files |
 | `geometry.ingest [folder]` | `geometry_ingest` | adds the folder's airfoils to a manifest; without a folder, brings stored ones to the current shape version | the `.dat` folder | `--data-root`: a data folder (manifest, raw copies, reports) | ~15 s for 190 files |
-| `meshing.calibrate` | `mesh_calibrate` | measures the numbers the ladder's rungs run on | `--geometry-db` | `--out`: a folder, `<date>.txt` and `<date>.sqlite` | ~1 h for 158 airfoils on 6 workers (rung 1 ~12 min, rung 2 ~6, rung 3 ~41) |
+| `meshing.calibrate` | `mesh_calibrate` | measures the numbers the ladder's rungs run on | `--geometry-db` | `--out`: a folder, `mesh_calibrate_<start>.txt` and `.sqlite` | ~1 h for 158 airfoils on 6 workers (rung 1 ~12 min, rung 2 ~6, rung 3 ~41) |
 | `meshing.campaign` | `campaign` | the ladder over every airfoil not finished under the run's settings (the constants, unless set) | `--geometry-db` | `--db`: a run store | ~10 min for 158 airfoils on 6 workers, most of it the few that reach rung 3 |
 | `meshing.remesh` | `remesh` | rebuilds best runs (`--airfoils`, `--all`) or one run (`--run`), each checked against its stored hash | `--db`, `--geometry-db` | `--out`: a folder per airfoil, and `quality.png` | ~3 s an airfoil |
 
@@ -111,16 +111,26 @@ machine_check -> geometry_calibrate -> geometry_ingest -> mesh_calibrate -> camp
 ## 5. Where data and logs go
 
 Every run has a folder of its own: a new `data/scratchpad/<time>_<run name>/`, or the config's `folder:`. It
-holds the run's log, `log.log`, a copy of the config, `config_<time>.yaml`, and every output left out, under
-`<stage>/`:
+holds the run's log, `log_<start>.log`, a copy of the config, `config_<start>.yaml` (both named by the run's
+start), and every output left out, under `<stage>/`, each store and report named after its stage; the re-mesh's
+goes inside `campaign/` when this run's campaign wrote its store there:
 
 ```
-data/scratchpad/2026-11-07_052637_e2e_for_cst/     the run's folder
-├── log.log                                        the run's one log
-├── config_2026-11-07_052637.yaml                  the config, copied at the start
-├── geometry_ingest/                               outputs left out, one folder per stage: data only
-├── campaign/meshing.sqlite
-└── remesh/<airfoil>/<airfoil>.su2
+data/scratchpad/2026-11-10_092440_e2e4_for_cst/    the run's folder
+├── log_2026-11-10_092440.log                      the run's log
+├── config_2026-11-10_092440.yaml                  the config, copied at the start
+├── geometry_calibrate/geometry_calibrate_<date>.txt   outputs left out, one folder per stage: data only
+├── geometry_ingest/
+│   ├── geometry_ingest.sqlite                     the manifest
+│   └── raw/
+│       ├── input/<name>.dat                       verbatim copies of the accepted files
+│       ├── rejected/<hash8>/<name>.dat            ...and of the rejected ones
+│       ├── normalised/<shape version>/            the fitted shapes rendered (rejected/ inside)
+│       └── <ingest id>/                           summary.txt and one report per file
+├── mesh_calibrate/mesh_calibrate_<start>.txt, .sqlite   named by the calibration's own start
+└── campaign/
+    ├── campaign.sqlite
+    └── remesh/                                    quality.png, <airfoil>/<airfoil>.su2
 ```
 
 Every output is decided before anything runs:
@@ -132,9 +142,8 @@ Every output is decided before anything runs:
 | a path that exists | there: a store is added to, a report file overwritten, a mesh folder's same airfoils replaced | a `!` warning |
 | `shared` | the committed store | a `!!` warning |
 
-A `folder:` that exists is used again, with a `!` warning: the log adds this run under its own `===== PLAN =====`,
-its config copy joins the earlier runs' (each named by its start), and the outputs left out are the earlier run's,
-so a stopped campaign resumes.
+A `folder:` that exists is used again, with a `!` warning: this run's log and config copy join the earlier runs'
+(each named by its start), and the outputs left out are the earlier run's, so a stopped campaign resumes.
 
 - **`shared`** is `data/` for the ingest (the committed manifest), `data/manifest/datagen/meshing/meshing.sqlite`
   for the campaign, and the committed calibration folders for the calibrations. The re-mesh has none: meshes
@@ -147,7 +156,7 @@ so a stopped campaign resumes.
   then just says it adds to it.
 - **The run store and calibrations are only shared on purpose.** Experiment in your own stores; the campaign
   run into `shared` is the one that gets committed, once the constants are agreed.
-- **The log**: one per run, `log.log` in the run's folder; the stage folders hold data only. It is written and
+- **The log**: one per run, `log_<start>.log` in the run's folder; the stage folders hold data only. It is written and
   synced to disk line by line, so a killed run keeps everything up to that moment and an editor showing it (VS
   Code) follows it as it grows. A refused run logs into a new scratchpad folder, never a named one.
 
@@ -185,9 +194,9 @@ The stages log statistics and edge cases; every table goes to its report file, n
 21:30:12 [run] [plan]               [info]  ===== PLAN =====  master dx003, started 2026-11-06 21:30:12 on Ege_Laptop, code 68ae03b
 21:30:12 [run] [plan]               [info]  config D:\runs\dx003.yaml, copied into the run folder as config_2026-11-06_213012.yaml
 21:30:12 [run] [plan]               [info]  stages machine_check -> campaign -> remesh (off: mesh_calibrate)
-21:30:12 [run] [plan]               [!]     run folder: data/experiments/dx003 exists; this run adds to its log.log and writes the outputs left out into it
-21:30:12 [run] [campaign]           [!]     writes db: nothing given, writing into the run folder: data/experiments/dx003/campaign/meshing.sqlite exists; this run adds to it
-21:30:12 [run] [remesh]             [info]  reads db: this run's campaign, data/experiments/dx003/campaign/meshing.sqlite
+21:30:12 [run] [plan]               [!]     run folder: data/experiments/dx003 exists; this run logs beside the earlier runs and writes the outputs left out into it
+21:30:12 [run] [campaign]           [!]     writes db: nothing given, writing into the run folder: data/experiments/dx003/campaign/campaign.sqlite exists; this run adds to it
+21:30:12 [run] [remesh]             [info]  reads db: this run's campaign, data/experiments/dx003/campaign/campaign.sqlite
 21:30:12 [run] [machine_check]      [info]  ===== START machine_check =====  python -m scripts.datagen.meshing.machine_check
 21:31:06 [cmd] [machine_check]      [info]  step 2, c2d: passed
 21:31:07 [run] [machine_check]      [info]  ===== END machine_check =====  exit 0, 0.9 min
@@ -202,16 +211,17 @@ Every warning appears three times: at the top, where it happened, and again in t
 ## 7. The machine check and its stamp
 
 The parity test (`tests/integration/datagen/mesh/optimizer/test_machine_parity.py`) compares this machine
-against `machine_parity.json`, written on the reference machine: step 1 hashes every manifest airfoil's samples
-at three configs and n*'s grid; step 2 meshes the ten calibration airfoils with c2d and hashes the `.su2`
-files. The sampler gives the same bits on every machine by construction; c2d is the part that can differ.
+against `machine_parity.json`, written on the reference machine from the shared manifest and holding its shapes,
+so the check reads nothing under `data/`: step 1 hashes every airfoil's samples at three configs and n*'s grid;
+step 2 meshes the ten calibration airfoils with c2d and hashes the `.su2` files. The sampler gives the same bits
+on every machine by construction; c2d is the part that can differ.
 
 A pass writes `data/.machine_check.json`: this computer's name, the c2d executable's hash, the reference's,
 and the sampler and shape versions. The mesh scripts compare it with the machine as it is now and warn, naming
 what moved, until the check passes again. A config with `machine_check` enabled checks at its start instead.
 
 The master's machine check refuses to start when the reference does not fit the code (another sampler or shape
-version) or lists other airfoils than the shared manifest, and says how to fix it.
+version) or holds no shapes, and says how to fix it.
 
 ## 8. Changing a constant, or setting one for a run
 
@@ -249,21 +259,18 @@ machine shares. Writing it is a release:
 
 1. One person ingests at a time, after pulling: `geometry.sqlite` is a binary file git cannot merge.
 2. `python -m scripts.datagen.geometry.ingest <folder> --data-root shared` (or `data_root: shared` in a config).
-3. The parity reference must list the new airfoils. A master run whose machine check passed earlier in the
-   same run rewrites it by itself; otherwise run `python -m scripts.datagen.meshing.machine_check --rewrite` on the
-   reference machine.
-4. Commit `data/manifest/datagen/geometry/geometry.sqlite` and
-   `tests/integration/datagen/mesh/optimizer/machine_parity.json` together.
+3. Commit `data/manifest/datagen/geometry/geometry.sqlite`.
 
-After a shape or sampler version change in the code the same steps apply, done by hand on the reference
-machine; until then every machine check is refused.
+The parity reference keeps its own copy of the shapes, so a new airfoil needs no rewrite; to take the new ones
+into the machine check, run `python -m scripts.datagen.meshing.machine_check --rewrite` on the reference machine
+and commit `tests/integration/datagen/mesh/optimizer/machine_parity.json`. After a shape or sampler version change
+in the code the rewrite is required, done by hand on the reference machine after the shared ingest, both files
+committed together; until then every machine check is refused.
 
 ## 10. When something goes wrong
 
 - **Refused before anything ran (exit 2)**: the log lists every problem, each under its stage. Fix them all
   and run again.
-- **"already holds today's calibration"**: a calibration folder takes one calibration a day; give another
-  `--out`, or leave it out for the scratchpad.
 - **A campaign stopped (exit 1) or was interrupted (130)**: run it again into the same store; it skips what
   finished and reruns what was cut short.
 - **A re-mesh comes out different**: nothing is delivered, and the message gives both hashes and where the run

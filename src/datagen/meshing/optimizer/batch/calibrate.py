@@ -169,8 +169,8 @@ class Calibration(NamedTuple):
 
 
 class CalibrationFiles(NamedTuple):
-    report: Path                     # <date>.txt
-    db: Path                         # <date>.sqlite, every run
+    report: Path                     # mesh_calibrate_<start>.txt
+    db: Path                         # mesh_calibrate_<start>.sqlite, every run
     text: str                        # the report
 
 
@@ -180,7 +180,8 @@ def Optim_run_calibration(out_dir, rungs: Sequence[int] = (1, 2, 3), names: Opti
                           *, overrides: Optional[dict] = None, method: Method = Method(),
                           watchdog_s: float = WATCHDOG_S, cap_mb: int = SLOT_MEMORY_CAP_MB) -> CalibrationFiles:
     """
-    A dated calibration: every run into `<out_dir>/<date>.sqlite`, the report into `<out_dir>/<date>.txt`.
+    A calibration named by its start: every run into `<out_dir>/mesh_calibrate_<YYYY-MM-DD_HHMMSS>.sqlite`, the
+    report into the `.txt` beside it.
 
     Args:
         out_dir (str | Path): The folder for both, made if missing (the repo's is `CALIBRATION_DIR`)
@@ -192,15 +193,12 @@ def Optim_run_calibration(out_dir, rungs: Sequence[int] = (1, 2, 3), names: Opti
 
     Raises:
         ValueError: If `rungs` is empty or holds anything but 1, 2, 3
-        FileExistsError: If the folder already holds today's database, before anything runs
     """
     if not rungs or not set(rungs) <= {1, 2, 3}:
         raise ValueError(f"rungs are any of 1, 2, 3, not {list(rungs)}")
     out_dir = Path(out_dir)
-    stamp = datetime.date.today().isoformat()
-    db, report = out_dir / f"{stamp}.sqlite", out_dir / f"{stamp}.txt"
-    if db.exists():
-        raise FileExistsError(f"{db} already holds a calibration; give another folder")
+    stem = out_dir / f"mesh_calibrate_{datetime.datetime.now():%Y-%m-%d_%H%M%S}"
+    db, report = stem.with_suffix(".sqlite"), stem.with_suffix(".txt")
     out_dir.mkdir(parents=True, exist_ok=True)
     with RunStore.open(db) as store:
         cal = Optim_calibrate(store, sorted(set(rungs)), names, golden_jmax, rung3_cap, rung2_cap, workers, work_root,

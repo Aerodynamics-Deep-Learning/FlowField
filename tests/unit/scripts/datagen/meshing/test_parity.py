@@ -6,7 +6,8 @@ Step 1: Ensure a check passes only when every test passed, a skip counting as a 
     - test_the_machine_check_stamps_only_a_pass
 Step 2: Ensure the stamp says what moved since the last pass
     - test_the_stamp_names_what_moved
-Step 3: Ensure a reference that cannot check this code is refused first, and a rewrite keeps an unchanged file
+Step 3: Ensure a reference that cannot check this code, or holds no shapes, is refused first, and a rewrite keeps
+an unchanged file
     - test_a_reference_that_does_not_fit_is_refused
     - test_a_rewrite_keeps_the_old_file_when_only_the_writer_changed
 
@@ -95,21 +96,20 @@ def test_the_stamp_names_what_moved(here, monkeypatch):
 # region Step 3
 def _reference(samples, written_on="there", **versions) -> dict:
     return {"sampler_version": versions.get("sampler", SAMPLER_VERSION), "shape_version": SHAPE_VERSION,
-            "written_on": written_on, "nstar_grid": "g", "samples": samples, "c2d": {"meshes": {"a": "m"}}}
+            "written_on": written_on, "nstar_grid": "g", "samples": samples, "c2d": {"meshes": {"a": "m"}},
+            "shapes": {name: {} for name in samples}}
 
 
 def test_a_reference_that_does_not_fit_is_refused(tmp_path, monkeypatch):
     reference = tmp_path / "machine_parity.json"
     monkeypatch.setattr(parity, "REFERENCE", reference)
-    monkeypatch.setattr("src.datagen.meshing.optimizer.batch.runner.Optim_load_shapes",
-                        lambda: [("a", None), ("b", None)])
 
     assert "no parity reference at" in parity.Script_reference_problem()
     reference.write_text(json.dumps(_reference({"a": "1"}, sampler="samp-r0")))
     assert "This is a release step" in parity.Script_reference_problem()
+    reference.write_text(json.dumps({**_reference({"a": "1"}), "shapes": {}}))
+    assert "the parity reference holds no shapes" in parity.Script_reference_problem()
     reference.write_text(json.dumps(_reference({"a": "1"})))
-    assert "lists other airfoils than the shared manifest (1 not in it, 0 gone)" in parity.Script_reference_problem()
-    reference.write_text(json.dumps(_reference({"a": "1", "b": "2"})))
     assert parity.Script_reference_problem() is None
 
 

@@ -24,7 +24,6 @@ from scripts.datagen.geometry import ingest as geometry_ingest
 from scripts.datagen.meshing import campaign as mesh_campaign, master as mesh_master, remesh as mesh_remesh
 from scripts.datagen.engine import LOG_NAME, PlanError, Script_plan
 from scripts.datagen.meshing.master import Script_load_config, Script_options_to_argv
-from src.datagen.geometry.common.paths import Geom_paths
 
 EXAMPLE = Path(mesh_master.__file__).with_name("master.example.yaml")
 
@@ -117,7 +116,8 @@ def test_folder_names_the_run_folder(tmp_path, data_root, capsys):
     config = _config(tmp_path, f"folder: {elsewhere.as_posix()}\nmachine_check:\n  enabled: false\n")
     assert mesh_master.main([str(config)]) == 0
     [copy] = elsewhere.glob("config_*.yaml")
-    assert sorted(p.name for p in elsewhere.iterdir()) == sorted([copy.name, LOG_NAME])
+    log = LOG_NAME.format(copy.stem[len("config_"):])  # named by the run's start, like the copy
+    assert sorted(p.name for p in elsewhere.iterdir()) == sorted([copy.name, log])
 # endregion
 
 
@@ -140,15 +140,13 @@ def test_a_config_mistake_refuses_the_run(tmp_path, data_root, capsys):
         ("remesh", "no option 'al'")]
     assert mesh_master.main([str(config)]) == 2
     [run] = (data_root / "scratchpad").iterdir()  # a refused run logs into the scratchpad, never a named folder
-    log = (run / LOG_NAME).read_text(encoding="utf-8")
-    assert "refused, nothing was run: 5 problems" in log and "[remesh]" in log and "no option 'al'" in log
     [copy] = run.glob("config_*.yaml")
+    log = (run / LOG_NAME.format(copy.stem[len("config_"):])).read_text(encoding="utf-8")
+    assert "refused, nothing was run: 5 problems" in log and "[remesh]" in log and "no option 'al'" in log
     assert copy.read_text(encoding="utf-8") == config.read_text(encoding="utf-8")
 
 
 def test_the_example_config_plans(data_root):
-    if not Geom_paths().db.exists():
-        pytest.skip(f"no geometry manifest at {Geom_paths().db}")
     config = Script_load_config(EXAMPLE)
 
     plan = Script_plan("example", config.stages, off=config.off, sources=config.sources, notes=config.notes)

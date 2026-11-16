@@ -7,9 +7,9 @@ write.
     python -m scripts.datagen.geometry.ingest [<folder>] [--data-root <data folder> | --data-root shared] [--dry-run]
         [--set key=value ...]
 
-Left out, --data-root is a new data folder in the scratchpad; `shared` is the repo's own data/, the committed
-manifest every machine shares: one person ingests into it at a time, and after it changes the parity reference is
-rewritten (a run whose machine check passed does that itself) and committed with it.
+Left out, --data-root is the run folder's geometry_ingest/. Any folder but the repo's data/ holds
+geometry_ingest.sqlite at its top and the files under raw/ (src/datagen/geometry/common/paths.py). `shared` is the
+repo's own data/, the committed manifest every machine shares: one person ingests into it at a time.
 
 The CST order, nose and fit tolerance are src/datagen/constants.py's but those a run sets (`--set`); the order and
 nose name the shape version, and a manifest holds one: an ingest at another refits every stored airfoil and
@@ -23,10 +23,9 @@ import sys
 from pathlib import Path
 
 from scripts.datagen.engine import (
-    SETTABLE, Input, Output, OutputKind, Run, Script_given, Script_main, Script_settings, Script_settings_option,
-    Stage, StagePlan, UsageError,
+    SETTABLE, Input, Output, OutputKind, Script_given, Script_main, Script_settings, Script_settings_option, Stage,
+    UsageError,
 )
-from scripts.datagen.meshing.parity import REWRITE, Script_reference_problem
 from src.datagen.geometry.common.paths import DATA_ROOT, Geom_paths
 from src.datagen.geometry.common.schemas import Nose
 from src.datagen.geometry.manifest.ingest import Geom_format_digest, Geom_ingest_folder, Geom_suspect_points
@@ -43,8 +42,8 @@ def build_parser() -> argparse.ArgumentParser:
                         help="root folder of .dat files, searched recursively; leave out to only bring the stored "
                              "airfoils to the current shape version")
     parser.add_argument("--data-root", type=Path,
-                        help="the data folder the manifest and its files go in (default: a new one in the "
-                             "scratchpad; `shared`: the repo's data/)")
+                        help="the data folder the manifest and its files go in (default: the run folder's "
+                             "geometry_ingest/; `shared`: the repo's data/)")
     parser.add_argument("--dry-run", action="store_true", help="do everything but write")
     Script_settings_option(parser, READS)
     return parser
@@ -65,26 +64,6 @@ def run(args: argparse.Namespace) -> int:
     if summary.summary_path:
         print(f"Every file's line: {Geom_paths(args.data_root).from_rel(summary.summary_path)}")
     return 0
-
-
-def _after(plan: StagePlan, passed: set, run: Run) -> None:
-    """After an ingest into the shared manifest: the parity reference kept in step with it."""
-    if plan.writes[0].how != "shared" or plan.args.dry_run:
-        return
-    problem = Script_reference_problem()
-    if problem is None:
-        run.say("geometry_ingest", "info", "the parity reference still lists the shared manifest's airfoils")
-    elif "machine_check" in passed:
-        run.say("geometry_ingest", "info", f"{problem.split(':')[0]}; this run's machine check passed, so the "
-                                           f"reference is rewritten here (~1 min)")
-        code = run.relay("geometry_ingest", "scripts.datagen.meshing.machine_check", ["--rewrite"], "machine_check")
-        if code == 0:
-            run.say("geometry_ingest", "!", "commit tests/integration/datagen/mesh/optimizer/machine_parity.json "
-                                            "together with data/manifest/datagen/geometry/geometry.sqlite")
-        else:
-            run.say("geometry_ingest", "error", f"the parity reference was not rewritten (exit {code}): {REWRITE}")
-    else:
-        run.say("geometry_ingest", "!", problem)
 
 
 def Script_cst_problems(given: dict) -> list[str]:
@@ -115,7 +94,7 @@ STAGE = Stage(
     outputs=(Output("data_root", OutputKind.DATA_ROOT, "geometry manifest", shared=lambda: DATA_ROOT,
                     exists="this run adds to its manifest", dry_run="dry_run"),),
     inputs=(Input("folder", ".dat folder", folder=True),),
-    check=_check, after=_after, reads=READS)
+    check=_check, reads=READS)
 
 
 def main(argv=None) -> int:

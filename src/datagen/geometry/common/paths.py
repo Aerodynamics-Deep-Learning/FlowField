@@ -1,5 +1,5 @@
 """
-Where the geometry pipeline's files live, all under the repo's committed `data/`:
+Where the geometry pipeline's files live. Under the repo's committed `data/`:
 
     data/manifest/datagen/geometry/geometry.sqlite, README.md
     data/manifest/datagen/geometry/geometry_archive.sqlite            shapes of earlier shape versions
@@ -8,12 +8,20 @@ Where the geometry pipeline's files live, all under the repo's committed `data/`
     data/raw/datagen/geometry/normalised/<shape_version>/<name>.dat   renderings of the fitted shapes
     data/raw/datagen/geometry/normalised/<shape_version>/rejected/<hash8>/<name>.dat   ...of rejected fits
     data/raw/datagen/geometry/report/<ingest_id>/                     one report per file seen, plus summary.txt
+    data/raw/datagen/geometry/report/calibration/                     calibration tables
+
+Any other data folder (a run folder's geometry_ingest/) holds the same, flat:
+
+    <folder>/geometry_ingest.sqlite, geometry_archive.sqlite
+    <folder>/raw/input/<name>.dat
+    <folder>/raw/rejected/<hash8>/<name>.dat
+    <folder>/raw/normalised/<shape_version>/<name>.dat, .../rejected/<hash8>/<name>.dat
+    <folder>/raw/<ingest_id>/
 
 A rejected file sits in a folder named after its raw hash's first 8 characters: names are not unique
 among rejects (a corrected file keeps its name), and the file name must stay the name line.
-    data/raw/datagen/geometry/report/calibration/                     calibration tables
 
-The manifest stores paths relative to `data/` with forward slashes, so a clone elsewhere resolves them.
+The manifest stores paths relative to its data folder with forward slashes, so a clone elsewhere resolves them.
 """
 
 import subprocess
@@ -26,17 +34,24 @@ ARCHIVE_NAME = "geometry_archive.sqlite"  # next to the manifest
 
 
 class GeometryPaths:
-    """The layout above, rooted at `data_root` (tests point it at a temporary folder)."""
+    """One of the layouts above, rooted at `data_root`: the repo's (`repo`), else the flat one."""
 
-    def __init__(self, data_root: Path):
+    def __init__(self, data_root: Path, *, repo: bool):
         self.data_root = Path(data_root)
-        self.manifest_dir = self.data_root / "manifest" / "datagen" / "geometry"
-        self.db = self.manifest_dir / "geometry.sqlite"
+        if repo:
+            self.manifest_dir = self.data_root / "manifest" / "datagen" / "geometry"
+            self.files_dir = self.data_root / "raw" / "datagen" / "geometry"
+            self.raw_dir = self.files_dir / "raw"
+            self.reports_dir = self.files_dir / "report"
+        else:
+            self.manifest_dir = self.data_root
+            self.files_dir = self.data_root / "raw"
+            self.raw_dir = self.files_dir / "input"
+            self.reports_dir = self.files_dir
+        self.db = self.manifest_dir / ("geometry.sqlite" if repo else "geometry_ingest.sqlite")
         self.archive_db = self.manifest_dir / ARCHIVE_NAME
-        self.files_dir = self.data_root / "raw" / "datagen" / "geometry"
-        self.raw_dir = self.files_dir / "raw"
         self.rejected_dir = self.files_dir / "rejected"
-        self.calibration_dir = self.files_dir / "report" / "calibration"
+        self.calibration_dir = self.reports_dir / "calibration"
 
     def norm_dir(self, shape_version: str) -> Path:
         return self.files_dir / "normalised" / shape_version
@@ -48,7 +63,7 @@ class GeometryPaths:
         return self.norm_dir(shape_version) / "rejected" / raw_hash[:8] / f"{name}.dat"
 
     def report_dir(self, ingest_id: str) -> Path:
-        return self.files_dir / "report" / ingest_id
+        return self.reports_dir / ingest_id
 
     def to_rel(self, path) -> str:
         """A path under `data_root` as the manifest stores it."""
@@ -60,15 +75,15 @@ class GeometryPaths:
 
 def Geom_paths(data_root=DATA_ROOT) -> GeometryPaths:
     """
-    The geometry file layout.
+    The geometry file layout: the repo's under its own `data/`, the flat one under any other folder.
 
     Args:
-        data_root (str | Path): The `data/` folder, the repo's own by default
+        data_root (str | Path): The data folder, the repo's `data/` by default
 
     Returns:
         GeometryPaths: Every location the pipeline reads or writes
     """
-    return GeometryPaths(data_root)
+    return GeometryPaths(data_root, repo=Path(data_root).resolve() == DATA_ROOT.resolve())
 
 
 def Geom_source_label(folder) -> str:

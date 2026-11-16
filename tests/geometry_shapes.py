@@ -1,11 +1,14 @@
 """
 Inputs for the sampling tests: stored shapes standing in for the geometry manifest (two NACA formula
-sections run through the ingest's own normalize/close/fit, and a cusp with TE wedge 0), and random
-sampling configs inside the optimizer's search space.
+sections run through the ingest's own normalize/close/fit, and a cusp with TE wedge 0), every shape the parity
+reference keeps (the repo's manifest as it was when the reference was written), and random sampling configs inside
+the optimizer's search space.
 """
 
+import json
 import math
 from functools import cache
+from pathlib import Path
 
 import numpy as np
 
@@ -18,6 +21,7 @@ from src.datagen.geometry.common.schemas import Closure, CSTParams, Family, Shap
 from src.datagen.geometry.sample.fields import SamplingFields
 
 SHAPE_NAMES = ("naca0012", "naca4412", "cusp")
+PARITY_REFERENCE = Path(__file__).parent / "integration" / "datagen" / "mesh" / "optimizer" / "machine_parity.json"
 
 CUSP = CSTParams(n1=CST_N1, n2=CST_N2, le_weight=0.02,
                  upper=[0.17, 0.15, 0.20, 0.18, 0.16, 0.20, 0.19, 0.12, 0.05],
@@ -40,6 +44,12 @@ def stored_shape(name: str) -> ShapeRecord:
     pts, tf = Geom_normalize(Geom_family_coords(Family.NACA4, digits))
     pts, _ = Geom_close_te(pts, tf.le_index)
     return as_record(name, Geom_cst_fit(pts, tf.le_index))
+
+
+def reference_shapes(reference: Path = PARITY_REFERENCE) -> list[tuple[str, ShapeRecord]]:
+    """The parity reference's shapes, by name, as `Optim_load_shapes` gives a manifest's."""
+    shapes = json.loads(reference.read_text(encoding="utf-8")).get("shapes", {})
+    return sorted((name, ShapeRecord.model_validate(shape)) for name, shape in shapes.items())
 
 
 def search_space_configs(rng: np.random.Generator, k: int) -> list[SamplingFields]:

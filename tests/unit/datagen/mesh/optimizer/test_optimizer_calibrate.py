@@ -22,7 +22,7 @@ Step 4: Ensure the rungs run together, the ordinary airfoils, the golden jmax's 
     - test_rung_2_takes_the_airfoils_rung_1_found_over_a_shape_gate
     - test_the_golden_jmax_comes_from_the_flag_rung_1_or_the_constant
     - test_a_given_golden_jmax_over_rung_1_is_warned
-    - test_a_dated_calibration_writes_its_report_and_database_once
+    - test_a_calibration_writes_its_report_and_database_named_by_its_start
 
 n* is stubbed and the executor is a stand-in whose rows come from a formula of the knobs, judged by the real
 verdict; NOMAD, the ladder, the store and the report are real. The real sampler and c2d are in the
@@ -31,6 +31,7 @@ integration tier.
 
 import json
 import logging
+import re
 import uuid
 from datetime import date
 
@@ -413,19 +414,17 @@ def test_a_given_golden_jmax_over_rung_1_is_warned(stubs, tmp_path, monkeypatch,
     assert [r for r in caplog.records if r.name == cal.__name__] == []  # no rung 1, nothing overridden
 
 
-def test_a_dated_calibration_writes_its_report_and_database_once(stubs, tmp_path, monkeypatch):
+def test_a_calibration_writes_its_report_and_database_named_by_its_start(stubs, tmp_path, monkeypatch):
     _world(monkeypatch, _sr_from(142))
     out = tmp_path / "calibration"  # made on the way
     files = cal.Optim_run_calibration(out, (1,), ["naca0012"], workers=1)
-    stamp = date.today().isoformat()
 
-    assert (files.report, files.db) == (out / f"{stamp}.txt", out / f"{stamp}.sqlite")
+    assert re.fullmatch(rf"mesh_calibrate_{date.today().isoformat()}_\d{{6}}", files.db.stem)
+    assert (files.report, files.db.parent) == (files.db.with_suffix(".txt"), out)
     report = files.report.read_text(encoding="utf-8")
     assert report == files.text and "naca0012" in report and "Rung 1: n*, jmax*" in report
     with RunStore.open(files.db, read_only=True) as store:
         assert store._conn.execute("SELECT COUNT(*) FROM runs WHERE rung = 'bisect'").fetchone()[0] > 0
-    with pytest.raises(FileExistsError, match="already holds a calibration"):  # the day's database is never written over
-        cal.Optim_run_calibration(out, (1,), ["naca0012"], workers=1)
     for rungs in ((4,), ()):
         with pytest.raises(ValueError, match="rungs are any of 1, 2, 3"):
             cal.Optim_run_calibration(tmp_path / "other", rungs)

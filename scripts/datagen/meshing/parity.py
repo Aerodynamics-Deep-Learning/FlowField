@@ -3,7 +3,8 @@ The machine check behind `machine_check.py`. It runs the parity test,
 tests/integration/datagen/mesh/optimizer/test_machine_parity.py, and passes only when every test in it passed: a
 skip counts as a failure. A pass is stamped in data/.machine_check.json with what was checked (the reference, the
 c2d executable, the sampler and shape versions, the computer), so a mesh script can say when something has moved
-since. It also rewrites the parity reference, keeping the old file when nothing but the writer's name would change.
+since. It also rewrites the parity reference from the shared manifest, keeping the old file when nothing but the
+writer's name would change; the reference holds its shapes, so the check itself reads nothing under data/.
 """
 
 import datetime
@@ -72,10 +73,10 @@ def Script_reference_written_on() -> Optional[str]:
 
 def Script_reference_problem() -> Optional[str]:
     """
-    Why the parity reference cannot check this code and manifest, before anything runs.
+    Why the parity reference cannot check this code, before anything runs.
 
     Returns:
-        str | None: None when it is for this sampler and shape version and lists the shared manifest's airfoils
+        str | None: None when it is for this sampler and shape version and holds its shapes
     """
     try:
         ref = json.loads(REFERENCE.read_text(encoding="utf-8"))
@@ -86,12 +87,8 @@ def Script_reference_problem() -> Optional[str]:
                 f"{SAMPLER_VERSION}/{SHAPE_VERSION}. This is a release step, done by hand on the reference machine: "
                 f"1. python -m scripts.datagen.geometry.ingest --data-root shared  2. {REWRITE}  3. commit "
                 f"geometry.sqlite and machine_parity.json together")
-    from src.datagen.meshing.optimizer.batch.runner import Optim_load_shapes  # the shared manifest's names
-    stored, listed = {name for name, _ in Optim_load_shapes()}, set(ref["samples"])
-    if stored != listed:
-        return (f"the parity reference lists other airfoils than the shared manifest ({len(stored - listed)} not in "
-                f"it, {len(listed - stored)} gone): rewrite it on the reference machine ({REWRITE}) and commit it "
-                f"with the manifest")
+    if not ref.get("shapes"):
+        return f"the parity reference holds no shapes: rewrite it on the reference machine ({REWRITE})"
     return None
 
 

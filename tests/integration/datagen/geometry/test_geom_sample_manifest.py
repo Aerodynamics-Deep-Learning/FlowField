@@ -8,21 +8,19 @@ Step 2: Ensure sampling keeps its guarantees on every stored shape, and the defa
     - test_random_configs_keep_the_rules
     - test_default_knobs_pass_everywhere
 
-Reads the repo's own manifest under `data/`; skipped without it.
+The shapes are the parity reference's (tests/geometry_shapes.py), the manifest as it was when the reference was
+written; nothing under data/ is read.
 """
 
 import numpy as np
 import pytest
 
-from src.datagen.geometry.common.constants import SHAPE_VERSION
-from src.datagen.geometry.common.paths import Geom_paths
 from src.datagen.geometry.common.schemas import TETreatment
-from src.datagen.geometry.manifest.store import GeometryStore
 from src.datagen.geometry.sample.checks import SamplerAssertionError
 from src.datagen.geometry.sample.contour import ContourError, Geom_build_contour
 from src.datagen.geometry.sample.fields import SamplingFields
 from src.datagen.geometry.sample.sample import Geom_sample
-from tests.geometry_shapes import search_space_configs
+from tests.geometry_shapes import reference_shapes, search_space_configs
 
 _GAP = 0.004  # the studies' default TE gap
 
@@ -30,18 +28,14 @@ _GAP = 0.004  # the studies' default TE gap
 @pytest.fixture(scope="module")
 def contours() -> dict:
     """Per stored airfoil name, per TE: its contour, or the refusal's message."""
-    paths = Geom_paths()
-    if not paths.db.is_file():
-        pytest.skip(f"no geometry manifest at {paths.db}")
     built = {}
-    with GeometryStore.open(paths.db, read_only=True) as store:
-        for shape in store.shapes(SHAPE_VERSION):
-            per_te = built.setdefault(store.name_of(shape.geometry_id), {})
-            for te in TETreatment:
-                try:
-                    per_te[te] = Geom_build_contour(shape, te, _GAP)
-                except ContourError as e:
-                    per_te[te] = str(e)
+    for name, shape in reference_shapes():
+        per_te = built.setdefault(name, {})
+        for te in TETreatment:
+            try:
+                per_te[te] = Geom_build_contour(shape, te, _GAP)
+            except ContourError as e:
+                per_te[te] = str(e)
     return built
 
 
