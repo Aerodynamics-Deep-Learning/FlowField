@@ -40,6 +40,11 @@ Step 6: Ensure the helpers record what they claim
 Step 7: Ensure a write waits out another program holding the file, warning as it starts, and gives up cleanly
     - test_a_write_waits_out_a_lock_and_warns
     - test_a_lock_held_past_the_wait_fails_with_nothing_written
+Step 8: Ensure a merge copies what the store lacks, repoints best, never writes its source, and refuses what it
+cannot trust
+    - test_a_merge_copies_what_the_store_lacks_and_repoints_best
+    - test_an_older_source_merges_from_a_migrated_snapshot
+    - test_a_merge_refuses_what_it_cannot_trust
 
 No mesher or c2d needed: stores live in `tmp_path`, settings come from a stand-in exe.
 """
@@ -65,7 +70,8 @@ from src.datagen.meshing.common.schemas import MeshGeoDeviationSummary, MeshQual
 from src.datagen.meshing.optimizer.common.settings import Optim_build_settings
 from src.datagen.meshing.optimizer.manifest import store as store_module
 from src.datagen.meshing.optimizer.manifest.store import (
-    RUN_COLUMNS, Optim_git_state, Optim_provenance, Optim_su2_sha256, Optim_utc_now, RunStore, StoreLocked,
+    RUN_COLUMNS, MergeRefused, Optim_git_state, Optim_provenance, Optim_su2_sha256, Optim_utc_now, RunStore,
+    StoreLocked,
 )
 
 # SampleReport fields a run does not store, and why
@@ -534,4 +540,75 @@ def test_a_lock_held_past_the_wait_fails_with_nothing_written(store, settings, m
     assert not store._conn.in_transaction and store.run("lost") is None  # rolled back whole
     store.insert_run(_run(settings, run_id="later"))  # and the store works on
     assert store.run("later") is not None
+# endregion
+
+
+# region Step 8
+def _other_store(path, settings, migrations=None, **batch):
+    """Another machine's store: its own label on the settings, one finished batch, its ladder and two passes."""
+    with RunStore.open(path) as s:
+        s.ensure_settings(settings, label="emre's laptop")
+        s.start_batch(_batch(settings, **{"batch_id": "b2", "status": "completed", **batch}))
+        s.start_ladder(_ladder(settings, ladder_id="l2", batch_id="b2", status="passed"))
+        for run_id, gid, nodes in (("emre_g1", "g1", 59_000), ("emre_g2", "g2", 61_000)):
+            s.insert_run(_run(settings, run_id=run_id, batch_id="b2", ladder_id="l2", geometry_id=gid,
+                              num_nodes=nodes, entry_flag="SUCCESS"))
+    return path
+
+
+def _counts(store):
+    return {t: store._conn.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0]
+            for t in ("settings", "batches", "ladders", "runs", "best")}
+
+
+def test_a_merge_copies_what_the_store_lacks_and_repoints_best(store, settings, tmp_path):
+    store.insert_run(_run(settings, run_id="mine_g1", num_nodes=60_000))
+    store.update_best("g1", settings["settings_id"])
+    source = _other_store(tmp_path / "emre.sqlite", settings)
+    before = source.read_bytes()
+
+    counts = store.merge_from(source)
+
+    assert counts.new == {"settings": 0, "batches": 1, "ladders": 1, "runs": 2}
+    assert counts.already == {"settings": 1, "batches": 0, "ladders": 0, "runs": 0}  # the label differs: still one
+    sid = settings["settings_id"]
+    assert (store.best("g1", sid), store.best("g2", sid), counts.best) == ("emre_g1", "emre_g2", 2)  # 59k beats 60k
+    assert store.settings(sid)["label"] == "test" and store.run("mine_g1") is not None
+    assert source.read_bytes() == before  # read from a snapshot, never written
+    again = store.merge_from(source)
+    assert (again.new, again.best) == ({"settings": 0, "batches": 0, "ladders": 0, "runs": 0}, 0)
+
+
+def test_an_older_source_merges_from_a_migrated_snapshot(store, settings, tmp_path, monkeypatch):
+    source = tmp_path / "old.sqlite"
+    with monkeypatch.context() as before_batches:
+        before_batches.setattr(store_module, "_MIGRATIONS", store_module._MIGRATIONS[:2])
+        with RunStore.open(source) as s:
+            s.ensure_settings(settings)
+            s.start_ladder(_ladder(settings, ladder_id="l_old", batch_id="b_old", status="passed"))
+            s.insert_run(_run(settings, run_id="old_g1", batch_id="b_old", ladder_id="l_old", entry_flag="SUCCESS"))
+    before = source.read_bytes()
+
+    counts = store.merge_from(source)
+
+    assert (counts.new["batches"], counts.new["runs"]) == (1, 1)  # its batch rebuilt by the migration
+    assert store.batch("b_old")["status"] == "unknown" and store.best("g1", settings["settings_id"]) == "old_g1"
+    assert source.read_bytes() == before and not list(tmp_path.glob("old.sqlite.bak*"))
+
+
+@pytest.mark.parametrize("how, says", [
+    ("running batch", "1 batches still running"), ("running ladder", "1 ladders still running"),
+    ("other row", "runs hold other rows under ids this store has: emre_g1"), ("itself", "the store it would merge into"),
+])
+def test_a_merge_refuses_what_it_cannot_trust(store, settings, tmp_path, how, says):
+    source = _other_store(tmp_path / "emre.sqlite", settings, **({"status": "running"} if how == "running batch" else {}))
+    if how == "running ladder":
+        with RunStore.open(source) as s:
+            s.start_ladder(_ladder(settings, ladder_id="l3", batch_id="b2"))
+    store.insert_run(_run(settings, run_id="emre_g1", num_nodes=1))  # the source's id, another row
+    before = _counts(store)
+
+    with pytest.raises(MergeRefused, match=says):
+        store.merge_from(store.path if how == "itself" else source)
+    assert _counts(store) == before and not store._conn.in_transaction  # nothing copied
 # endregion

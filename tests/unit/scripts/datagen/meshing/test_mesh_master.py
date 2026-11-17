@@ -1,8 +1,8 @@
 """
 Tests for `scripts.datagen.meshing.master`, the run a YAML config makes, i.e.:
 
-Step 1: Ensure a config's sections become the enabled stages' arguments, in the fixed order, its settings each
-stage's `--set` for what it reads, and `folder` the run's folder
+Step 1: Ensure a config's sections become the enabled stages' arguments, in the fixed order (the merge last, reading
+this run's campaign store), its settings each stage's `--set` for what it reads, and `folder` the run's folder
     - test_options_become_arguments
     - test_stages_run_in_the_fixed_order_and_machine_check_is_on_unless_switched_off
     - test_settings_reach_the_stages_that_read_them
@@ -49,13 +49,17 @@ def test_options_become_arguments(tmp_path, data_root):
 
 
 def test_stages_run_in_the_fixed_order_and_machine_check_is_on_unless_switched_off(tmp_path):
-    config = Script_load_config(_config(tmp_path, "remesh:\n  enabled: true\n  all: true\n"
+    config = Script_load_config(_config(tmp_path, "merge:\n  enabled: true\n"
+                                                  "remesh:\n  enabled: true\n  all: true\n"
                                                   "campaign:\n  enabled: true\n"
                                                   "geometry_ingest:\n  enabled: false\n"))
 
     assert [(stage.name, argv) for stage, argv in config.stages] == [("machine_check", []), ("campaign", []),
-                                                                     ("remesh", ["--all"])]
+                                                                     ("remesh", ["--all"]), ("merge", [])]
     assert config.off == ["geometry_ingest"] and config.folder is None
+    merge = Script_plan("p", config.stages).stages[-1]  # its store left out: this run's campaign's
+    assert (merge.reads[0].how, merge.args.store) == ("this run's campaign", merge.args.into.parent.parent /
+                                                      "campaign" / "campaign.sqlite")
     config = Script_load_config(_config(tmp_path, "machine_check:\n  enabled: false\n"))
     assert config.stages == [] and config.off == ["machine_check"]
 
@@ -133,7 +137,7 @@ def test_a_config_mistake_refuses_the_run(tmp_path, data_root, capsys):
         Script_load_config(config)
     assert [(stage, text.split(" (")[0]) for stage, text in refused.value.problems] == [
         ("config", "no stage named 'campain'; the stages are machine_check, geometry_calibrate, geometry_ingest, "
-                   "mesh_calibrate, campaign, remesh"),
+                   "mesh_calibrate, campaign, remesh, merge"),
         ("config", "folder is the run's own folder, a path, not 'shared'"),
         ("mesh_calibrate", "workers takes a value, not True"),
         ("campaign", "needs `enabled: true` or `enabled: false`"),
@@ -152,5 +156,5 @@ def test_the_example_config_plans(data_root):
     plan = Script_plan("example", config.stages, off=config.off, sources=config.sources, notes=config.notes)
     assert [sp.stage.name for sp in plan.stages] == ["machine_check", "campaign", "remesh"]
     assert plan.stages[2].reads[0].how == "this run's campaign" and config.off == [
-        "geometry_calibrate", "geometry_ingest", "mesh_calibrate"]
+        "geometry_calibrate", "geometry_ingest", "mesh_calibrate", "merge"]
 # endregion

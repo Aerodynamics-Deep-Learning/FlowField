@@ -9,7 +9,7 @@ scripts/datagen/
 ├── README.md        this guide
 ├── engine.py        what every script shares: the plan, the output rule, the logs
 ├── geometry/        calibrate.py, ingest.py
-└── meshing/         machine_check.py (+ parity.py), calibrate.py, campaign.py, remesh.py,
+└── meshing/         machine_check.py (+ parity.py), calibrate.py, campaign.py, remesh.py, merge.py,
                      master.py (+ master.example.yaml)
 ```
 
@@ -60,13 +60,14 @@ stage is the script's name in configs and logs.
 | `meshing.calibrate` | `mesh_calibrate` | measures the numbers the ladder's rungs run on | `--geometry-db` | `--out`: a folder, `mesh_calibrate_<start>.txt` and `.sqlite` | ~1 h for 158 airfoils on 6 workers (rung 1 ~12 min, rung 2 ~6, rung 3 ~41) |
 | `meshing.campaign` | `campaign` | the ladder over every airfoil not finished under the run's settings (the constants, unless set) | `--geometry-db` | `--db`: a run store | ~10 min for 158 airfoils on 6 workers, most of it the few that reach rung 3 |
 | `meshing.remesh` | `remesh` | rebuilds best runs (`--airfoils`, `--all`) or one run (`--run`), each checked against its stored hash | `--db`, `--geometry-db` | `--out`: a folder per airfoil, and `quality.png` | ~3 s an airfoil |
+| `meshing.merge` | `merge` | folds one run store into another (another machine's into the shared one): the rows it lacks, by id, then each best run recomputed | `--store` (in a config: this run's campaign's) | `--into`: a run store | seconds |
 
 Exit codes, for every script and the master:
 
 | Code | Meaning |
 |---|---|
 | 0 | done (the re-mesh: every mesh delivered) |
-| 1 | a stage stopped or failed (a campaign stopped early, a mesh not delivered, a machine check not passed) |
+| 1 | a stage stopped or failed (a campaign stopped early, a mesh not delivered, a machine check not passed, a merge refused) |
 | 2 | refused before anything ran: a mistake in what was asked |
 | 130 | Ctrl-C |
 
@@ -84,11 +85,11 @@ Copy `scripts/datagen/meshing/master.example.yaml` anywhere and edit it. The sta
 whatever order the config lists them in:
 
 ```
-machine_check -> geometry_calibrate -> geometry_ingest -> mesh_calibrate -> campaign -> remesh
+machine_check -> geometry_calibrate -> geometry_ingest -> mesh_calibrate -> campaign -> remesh -> merge
 ```
 
 - **One section per stage**, each with `enabled: true` or `enabled: false`. `machine_check` is on when its
-  section is left out; switching it off warns.
+  section is left out; switching it off warns. Every other stage left out is off, `merge` included.
 - **A section's other keys are its script's options**, `-` written as `_`: `--settings-label` is
   `settings_label`, `--dry-run` is `dry_run`. `true` turns a flag on; a list becomes `a,b`.
 - **`settings:`** sets values of `src/datagen/constants.py` for the run, by their names in lower case
@@ -99,7 +100,7 @@ machine_check -> geometry_calibrate -> geometry_ingest -> mesh_calibrate -> camp
 - **`folder:`**, beside the sections, names the run's folder (section 5); left out, it is a new
   `data/scratchpad/<time>_<config name>/`.
 - **A stage reads what an earlier stage of the same run wrote**: the mesh stages read this run's ingested
-  manifest, the re-mesh this run's campaign store, unless the config names something else.
+  manifest, the re-mesh and the merge this run's campaign store, unless the config names something else.
 - **Everything is checked before anything runs**, even the machine check: every option, every path, every
   named airfoil, each stage's own checks. One problem refuses the whole run, listing all of them.
 - **Each stage runs as a child process**; the first one that fails stops the run with its exit code. Ctrl-C
@@ -128,9 +129,10 @@ data/scratchpad/2026-11-10_092440_e2e4_for_cst/    the run's folder
 │       ├── normalised/<shape version>/            the fitted shapes rendered (rejected/ inside)
 │       └── <ingest id>/                           summary.txt and one report per file
 ├── mesh_calibrate/mesh_calibrate_<start>.txt, .sqlite   named by the calibration's own start
-└── campaign/
-    ├── campaign.sqlite
-    └── remesh/                                    quality.png, <airfoil>/<airfoil>.su2
+├── campaign/
+│   ├── campaign.sqlite
+│   └── remesh/                                    quality.png, <airfoil>/<airfoil>.su2
+└── merge/merged.sqlite                            the merge's store, when its --into is left out
 ```
 
 Every output is decided before anything runs:
@@ -146,8 +148,9 @@ A `folder:` that exists is used again, with a `!` warning: this run's log and co
 (each named by its start), and the outputs left out are the earlier run's, so a stopped campaign resumes.
 
 - **`shared`** is `data/` for the ingest (the committed manifest), `data/manifest/datagen/meshing/meshing.sqlite`
-  for the campaign, and the committed calibration folders for the calibrations. The re-mesh has none: meshes
-  are never kept in a committed place. For inputs, `shared` is the default.
+  for the campaign and the merge's `--into`, and the committed calibration folders for the calibrations. The
+  re-mesh has none: meshes are never kept in a committed place. For inputs, `shared` is the default (not the
+  merge's `--store`: the shared store is merged into, not from).
 - **`data/scratchpad/`** and **`data/experiments/`** are gitignored: put named experiments under
   `data/experiments/`. Anything else you name under `data/` shows up in `git status`. Nothing ever deletes the
   scratchpad; clear it when you like.
@@ -160,6 +163,13 @@ A `folder:` that exists is used again, with a `!` warning: this run's log and co
   pushed into it cannot be combined, and the second push loses one of them. Pull, run the campaign, commit, push,
   before anyone else starts one; and on one computer, never two campaigns into one store at once (the second
   marks the first's running airfoils aborted and meshes them again).
+- **Other machines' stores come in through the merge.** Each machine runs its campaign into a store of its own and
+  sends the file; whoever holds the shared store pulls, merges each one in (`python -m scripts.datagen.meshing.merge
+  --store <their store> --into shared`), commits and pushes. Every id is a uuid or a hash, so rows never collide:
+  the same airfoil done on two machines under the same settings keeps both ladders, and its best run is
+  recomputed. Results meshed by different c2d executables sit under different settings rows and never mix. A
+  store still running, or holding another row under an id the target has, is refused whole; merging one again
+  copies nothing.
 - **A run store describes what ran into it.** Each campaign, and each rung of a mesh calibration, is one row of
   its `batches` table, one with nothing to run included: the run's title, its command, its log's path and the
   master's config (empty for a single script's run), the computer, its CPU and OS, the commit, the Python and

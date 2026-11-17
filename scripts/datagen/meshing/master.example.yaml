@@ -62,3 +62,8 @@ remesh:                              # best runs' meshes back out, hash-checked 
   vtk: true
   out: experiments/dx003/remeshed    # writes
   # db: shared                       reads; default: this run's campaign, else shared
+
+merge:                               # one run store folded into another (scripts/datagen/meshing/merge.py)
+  enabled: false                     # off unless enabled; by hand on another machine's store as well
+  into: experiments/all/meshing.sqlite      # writes; shared = the committed store (pull first, commit and push after)
+  # store: experiments/emre/meshing.sqlite  reads; default: this run's campaign

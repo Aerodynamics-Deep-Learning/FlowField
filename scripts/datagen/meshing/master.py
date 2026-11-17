@@ -1,7 +1,7 @@
 """
 Runs the data-generation stages a YAML config enables, always in this order, each in a process of its own:
 
-    machine_check -> geometry_calibrate -> geometry_ingest -> mesh_calibrate -> campaign -> remesh
+    machine_check -> geometry_calibrate -> geometry_ingest -> mesh_calibrate -> campaign -> remesh -> merge
 
     python -m scripts.datagen.meshing.master <config.yaml>
 
@@ -27,10 +27,10 @@ from scripts.datagen import engine
 from scripts.datagen.engine import SHARED, PlanError, Script_refuse, Script_run, Stage
 from scripts.datagen.geometry import calibrate as geometry_calibrate, ingest as geometry_ingest
 from scripts.datagen.meshing import calibrate as mesh_calibrate, campaign as mesh_campaign, machine_check
-from scripts.datagen.meshing import remesh as mesh_remesh
+from scripts.datagen.meshing import merge as mesh_merge, remesh as mesh_remesh
 
 STAGES = (machine_check.STAGE, geometry_calibrate.STAGE, geometry_ingest.STAGE, mesh_calibrate.STAGE,
-          mesh_campaign.STAGE, mesh_remesh.STAGE)
+          mesh_campaign.STAGE, mesh_remesh.STAGE, mesh_merge.STAGE)
 FOLDER_KEY = "folder"
 SETTINGS_KEY = "settings"
 

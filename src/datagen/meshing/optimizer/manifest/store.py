@@ -13,6 +13,9 @@ key to the columns the ladders and runs already had.
 
 No mesh file is kept: a run's `config_json` re-meshes it, and `Optim_su2_sha256` checks the result.
 
+Stores merge (`RunStore.merge_from`): every id is a uuid or a hash, so another machine's store folds in by id,
+`best` recomputed.
+
 Schema changes land as numbered migrations in `_MIGRATIONS`, tracked by `PRAGMA user_version`, as in the
 geometry manifest. The file is committed, so it runs in rollback-journal mode. One process writes, and
 every write commits at once, so a crash loses at most the row in flight. A write waits out another program
@@ -28,11 +31,12 @@ import platform
 import sqlite3
 import subprocess
 import sys
+import tempfile
 import time
-from contextlib import contextmanager
+from contextlib import closing, contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
+from typing import NamedTuple, Optional
 
 import numpy as np
 
@@ -237,10 +241,24 @@ _BATCH_COUNTS_SQL = """
 # The packages a mesh's outcome can depend on, by their distribution names
 _PACKAGES = ("numpy", "pydantic", "PyNomadBBO")
 
+# What a merge copies, by id, in the order the rows refer to each other; `best` is recomputed, never copied
+_MERGED = (("settings", "settings_id"), ("batches", "batch_id"), ("ladders", "ladder_id"), ("runs", "run_id"))
+_MERGE_OWN = {"settings": {"created_at", "label"}}  # each store's own: when and under what note it met the row
+
 #region main
 
 class StoreLocked(RuntimeError):
     """Another program held the run store past `DB_LOCK_WAIT_S`; nothing of the write was kept."""
+
+
+class MergeRefused(ValueError):
+    """A store that cannot be merged in as it is; nothing of it was copied."""
+
+
+class MergeCounts(NamedTuple):
+    new: dict       # table -> rows copied in
+    already: dict   # table -> rows the store held already, the same
+    best: int       # (airfoil, settings) pairs whose best run changed
 
 
 class RunStore:
@@ -446,6 +464,68 @@ class RunStore:
                 self.finish_batch(batch_id, dict(status="aborted", finished_at=now, error_text=why))
         return cur.rowcount
 
+    def merge_from(self, source) -> MergeCounts:
+        """
+        Copies in another store's settings, batches, ladders and runs this one lacks, by id, then points `best` at
+        each (airfoil, settings) it holds a pass for. It works on a snapshot of the source, taken read-only and
+        migrated to this schema if older, so the source is never written. One transaction: refused, nothing is
+        copied; merged again, nothing new is.
+
+        Args:
+            source (str | Path): The other store's file
+
+        Returns:
+            MergeCounts: Per table, the rows copied in and those already here; the best runs that changed
+
+        Raises:
+            MergeRefused: If the source is this store, still has a batch or ladder running (a campaign writing it,
+                or cut short), or holds a row under an id this store has for another (settings: but its time and
+                label, each store's own)
+            FileNotFoundError: If there is no source
+            RuntimeError: If the source was written by newer code
+        """
+        source = Path(source)
+        if not source.is_file():
+            raise FileNotFoundError(f"{source} does not exist")
+        if source.resolve() == self.path.resolve():
+            raise MergeRefused(f"{source} is the store it would merge into")
+        with tempfile.TemporaryDirectory(prefix="merge_") as tmp:
+            snapshot = Path(tmp) / "source.sqlite"
+            with closing(sqlite3.connect(f"{source.resolve().as_uri()}?mode=ro", uri=True)) as src, \
+                    closing(sqlite3.connect(snapshot)) as copy:
+                src.backup(copy)
+            RunStore.open(snapshot).close()  # at this schema now, or refused as newer
+            self._conn.execute("ATTACH DATABASE ? AS src", (str(snapshot),))
+            try:
+                return self._merge_attached(source)
+            finally:
+                self._conn.execute("DETACH DATABASE src")
+
+    def _merge_attached(self, source: Path) -> MergeCounts:
+        running = [f"{n} {table}" for table in ("batches", "ladders") for (n,) in
+                   self._conn.execute(f"SELECT COUNT(*) FROM src.{table} WHERE status = 'running'") if n]
+        if running:
+            raise MergeRefused(f"{source} has {' and '.join(running)} still running: a campaign is writing it, or was "
+                               f"cut short (run it again to finish it first)")
+        new, already = {}, {}
+        with self.transaction():
+            for table, key in _MERGED:
+                kept = ", ".join(c for c in self._columns[table] if c not in _MERGE_OWN.get(table, ()))
+                differ = [r[0] for r in self._conn.execute(
+                    f"SELECT {key} FROM (SELECT {kept} FROM src.{table} WHERE {key} IN (SELECT {key} FROM main.{table}) "
+                    f"EXCEPT SELECT {kept} FROM main.{table}) LIMIT 3")]
+                if differ:
+                    raise MergeRefused(f"{source}'s {table} hold other rows under ids this store has: "
+                                       f"{', '.join(differ)}")
+                columns = ", ".join(self._columns[table])
+                new[table] = self._conn.execute(
+                    f"INSERT INTO main.{table} ({columns}) SELECT {columns} FROM src.{table} "
+                    f"WHERE {key} NOT IN (SELECT {key} FROM main.{table}) ORDER BY rowid").rowcount
+                already[table] = self._conn.execute(f"SELECT COUNT(*) FROM src.{table}").fetchone()[0] - new[table]
+            pairs = self._conn.execute("SELECT DISTINCT geometry_id, settings_id FROM src.runs WHERE passed = 1").fetchall()
+            changed = sum(self.best(g, s) != self.update_best(g, s) for g, s in pairs)
+        return MergeCounts(new, already, changed)
+
 #endregion
 
 #region reads
@@ -526,7 +606,7 @@ def _migrate(conn: sqlite3.Connection, path: Path) -> None:
         raise RuntimeError(f"{path} is at schema version {version}; this code knows up to "
                            f"{len(_MIGRATIONS)}. Update the code before opening it.")
     if 0 < version < len(_MIGRATIONS):
-        with sqlite3.connect(path.with_name(f"{path.name}.bak-v{version}")) as backup:
+        with closing(sqlite3.connect(path.with_name(f"{path.name}.bak-v{version}"))) as backup:
             conn.backup(backup)
     for n in range(version, len(_MIGRATIONS)):
         try:

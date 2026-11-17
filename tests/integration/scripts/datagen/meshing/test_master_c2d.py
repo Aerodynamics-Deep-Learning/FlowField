@@ -1,9 +1,9 @@
 """
 The master on the real sampler and c2d, i.e.:
 
-Step 1: Ensure a config's campaign and re-mesh run as child processes, the re-mesh reading the campaign's store,
-its mesh delivered on the stored hash, the run logged, labelled, into its named run folder, and the campaign's
-batch row naming the run, its log and its config
+Step 1: Ensure a config's campaign, re-mesh and merge run as child processes, the re-mesh reading the campaign's
+store, its mesh delivered on the stored hash, the run logged, labelled, into its named run folder, the campaign's
+batch row naming the run, its log and its config, and the merge folding that store into another
     - test_a_campaign_then_its_remesh_through_the_master
 
 naca0012 from the tests' airfoil manifest, one worker, the run folder and every output in a temporary folder and the
@@ -30,13 +30,14 @@ _LINE = re.compile(r"^\d\d:\d\d:\d\d \[(run|cmd)\] \[([a-z_]+)\] +\[(info|!|!!|e
 def test_a_campaign_then_its_remesh_through_the_master(tmp_path, capsys, airfoils_manifest):
     here, manifest = tmp_path.resolve(), airfoils_manifest.as_posix()
     folder, store, out = here / "run", here / "store" / "meshing.sqlite", here / "remeshed"
-    config = here / "run.yaml"
+    merged, config = here / "all" / "meshing.sqlite", here / "run.yaml"
     config.write_text(f"folder: {folder.as_posix()}\n"
                       f"machine_check:\n  enabled: false\n"
                       f"campaign:\n  enabled: true\n  airfoils: [naca0012]\n  workers: 1\n  db: {store.as_posix()}\n"
                       f"  geometry_db: {manifest}\n"
                       f"remesh:\n  enabled: true\n  airfoils: [naca0012]\n  vtk: true\n  out: {out.as_posix()}\n"
-                      f"  geometry_db: {manifest}\n",
+                      f"  geometry_db: {manifest}\n"
+                      f"merge:\n  enabled: true\n  into: {merged.as_posix()}\n",
                       encoding="utf-8")
 
     assert mesh_master.main([str(config)]) == 0
@@ -65,4 +66,8 @@ def test_a_campaign_then_its_remesh_through_the_master(tmp_path, capsys, airfoil
     assert batch["command"].startswith("python -m scripts.datagen.meshing.campaign ")
     mesh = out / "naca0012" / "naca0012.su2"
     assert Optim_su2_sha256(mesh)[0] == best["su2_sha256"] and (out / "naca0012" / "naca0012.vtk").exists()
+    assert ("run", "merge", "info", f"reads store: this run's campaign, {store}") in rows
+    with RunStore.open(merged, read_only=True) as into:  # the campaign's store, folded in
+        assert into.best(shape.geometry_id, best["settings_id"]) == best["run_id"]
+        assert into.batch(best["batch_id"]) == batch
 # endregion
