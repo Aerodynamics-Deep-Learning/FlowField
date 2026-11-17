@@ -15,6 +15,7 @@ Step 3: Ensure a run logs every line, labelled and in marked blocks, into its on
     - test_a_failing_stage_stops_the_run_with_its_exit_code
     - test_a_usage_error_or_ctrl_c_inside_a_stage
     - test_a_crash_is_logged_then_raised
+    - test_the_logs_dirty_flag_looks_at_the_code_only
 Step 4: Ensure the master's stages run as child processes, their lines labelled by level, Ctrl-C waited out
     - test_the_stages_run_as_child_processes
     - test_ctrl_c_waits_for_the_child_then_stops_the_run
@@ -32,6 +33,7 @@ import json
 import logging
 import os
 import re
+import shutil
 import subprocess
 
 import pytest
@@ -216,6 +218,31 @@ def test_a_crash_is_logged_then_raised(tmp_path, data_root, capsys):
     rows = _lines(_log(data_root, "crash"))
     assert ("run", "maker", "error", "RuntimeError: boom") in rows
     assert ("run", "summary", "error", "===== SUMMARY =====  stopped at maker, exit 1") in rows
+
+
+@pytest.mark.skipif(shutil.which("git") is None, reason="git not installed")
+def test_the_logs_dirty_flag_looks_at_the_code_only(tmp_path, monkeypatch):
+    def git(*args):
+        subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", *args], cwd=tmp_path, check=True,
+                       capture_output=True)
+    for path in ("src/datagen/code.py", "scripts/datagen/script.py", "data/examples/store.sqlite"):
+        (tmp_path / path).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / path).write_text("v1")
+    git("init", "-q")
+    git("add", ".")
+    git("commit", "-q", "-m", "init")
+    monkeypatch.setattr(engine, "REPO_ROOT", tmp_path)
+
+    clean = engine._code_version()
+    assert re.fullmatch(r"[0-9a-f]{7,}", clean)
+    (tmp_path / "data/examples/store.sqlite").unlink()  # a run's data, a committed store's included, never counts
+    (tmp_path / "data/examples/new.log").write_text("")
+    assert engine._code_version() == clean
+    (tmp_path / "scripts/datagen/script.py").write_text("v2")
+    assert engine._code_version() == clean + "-dirty"
+    git("checkout", "--", "scripts")
+    (tmp_path / "src/datagen/new.py").write_text("")  # untracked code counts
+    assert engine._code_version() == clean + "-dirty"
 # endregion
 
 

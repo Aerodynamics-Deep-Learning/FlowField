@@ -46,6 +46,7 @@ INTERRUPTED = 130
 STAMP = "{:%Y-%m-%d_%H%M%S}"  # a run's start, naming its log and its config's copy
 LOG_NAME = "log_{}.log"
 CONFIG_NAME = "config_{}.yaml"
+_CODE = ("src/datagen", "scripts/datagen")  # what the log's '-dirty' looks at
 HELP_TAIL = ("Through this script: the run gets a new folder in data/scratchpad/ holding its log (log_<start>.log) and "
              "every output left out; `shared` names the committed store.")
 
@@ -727,11 +728,14 @@ def _command(module: str, argv: Sequence[str]) -> str:
 
 
 def _code_version() -> str:
-    """The short commit, '-dirty' with tracked changes; 'unknown' outside git."""
+    """
+    The short commit, '-dirty' when the datagen code differs from it (untracked files included); 'unknown' outside
+    git. Data a run writes, into committed stores included, never counts.
+    """
     try:
         commit = subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=REPO_ROOT, capture_output=True,
                                 text=True, check=True).stdout.strip()
-        dirty = subprocess.run(["git", "status", "--porcelain", "--untracked-files=no"], cwd=REPO_ROOT,
+        dirty = subprocess.run(["git", "status", "--porcelain", "--", *_CODE], cwd=REPO_ROOT,
                                capture_output=True, text=True, check=True).stdout.strip()
     except (OSError, subprocess.CalledProcessError):
         return "unknown"
