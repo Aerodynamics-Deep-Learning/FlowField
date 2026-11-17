@@ -1,5 +1,5 @@
 CST calibration of for_cst
-2026-11-16, code a3d0204-dirty
+2026-11-17, code ce55070
 190 files: 190 fitted (180 unique geometries), 0 rejected before fitting
 
 Per configuration, unique geometries. max_dev = worst point-to-shape distance [c]; crossed = surfaces cross; strays = leaves a spline through the data, midway between points, by more than twice its max_dev and 0.0005c. Noses: separate = one A_0 per surface (two radii), shared = one A_0, lem = one A_0 plus Kulfan's LE term.

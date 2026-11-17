@@ -1,6 +1,6 @@
 # An example end-to-end run of every datagen stage over the for_cst suite (190 files), every value constants.py's
 # own, for developers to see what a full pipeline run writes. Run from the repo root:
-#     python -m scripts.datagen.meshing.master data/examples/e2e_example.yaml
+#     python -m scripts.datagen.meshing.master data/examples/configs/e2e_example.yaml
 
 folder: examples/e2e_example
 

@@ -1,0 +1,203 @@
+10:35:10 [run] [plan]               [info]  ===== PLAN =====  master e2e_example, started 2026-11-17 10:35:10 on Ege_Laptop, code ce55070-dirty
+10:35:10 [run] [plan]               [info]  config C:\SenkDosya\Projects\AeroML\FlowField\data\examples\configs\e2e_example.yaml, copied into the run folder as config_2026-11-17_103510.yaml
+10:35:10 [run] [plan]               [info]  stages machine_check -> geometry_calibrate -> geometry_ingest -> mesh_calibrate -> campaign -> remesh
+10:35:10 [run] [plan]               [info]  run folder: data/examples/e2e_example (new)
+10:35:10 [run] [geometry_calibrate] [info]  writes out: nothing given, writing into the run folder: data/examples/e2e_example/geometry_calibrate/geometry_calibrate_2026-11-17.txt
+10:35:10 [run] [geometry_calibrate] [info]  reads folder: given, C:\Users\Ege Artan\OneDrive\Masaüstü\for_cst
+10:35:10 [run] [geometry_ingest]    [info]  writes data_root: nothing given, writing into the run folder: data/examples/e2e_example/geometry_ingest
+10:35:10 [run] [geometry_ingest]    [info]  reads folder: given, C:\Users\Ege Artan\OneDrive\Masaüstü\for_cst
+10:35:10 [run] [mesh_calibrate]     [info]  writes out: nothing given, writing into the run folder: data/examples/e2e_example/mesh_calibrate
+10:35:10 [run] [mesh_calibrate]     [info]  reads geometry_db: this run's geometry_ingest, data/examples/e2e_example/geometry_ingest/geometry_ingest.sqlite
+10:35:10 [run] [campaign]           [info]  writes db: nothing given, writing into the run folder: data/examples/e2e_example/campaign/campaign.sqlite
+10:35:10 [run] [campaign]           [info]  reads geometry_db: this run's geometry_ingest, data/examples/e2e_example/geometry_ingest/geometry_ingest.sqlite
+10:35:10 [run] [remesh]             [info]  writes out: nothing given, writing into the run folder: data/examples/e2e_example/campaign/remesh
+10:35:10 [run] [remesh]             [info]  reads db: this run's campaign, data/examples/e2e_example/campaign/campaign.sqlite
+10:35:10 [run] [remesh]             [info]  reads geometry_db: this run's geometry_ingest, data/examples/e2e_example/geometry_ingest/geometry_ingest.sqlite
+10:35:10 [run] [geometry_ingest]    [!]     geometry_calibrate and geometry_ingest both run: geometry_ingest uses the constants as they are now, not what this calibration recommends
+10:35:10 [run] [campaign]           [!]     mesh_calibrate and campaign both run: campaign uses the constants as they are now, not what this calibration recommends
+10:35:10 [run] [machine_check]      [info]  ===== START machine_check =====  python -m scripts.datagen.meshing.machine_check
+10:35:11 [cmd] [machine_check]      [info]  running the parity test, ~1 min (the reference was written on Ege_Laptop)
+10:36:04 [cmd] [machine_check]      [info]  step 1, sampling: passed
+10:36:05 [cmd] [machine_check]      [info]  step 2, c2d: passed
+10:36:05 [cmd] [machine_check]      [info]  machine_check passed; stamped in C:\SenkDosya\Projects\AeroML\FlowField\data\.machine_check.json
+10:36:05 [run] [machine_check]      [info]  ===== END machine_check =====  exit 0, 0.9 min
+10:36:05 [run] [geometry_calibrate] [info]  ===== START geometry_calibrate =====  python -m scripts.datagen.geometry.calibrate "C:\Users\Ege Artan\OneDrive\Masaüstü\for_cst" --out C:\SenkDosya\Projects\AeroML\FlowField\data\examples\e2e_example\geometry_calibrate\geometry_calibrate_2026-11-17.txt --orders 4-12
+10:37:07 [cmd] [geometry_calibrate] [info]  CST calibration of for_cst
+10:37:08 [cmd] [geometry_calibrate] [info]  2026-11-17, code ce55070
+10:37:08 [cmd] [geometry_calibrate] [info]  190 files: 190 fitted (180 unique geometries), 0 rejected before fitting
+10:37:08 [cmd] [geometry_calibrate] [info]  
+10:37:08 [cmd] [geometry_calibrate] [info]  Tolerance 1e-03c, over the 180 unique geometries; max_dev [c]; formulas = the 12 formula shapes' worst
+10:37:08 [cmd] [geometry_calibrate] [info]  order  nose      kept  over cross strays   median      p90    worst  formulas
+10:37:08 [cmd] [geometry_calibrate] [info]      7  lem        151    26     3      3  5.7e-04  1.3e-03  7.5e-03   1.9e-04
+10:37:08 [cmd] [geometry_calibrate] [info]      8  lem        158    19     3      3  4.6e-04  1.1e-03  5.4e-03   1.2e-04  <- the ingest's
+10:37:08 [cmd] [geometry_calibrate] [info]      9  lem        163    14     3      7  3.9e-04  8.9e-04  4.4e-03   1.1e-04
+10:37:08 [cmd] [geometry_calibrate] [info]      8  separate   150    27     3      4  4.9e-04  1.3e-03  5.4e-03   1.9e-04
+10:37:08 [cmd] [geometry_calibrate] [info]      8  shared      87    90     3      4  1.1e-03  3.0e-03  6.8e-03   8.6e-04
+10:37:08 [cmd] [geometry_calibrate] [info]  
+10:37:08 [cmd] [geometry_calibrate] [info]  Surfaces cross at nose lem: 6: m9 (order 12), mid012r (orders 6, 10-12), mid173c (orders 4-12), nn1817 (order 11), s9104 (orders 6-12), s9104bte (orders 4-12)
+10:37:08 [cmd] [geometry_calibrate] [info]  Strays at order 8, nose lem (the ingest's order): 3: goe08k, goe09k, goe483
+10:37:08 [cmd] [geometry_calibrate] [info]  Full report (every configuration, every airfoil): C:\SenkDosya\Projects\AeroML\FlowField\data\examples\e2e_example\geometry_calibrate\geometry_calibrate_2026-11-17.txt
+10:37:08 [run] [geometry_calibrate] [info]  ===== END geometry_calibrate =====  exit 0, 1.0 min
+10:37:08 [run] [geometry_ingest]    [info]  ===== START geometry_ingest =====  python -m scripts.datagen.geometry.ingest "C:\Users\Ege Artan\OneDrive\Masaüstü\for_cst" --data-root C:\SenkDosya\Projects\AeroML\FlowField\data\examples\e2e_example\geometry_ingest
+10:37:21 [cmd] [geometry_ingest]    [info]  Geometry ingest 20261117T1537Z_6a49
+10:37:21 [cmd] [geometry_ingest]    [info]  started 2026-11-17T15:37:10Z, code ce55070, shape version cst8-r1, fit tolerance 0.001c
+10:37:21 [cmd] [geometry_ingest]    [info]  source  for_cst
+10:37:21 [cmd] [geometry_ingest]    [info]  190 files: 158 added, 10 duplicate, 22 rejected (fit_tolerance 19, surfaces_cross 3)
+10:37:21 [cmd] [geometry_ingest]    [info]  added: fit max median 4.1e-04c, p90 7.2e-04c, worst 9.2e-04c (fx78k150); closure: 74 none, 72 pried, 12 formula
+10:37:21 [cmd] [geometry_ingest]    [info]  rejected  fit_tolerance    1.1e-03c  tabulated/ah7476.dat
+10:37:21 [cmd] [geometry_ingest]    [info]  rejected  fit_tolerance    1.5e-03c  tabulated/ah81k144wfklappe.dat
+10:37:21 [cmd] [geometry_ingest]    [info]  rejected  fit_tolerance    4.0e-03c  tabulated/bambino6.dat
+10:37:21 [cmd] [geometry_ingest]    [info]  rejected  fit_tolerance    3.9e-03c  tabulated/dbln526.dat
+10:37:21 [cmd] [geometry_ingest]    [info]  rejected  fit_tolerance    1.8e-03c  tabulated/fx3.dat
+10:37:21 [cmd] [geometry_ingest]    [info]  rejected  fit_tolerance    1.1e-03c  tabulated/fx63137.dat
+10:37:21 [cmd] [geometry_ingest]    [info]  rejected  fit_tolerance    1.2e-03c  tabulated/fx75193.dat
+10:37:21 [cmd] [geometry_ingest]    [info]  rejected  fit_tolerance    2.2e-03c  tabulated/fx77w258.dat
+10:37:21 [cmd] [geometry_ingest]    [info]  rejected  fit_tolerance    2.1e-03c  tabulated/fx77w270.dat
+10:37:21 [cmd] [geometry_ingest]    [info]  rejected  fit_tolerance    2.1e-03c  tabulated/fx77w270s.dat
+10:37:21 [cmd] [geometry_ingest]    [info]  rejected  fit_tolerance    2.1e-03c  tabulated/fx77w343.dat
+10:37:21 [cmd] [geometry_ingest]    [info]  rejected  fit_tolerance    1.3e-03c  tabulated/goe462.dat
+10:37:21 [cmd] [geometry_ingest]    [info]  rejected  fit_tolerance    1.3e-03c  tabulated/goe570.dat
+10:37:21 [cmd] [geometry_ingest]    [info]  rejected  fit_tolerance    1.1e-03c  tabulated/goe571.dat
+10:37:21 [cmd] [geometry_ingest]    [info]  rejected  fit_tolerance    1.2e-03c  tabulated/hs1430.dat
+10:37:21 [cmd] [geometry_ingest]    [info]  rejected  fit_tolerance    1.8e-03c  tabulated/k2.dat
+10:37:21 [cmd] [geometry_ingest]    [info]  rejected  fit_tolerance    2.5e-03c  tabulated/m9.dat
+10:37:21 [cmd] [geometry_ingest]    [info]  rejected  surfaces_cross   5.2e-04c  tabulated/mid173c.dat
+10:37:21 [cmd] [geometry_ingest]    [info]  rejected  surfaces_cross   2.1e-03c  tabulated/s9104.dat
+10:37:21 [cmd] [geometry_ingest]    [info]  rejected  surfaces_cross   5.4e-03c  tabulated/s9104bte.dat
+10:37:21 [cmd] [geometry_ingest]    [info]  rejected  fit_tolerance    1.5e-03c  tabulated/usa31.dat
+10:37:21 [cmd] [geometry_ingest]    [info]  rejected  fit_tolerance    1.0e-03c  tabulated/usa33.dat
+10:37:21 [cmd] [geometry_ingest]    [info]  duplicate tabulated/naca0006.dat: the same airfoil is stored as 'naca0006'
+10:37:21 [cmd] [geometry_ingest]    [info]  duplicate tabulated/naca0012.dat: the same airfoil is stored as 'naca0012'
+10:37:21 [cmd] [geometry_ingest]    [info]  duplicate tabulated/naca0021.dat: the same airfoil is stored as 'naca0021'
+10:37:21 [cmd] [geometry_ingest]    [info]  duplicate tabulated/naca0030.dat: the same airfoil is stored as 'naca0030'
+10:37:21 [cmd] [geometry_ingest]    [info]  duplicate tabulated/naca0040.dat: the same airfoil is stored as 'naca0040'
+10:37:21 [cmd] [geometry_ingest]    [info]  duplicate tabulated/naca23012.dat: the same airfoil is stored as 'naca23012'
+10:37:21 [cmd] [geometry_ingest]    [info]  duplicate tabulated/naca23021.dat: the same airfoil is stored as 'naca23021'
+10:37:21 [cmd] [geometry_ingest]    [info]  duplicate tabulated/naca2412.dat: the same airfoil is stored as 'naca2412'
+10:37:21 [cmd] [geometry_ingest]    [info]  duplicate tabulated/naca4412.dat: the same airfoil is stored as 'naca4412'
+10:37:21 [cmd] [geometry_ingest]    [info]  duplicate tabulated/naca6412.dat: the same airfoil is stored as 'naca6412'
+10:37:21 [cmd] [geometry_ingest]    [info]  
+10:37:21 [cmd] [geometry_ingest]    [!]     suspect point at x=0.9957: tabulated/ah79100a.dat (added)
+10:37:21 [cmd] [geometry_ingest]    [!]     suspect point at x=0.0126: tabulated/bambino6.dat (rejected)
+10:37:21 [cmd] [geometry_ingest]    [!]     suspect point at x=0.1799: tabulated/hs1430.dat (rejected)
+10:37:21 [cmd] [geometry_ingest]    [info]  Every file's line: C:\SenkDosya\Projects\AeroML\FlowField\data\examples\e2e_example\geometry_ingest\raw\20261117T1537Z_6a49\summary.txt
+10:37:21 [run] [geometry_ingest]    [info]  ===== END geometry_ingest =====  exit 0, 0.2 min
+10:37:21 [run] [mesh_calibrate]     [info]  ===== START mesh_calibrate =====  python -m scripts.datagen.meshing.calibrate --out C:\SenkDosya\Projects\AeroML\FlowField\data\examples\e2e_example\mesh_calibrate --rungs 1,2,3 --geometry-db C:\SenkDosya\Projects\AeroML\FlowField\data\examples\e2e_example\geometry_ingest\geometry_ingest.sqlite
+10:37:24 [cmd] [mesh_calibrate]     [info]  ----- START rung 1 of 3 -----  n* and jmax* by bisection over [120, 200]; 158 airfoils, 6 workers
+10:37:24 [cmd] [mesh_calibrate]     [!]     6 slots may use up to 12288 MB together at their caps; free now: 4974 MB of RAM (past it, meshes page to disk and slow down), 6563 MB to commit (past it, the page file grows or allocations fail)
+10:38:46 [cmd] [mesh_calibrate]     [info]  16/158 airfoils (10%), 11.7 airfoils/min, ends ~10:50
+10:39:59 [cmd] [mesh_calibrate]     [info]  32/158 airfoils (20%), 12.4 airfoils/min, ends ~10:50
+10:41:00 [cmd] [mesh_calibrate]     [info]  48/158 airfoils (30%), 13.3 airfoils/min, ends ~10:49
+10:42:07 [cmd] [mesh_calibrate]     [info]  64/158 airfoils (40%), 13.6 airfoils/min, ends ~10:49
+10:43:20 [cmd] [mesh_calibrate]     [info]  79/158 airfoils (50%), 13.3 airfoils/min, ends ~10:49
+10:44:19 [cmd] [mesh_calibrate]     [info]  95/158 airfoils (60%), 13.7 airfoils/min, ends ~10:48
+10:45:27 [cmd] [mesh_calibrate]     [info]  111/158 airfoils (70%), 13.8 airfoils/min, ends ~10:48
+10:46:36 [cmd] [mesh_calibrate]     [info]  127/158 airfoils (80%), 13.8 airfoils/min, ends ~10:48
+10:47:40 [cmd] [mesh_calibrate]     [info]  143/158 airfoils (90%), 13.9 airfoils/min, ends ~10:48
+10:48:40 [cmd] [mesh_calibrate]     [info]  largest slot peak: 205 MB of the 2048 MB cap
+10:48:40 [cmd] [mesh_calibrate]     [info]  158 airfoils in 676 s
+10:48:40 [cmd] [mesh_calibrate]     [info]  ----- END rung 1 of 3 -----  11.3 min: jmax* found on 158/158, 0 failed
+10:48:40 [cmd] [mesh_calibrate]     [info]    jmax*: min 139, median 142, max 150 (158 found, 0 above 200, 0 failed)
+10:48:40 [cmd] [mesh_calibrate]     [info]    Golden jmax = median rounded up + 5 = 147: 156/158 pass the size ratio there; the rest need 1, 3 bumps
+10:48:40 [cmd] [mesh_calibrate]     [info]    jmax* also passes every other gate on 128/158
+10:48:40 [cmd] [mesh_calibrate]     [info]    size ratio one jmax below jmax*: median 1.2510, range 1.2500-1.2520 (gate 1.25)
+10:48:40 [cmd] [mesh_calibrate]     [info]    worst skew at jmax*: median 0.244, max 0.270 (e376); 30/158 over the study's skew gate 0.25
+10:48:40 [cmd] [mesh_calibrate]     [info]    cluster_width: n* landed on the narrowest (0.026) for 158/158; n* at the narrowest alone equals the full grid's for 158/158: NSTAR_CW_GRID 1 loses nothing
+10:48:40 [cmd] [mesh_calibrate]     [info]    n* time: full grid median 0.6 s, narrowest only median 0.65 s
+10:48:40 [cmd] [mesh_calibrate]     [info]    Campaign estimate at golden jmax 147, from these times: 158 airfoils, a golden mesh 3.9 s (median), 4 bumps
+10:48:40 [cmd] [mesh_calibrate]     [info]      12.1 min serial, about 2.1 min at this run's 5.9x; with NSTAR_CW_GRID 1, 12.1 and 2.1 min
+10:48:40 [cmd] [mesh_calibrate]     [info]  ----- START rung 2 of 3 -----  smoothing searches at the study's gates (skew 0.25), budget 100, golden jmax 147; those over a shape gate at jmax* in rung 1; 30 airfoils, 6 workers
+10:48:55 [cmd] [mesh_calibrate]     [info]  3/30 airfoils (10%), 12.4 airfoils/min, ends ~10:51
+10:49:00 [cmd] [mesh_calibrate]     [info]  6/30 airfoils (20%), 18.7 airfoils/min, ends ~10:50
+10:49:06 [cmd] [mesh_calibrate]     [info]  9/30 airfoils (30%), 21.4 airfoils/min, ends ~10:50
+10:49:11 [cmd] [mesh_calibrate]     [info]  12/30 airfoils (40%), 23.7 airfoils/min, ends ~10:49
+10:49:20 [cmd] [mesh_calibrate]     [info]  15/30 airfoils (50%), 22.6 airfoils/min, ends ~10:50
+10:49:33 [cmd] [mesh_calibrate]     [info]  18/30 airfoils (60%), 20.4 airfoils/min, ends ~10:50
+10:49:36 [cmd] [mesh_calibrate]     [info]  21/30 airfoils (70%), 22.5 airfoils/min, ends ~10:50
+10:49:39 [cmd] [mesh_calibrate]     [info]  24/30 airfoils (80%), 24.6 airfoils/min, ends ~10:49
+10:49:47 [cmd] [mesh_calibrate]     [info]  27/30 airfoils (90%), 24.4 airfoils/min, ends ~10:49
+10:53:09 [cmd] [mesh_calibrate]     [info]  largest slot peak: 181 MB of the 2048 MB cap
+10:53:09 [cmd] [mesh_calibrate]     [info]  30 airfoils in 269 s
+10:53:09 [cmd] [mesh_calibrate]     [info]  ----- END rung 2 of 3 -----  4.5 min: 21/30 entered rung 2, 21 passed
+10:53:09 [cmd] [mesh_calibrate]     [info]    Routed to rung 2: 21; passed: 21 (meshes to a first pass: median 2, max 82); never: 0
+10:53:09 [cmd] [mesh_calibrate]     [info]    passing skew: 0.225-0.250
+10:53:09 [cmd] [mesh_calibrate]     [info]    not routed to rung 2: goe55 (golden passed)
+10:53:09 [cmd] [mesh_calibrate]     [info]    not routed to rung 2: hn33s (golden passed)
+10:53:09 [cmd] [mesh_calibrate]     [info]    not routed to rung 2: ls013 (golden passed)
+10:53:09 [cmd] [mesh_calibrate]     [info]    not routed to rung 2: mh78 (golden passed)
+10:53:09 [cmd] [mesh_calibrate]     [info]    not routed to rung 2: naca23012 (golden passed)
+10:53:09 [cmd] [mesh_calibrate]     [info]    not routed to rung 2: naca64a010 (golden passed)
+10:53:09 [cmd] [mesh_calibrate]     [info]    not routed to rung 2: naca66_018 (golden passed)
+10:53:09 [cmd] [mesh_calibrate]     [info]    not routed to rung 2: s4096 (golden passed)
+10:53:09 [cmd] [mesh_calibrate]     [info]    not routed to rung 2: usa49 (golden passed)
+10:53:09 [cmd] [mesh_calibrate]     [info]    Rung-2 budget (the most meshes to a first pass, rounded up to 10): 90
+10:53:10 [cmd] [mesh_calibrate]     [info]  ----- START rung 3 of 3 -----  downward searches from the golden run (jmax 147) to 300 c2d runs each; 15 airfoils, 6 workers
+11:06:22 [cmd] [mesh_calibrate]     [info]  2/15 airfoils (13%), 0.2 airfoils/min, ends ~12:32
+11:08:02 [cmd] [mesh_calibrate]     [info]  3/15 airfoils (20%), 0.2 airfoils/min, ends ~12:07
+11:15:20 [cmd] [mesh_calibrate]     [info]  5/15 airfoils (33%), 0.2 airfoils/min, ends ~11:59
+11:16:42 [cmd] [mesh_calibrate]     [info]  6/15 airfoils (40%), 0.3 airfoils/min, ends ~11:52
+11:24:12 [cmd] [mesh_calibrate]     [info]  8/15 airfoils (53%), 0.3 airfoils/min, ends ~11:51
+11:24:31 [cmd] [mesh_calibrate]     [info]  9/15 airfoils (60%), 0.3 airfoils/min, ends ~11:45
+11:26:28 [cmd] [mesh_calibrate]     [info]  11/15 airfoils (73%), 0.3 airfoils/min, ends ~11:38
+11:29:15 [cmd] [mesh_calibrate]     [info]  12/15 airfoils (80%), 0.3 airfoils/min, ends ~11:38
+11:34:40 [cmd] [mesh_calibrate]     [info]  14/15 airfoils (93%), 0.3 airfoils/min, ends ~11:37
+11:35:50 [cmd] [mesh_calibrate]     [info]  largest slot peak: 275 MB of the 2048 MB cap
+11:35:50 [cmd] [mesh_calibrate]     [info]  15 airfoils in 2560 s
+11:35:50 [cmd] [mesh_calibrate]     [info]  ----- END rung 3 of 3 -----  42.7 min: 15 airfoils, 2925 c2d runs
+11:35:51 [cmd] [mesh_calibrate]     [info]    nodes saved against the golden run: median 5.7%, max 9.5% (naca0040)
+11:35:51 [cmd] [mesh_calibrate]     [info]    Plateau pick (fewest meshes giving up at most 0.5% on every airfoil): none qualifies
+11:35:51 [cmd] [mesh_calibrate]     [info]    Rung-3 cap (the most meshes any airfoil took to within 1% of its best, rounded up to 10): 200
+11:35:51 [cmd] [mesh_calibrate]     [info]  Report (every rung's tables): C:\SenkDosya\Projects\AeroML\FlowField\data\examples\e2e_example\mesh_calibrate\mesh_calibrate_2026-11-17_103723.txt; every run: C:\SenkDosya\Projects\AeroML\FlowField\data\examples\e2e_example\mesh_calibrate\mesh_calibrate_2026-11-17_103723.sqlite
+11:35:52 [run] [mesh_calibrate]     [info]  ===== END mesh_calibrate =====  exit 0, 58.5 min
+11:35:52 [run] [campaign]           [info]  ===== START campaign =====  python -m scripts.datagen.meshing.campaign --db C:\SenkDosya\Projects\AeroML\FlowField\data\examples\e2e_example\campaign\campaign.sqlite --settings-label "example end-to-end run on for_cst" --geometry-db C:\SenkDosya\Projects\AeroML\FlowField\data\examples\e2e_example\geometry_ingest\geometry_ingest.sqlite
+11:35:54 [cmd] [campaign]           [info]  settings b0ecc2556f66fe76: 158 airfoils to run, 0 finished already
+11:35:55 [cmd] [campaign]           [!]     6 slots may use up to 12288 MB together at their caps; free now: 5387 MB of RAM (past it, meshes page to disk and slow down), 6163 MB to commit (past it, the page file grows or allocations fail)
+11:36:13 [cmd] [campaign]           [info]  16/158 airfoils (10%), 52.8 airfoils/min, ends ~11:38
+11:36:37 [cmd] [campaign]           [info]  32/158 airfoils (20%), 45.5 airfoils/min, ends ~11:39
+11:36:54 [cmd] [campaign]           [info]  48/158 airfoils (30%), 48.9 airfoils/min, ends ~11:39
+11:37:16 [cmd] [campaign]           [info]  64/158 airfoils (40%), 47.6 airfoils/min, ends ~11:39
+11:37:39 [cmd] [campaign]           [info]  79/158 airfoils (50%), 45.6 airfoils/min, ends ~11:39
+11:38:03 [cmd] [campaign]           [info]  95/158 airfoils (60%), 44.5 airfoils/min, ends ~11:39
+11:38:21 [cmd] [campaign]           [info]  111/158 airfoils (70%), 45.6 airfoils/min, ends ~11:39
+11:38:38 [cmd] [campaign]           [info]  127/158 airfoils (80%), 46.5 airfoils/min, ends ~11:39
+11:38:55 [cmd] [campaign]           [info]  143/158 airfoils (90%), 47.5 airfoils/min, ends ~11:39
+11:46:22 [cmd] [campaign]           [info]  e376: passed in rung 3, 68,820 nodes, 120 c2d runs; rung 2: no pass in 50 meshes at jmax 148, closest size_ratio 1.2513 > 1.25 in 609 s
+11:46:22 [cmd] [campaign]           [info]  largest slot peak: 286 MB of the 2048 MB cap
+11:46:22 [cmd] [campaign]           [info]  158 airfoils in 627 s
+11:46:22 [cmd] [campaign]           [info]  Campaign under settings b0ecc2556f66fe76: 158 airfoils run, 0 finished before, in 10.5 min
+11:46:22 [cmd] [campaign]           [info]  Airfoils: 158 passed
+11:46:22 [cmd] [campaign]           [info]  Best meshes: median 61,299 nodes, 57,036-71,589
+11:46:22 [cmd] [campaign]           [info]  Passed at: golden 136, smoothing 20, mads 1, jmax_bump 1
+11:46:22 [cmd] [campaign]           [info]  Golden failed on 22 of 158: skew 21 (0.250-0.271, worst e376), size_ratio 2 (1.2502-1.2551, worst goe531)
+11:46:22 [cmd] [campaign]           [info]  c2d runs: golden 158, jmax_bump 4, smoothing 102, mads 68 (332 in all, retries included)
+11:46:22 [run] [campaign]           [info]  ===== END campaign =====  exit 0, 10.5 min
+11:46:22 [run] [remesh]             [info]  ===== START remesh =====  python -m scripts.datagen.meshing.remesh --all --out C:\SenkDosya\Projects\AeroML\FlowField\data\examples\e2e_example\campaign\remesh --db C:\SenkDosya\Projects\AeroML\FlowField\data\examples\e2e_example\campaign\campaign.sqlite --geometry-db C:\SenkDosya\Projects\AeroML\FlowField\data\examples\e2e_example\geometry_ingest\geometry_ingest.sqlite
+11:47:12 [cmd] [remesh]             [info]  16/158 airfoils (10%), 20.4 airfoils/min, ends ~11:54
+11:48:02 [cmd] [remesh]             [info]  32/158 airfoils (20%), 19.8 airfoils/min, ends ~11:54
+11:48:53 [cmd] [remesh]             [info]  48/158 airfoils (30%), 19.5 airfoils/min, ends ~11:54
+11:49:42 [cmd] [remesh]             [info]  64/158 airfoils (40%), 19.5 airfoils/min, ends ~11:54
+11:50:26 [cmd] [remesh]             [info]  79/158 airfoils (50%), 19.6 airfoils/min, ends ~11:54
+11:51:14 [cmd] [remesh]             [info]  95/158 airfoils (60%), 19.7 airfoils/min, ends ~11:54
+11:52:03 [cmd] [remesh]             [info]  111/158 airfoils (70%), 19.7 airfoils/min, ends ~11:54
+11:52:55 [cmd] [remesh]             [info]  127/158 airfoils (80%), 19.5 airfoils/min, ends ~11:54
+11:53:48 [cmd] [remesh]             [info]  143/158 airfoils (90%), 19.4 airfoils/min, ends ~11:54
+11:54:37 [cmd] [remesh]             [info]  Re-meshed 158 of 158 into C:\SenkDosya\Projects\AeroML\FlowField\data\examples\e2e_example\campaign\remesh
+11:54:37 [cmd] [remesh]             [info]  Quality of the 158 delivered meshes, each mesh's worst cell:
+11:54:37 [cmd] [remesh]             [info]  gate               limit     median      worst  airfoil
+11:54:37 [cmd] [remesh]             [info]  skew             <= 0.25     0.2428     0.2500  mh78
+11:54:37 [cmd] [remesh]             [info]  ortho             >= 0.9     0.9324     0.9272  s1223
+11:54:37 [cmd] [remesh]             [info]  jac               >= 0.9     0.9282     0.9239  mh78
+11:54:37 [cmd] [remesh]             [info]  aspect_ratio    <= 1e+07   8.95e+03   8.97e+03  nn1817
+11:54:37 [cmd] [remesh]             [info]  size_ratio       <= 1.25     1.2400     1.2497  e376
+11:54:37 [cmd] [remesh]             [info]  geo_dev        <= 0.0025   6.09e-09   6.96e-09  mh94
+11:54:37 [cmd] [remesh]             [info]  Histograms: C:\SenkDosya\Projects\AeroML\FlowField\data\examples\e2e_example\campaign\remesh\quality.png
+11:54:37 [run] [remesh]             [info]  ===== END remesh =====  exit 0, 8.2 min
+11:54:37 [run] [summary]            [info]  ===== SUMMARY =====  finished in 79.4 min
+11:54:37 [run] [summary]            [info]  machine_check       exit 0      0.9 min
+11:54:37 [run] [summary]            [info]  geometry_calibrate  exit 0      1.0 min
+11:54:37 [run] [summary]            [info]  geometry_ingest     exit 0      0.2 min
+11:54:37 [run] [summary]            [info]  mesh_calibrate      exit 0     58.5 min
+11:54:37 [run] [summary]            [info]  campaign            exit 0     10.5 min
+11:54:37 [run] [summary]            [info]  remesh              exit 0      8.2 min
+11:54:37 [run] [summary]            [!]     geometry_ingest: geometry_calibrate and geometry_ingest both run: geometry_ingest uses the constants as they are now, not what this calibration recommends
+11:54:37 [run] [summary]            [!]     campaign: mesh_calibrate and campaign both run: campaign uses the constants as they are now, not what this calibration recommends

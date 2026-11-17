@@ -1,0 +1,265 @@
+Mesh-study calibration
+2026-11-17, code ce5507001250, dx_max 0.006
+Golden jmax for rungs 2 and 3: 147 (rung 1)
+Rung 1: settings b0ecc2556f66fe76, 158 airfoils, 11.3 min
+Rung 2: settings 7fda687cc43e6911, 30 airfoils, 4.5 min
+Rung 3: settings 42788dffccb4c69c, 15 airfoils, 42.7 min
+
+Rung 1: n*, jmax* and the golden jmax (jmax*: the smallest jmax whose mesh passes the size ratio, bisected over [120, 200])
+  airfoil                   n* n*@cw0     cw  jmax*  all meshes   n* s      s  note
+  ag09                     419    419  0.026    143  yes      7    0.8     28  
+  ag24                     422    422  0.026    143  yes      7    0.8     30  
+  ag34                     412    412  0.026    143  yes      7    0.8     29  
+  ag47c03                  419    419  0.026    143   no      7    0.8     29  
+  ah79100a                 419    419  0.026    143  yes      7    0.9     28  
+  ah80136                  420    420  0.026    142  yes      6    0.7     26  
+  ah93157                  418    418  0.026    141  yes      6    0.7     24  
+  ah93w174                 418    418  0.026    142  yes      6    0.9     25  
+  ah93w215                 411    411  0.026    141  yes      6    0.9     24  
+  ah93w257                 424    424  0.026    143  yes      7    0.9     30  
+  ah93w300                 431    431  0.026    141  yes      6    0.9     25  
+  ah94w301                 425    425  0.026    141  yes      6    0.8     24  
+  azavextt                 419    419  0.026    142  yes      6    0.7     24  
+  clarky                   407    407  0.026    143  yes      7    0.7     27  
+  clarkyh                  403    403  0.026    143  yes      7    0.8     27  
+  dae11                    424    424  0.026    143  yes      7    0.7     30  
+  e1214                    406    406  0.026    142   no      6    0.8     25  
+  e184                     423    423  0.026    142  yes      6    0.7     25  
+  e211                     424    424  0.026    142  yes      6    0.6     26  
+  e376                     443    443  0.026    148   no      7    0.6     30  
+  e387                     424    424  0.026    143  yes      7    0.6     30  
+  e423                     443    443  0.026    145  yes      6    0.7     26  
+  e472                     399    399  0.026    142  yes      6    0.6     22  
+  e478                     403    403  0.026    142   no      6    0.7     22  
+  e520                     411    411  0.026    141   no      6    0.7     23  
+  e541                     425    425  0.026    140  yes      6    0.7     24  
+  e554                     429    429  0.026    142  yes      6    0.7     24  
+  e58                      461    461  0.026    144  yes      7    0.6     30  
+  e64                      429    429  0.026    143  yes      7    0.6     27  
+  e857                     426    426  0.026    142  yes      6    0.7     26  
+  e863                     415    415  0.026    141  yes      6    0.7     24  
+  e864                     419    419  0.026    140  yes      6    0.7     24  
+  fx69274                  413    413  0.026    140   no      6    0.7     23  
+  fx69pr281                449    449  0.026    142  yes      6    0.7     30  
+  fx711520                 399    399  0.026    141   no      6    0.7     22  
+  fx74080                  441    441  0.026    142  yes      6    0.7     24  
+  fx76mp120                438    438  0.026    143  yes      7    0.6     30  
+  fx78k150                 415    415  0.026    142  yes      6    0.6     23  
+  fx83w227                 408    408  0.026    141  yes      6    0.7     23  
+  fxlv152                  407    407  0.026    141  yes      6    0.7     23  
+  fxm2                     430    430  0.026    143  yes      7    0.7     29  
+  glennmartin3             389    389  0.026    143  yes      7    0.6     24  
+  goe08k                   403    403  0.026    143  yes      7    0.6     25  
+  goe09k                   468    468  0.026    142  yes      6    0.5     28  
+  goe198                   416    416  0.026    144  yes      7    0.6     28  
+  goe217                   426    426  0.026    146  yes      6    0.6     26  
+  goe257                   411    411  0.026    143  yes      7    0.6     26  
+  goe386                   409    409  0.026    142  yes      6    0.7     22  
+  goe398                   404    404  0.026    143  yes      7    0.6     28  
+  goe483                   433    433  0.026    145  yes      6    0.6     24  
+  goe511                   409    409  0.026    144  yes      7    0.7     26  
+  goe531                   433    433  0.026    150  yes      6    0.7     24  
+  goe55                    406    406  0.026    143   no      7    0.6     28  
+  goe776                   403    403  0.026    141  yes      6    0.7     22  
+  goe780                   422    422  0.026    141   no      6    0.5     25  
+  hl74_550rev              433    433  0.026    143  yes      7    0.6     27  
+  hn33s                    411    411  0.026    142   no      6    0.6     23  
+  hq109                    416    416  0.026    142   no      6    0.6     24  
+  hq300gd2                 434    434  0.026    141  yes      6    0.6     26  
+  hs1620                   405    405  0.026    142  yes      6    0.6     22  
+  k3                       428    428  0.026    142  yes      6    0.7     25  
+  ls013                    405    405  0.026    141   no      6    0.7     22  
+  ls413                    424    424  0.026    141  yes      6    0.7     25  
+  ls413mod                 425    425  0.026    141  yes      6    0.6     23  
+  ls417                    424    424  0.026    141  yes      6    0.6     25  
+  ls417mod                 424    424  0.026    141  yes      6    0.7     25  
+  ls421                    424    424  0.026    140  yes      6    0.6     25  
+  ls421mod                 430    430  0.026    140  yes      6    0.6     26  
+  m13                      418    418  0.026    143  yes      7    0.7     29  
+  m17                      409    409  0.026    143   no      7    0.7     26  
+  m18                      403    403  0.026    143   no      7    0.7     26  
+  m2                       411    411  0.026    142   no      6    0.6     23  
+  m20                      412    412  0.026    144   no      7    0.6     28  
+  m25                      421    421  0.026    146  yes      6    0.6     24  
+  m26                      415    415  0.026    145  yes      6    0.7     23  
+  m27                      407    407  0.026    145   no      6    0.6     23  
+  m5                       412    412  0.026    142  yes      6    0.6     24  
+  m685                     400    400  0.026    142  yes      6    0.6     23  
+  m7372                    435    435  0.026    145  yes      6    0.6     26  
+  m77                      448    448  0.026    144  yes      7    0.6     32  
+  mh104                    411    411  0.026    142  yes      6    0.6     24  
+  mh112                    435    435  0.026    143  yes      7    0.7     30  
+  mh113                    438    438  0.026    143  yes      7    0.7     32  
+  mh121                    441    441  0.026    142  yes      6    0.6     25  
+  mh150                    442    442  0.026    142  yes      6    0.7     26  
+  mh16                     407    407  0.026    142  yes      6    0.6     23  
+  mh17                     411    411  0.026    141  yes      6    0.6     23  
+  mh200                    427    427  0.026    141  yes      6    0.6     24  
+  mh24                     421    421  0.026    142   no      6    0.6     23  
+  mh32                     423    423  0.026    142  yes      6    0.5     24  
+  mh49                     421    421  0.026    142  yes      6    0.6     24  
+  mh78                     410    410  0.026    142   no      6    0.6     25  
+  mh82                     415    415  0.026    142   no      6    0.7     23  
+  mh84                     419    419  0.026    143  yes      7    0.6     28  
+  mh94                     415    415  0.026    141  yes      6    0.6     23  
+  mi_vawt1                 410    410  0.026    141  yes      6    0.7     24  
+  mid012r                  479    479  0.026    143  yes      7    0.5     32  
+  mid406w2                 426    426  0.026    144  yes      7    0.6     29  
+  n24                      409    409  0.026    143   no      7    0.7     26  
+  n66021                   407    407  0.026    140   no      6    0.7     22  
+  naca0006                 417    417  0.026    142  yes      6    0.5     24  
+  naca001066               391    391  0.026    142  yes      6    0.7     22  
+  naca0012                 399    399  0.026    142  yes      6    0.6     21  
+  naca0021                 399    399  0.026    141  yes      6    0.7     22  
+  naca0030                 405    405  0.026    140  yes      6    0.7     21  
+  naca0040                 419    419  0.026    139  yes      7    0.6     25  
+  naca16018                389    389  0.026    141  yes      6    0.7     21  
+  naca23012                399    399  0.026    142   no      6    0.7     22  
+  naca23021                399    399  0.026    141  yes      6    0.6     22  
+  naca2412                 403    403  0.026    142  yes      6    0.6     22  
+  naca4412                 408    408  0.026    143  yes      7    0.6     28  
+  naca6412                 414    414  0.026    143  yes      7    0.7     28  
+  naca64a010               405    405  0.026    141   no      6    0.6     22  
+  naca66_018               407    407  0.026    140   no      6    0.6     22  
+  nlf415                   424    424  0.026    141  yes      6    0.6     25  
+  nn1817                   434    434  0.026    141  yes      6    0.6     26  
+  rae100                   403    403  0.026    142   no      6    0.5     22  
+  rae2822                  418    418  0.026    141  yes      6    0.7     25  
+  s1012                    405    405  0.026    141  yes      6    0.7     23  
+  s1014                    405    405  0.026    140  yes      6    0.6     22  
+  s1020                    429    429  0.026    142  yes      6    0.6     24  
+  s102b                    425    425  0.026    141  yes      6    0.7     24  
+  s1046                    405    405  0.026    141   no      6    0.7     22  
+  s1210                    478    478  0.026    144  yes      7    0.7     35  
+  s1221                    453    453  0.026    144  yes      7    0.7     30  
+  s1223                    488    488  0.026    145  yes      6    0.7     32  
+  s4094                    414    414  0.026    143  yes      7    0.6     30  
+  s4095                    415    415  0.026    143  yes      7    0.8     28  
+  s4096                    414    414  0.026    142   no      6    0.7     25  
+  s5010                    417    417  0.026    142  yes      6    0.6     24  
+  s8023                    407    407  0.026    143  yes      7    0.9     26  
+  s8036                    403    403  0.026    141  yes      6    0.8     22  
+  sc20404                  440    440  0.026    142  yes      6    0.7     25  
+  sc20406                  425    425  0.026    142  yes      6    0.7     22  
+  sc20410                  422    422  0.026    141  yes      6    0.6     25  
+  sc20414                  421    421  0.026    141  yes      6    0.6     22  
+  sc20503                  461    461  0.026    142  yes      6    0.7     25  
+  sc20518                  430    430  0.026    141  yes      6    0.5     26  
+  sc20610                  425    425  0.026    141  yes      6    0.6     24  
+  sc20706                  438    438  0.026    142  yes      6    0.6     25  
+  sc20712                  424    424  0.026    141  yes      6    0.7     25  
+  sc20714                  429    429  0.026    142  yes      6    0.6     24  
+  sc21006                  440    440  0.026    142  yes      6    0.7     26  
+  sc21010                  427    427  0.026    142  yes      6    0.6     24  
+  sd7003                   417    417  0.026    142  yes      6    0.5     24  
+  sd7062                   418    418  0.026    142  yes      6    0.7     24  
+  sd8020                   405    405  0.026    142   no      6    0.6     22  
+  sg6050                   412    412  0.026    142  yes      6    0.7     24  
+  sg6051                   413    413  0.026    142  yes      6    0.7     22  
+  sibnia_s_16              401    401  0.026    143  yes      7    0.5     24  
+  th25816                  430    430  0.026    139  yes      7    0.5     27  
+  ua2_180sm                418    418  0.026    142  yes      6    0.6     24  
+  usa22                    418    418  0.026    144  yes      7    0.6     28  
+  usa25                    411    411  0.026    144  yes      7    0.6     26  
+  usa34                    406    406  0.026    144  yes      7    0.6     26  
+  usa35b                   406    406  0.026    143  yes      7    0.6     26  
+  usa49                    421    421  0.026    142   no      6    0.6     21  
+  whitcomb                 438    438  0.026    142  yes      6    0.6     23  
+
+  jmax*: min 139, median 142, max 150 (158 found, 0 above 200, 0 failed)
+  Golden jmax = median rounded up + 5 = 147: 156/158 pass the size ratio there; the rest need 1, 3 bumps
+  jmax* also passes every other gate on 128/158
+  size ratio one jmax below jmax*: median 1.2510, range 1.2500-1.2520 (gate 1.25)
+  worst skew at jmax*: median 0.244, max 0.270 (e376); 30/158 over the study's skew gate 0.25
+  cluster_width: n* landed on the narrowest (0.026) for 158/158; n* at the narrowest alone equals the full grid's for 158/158: NSTAR_CW_GRID 1 loses nothing
+  n* time: full grid median 0.6 s, narrowest only median 0.65 s
+  Campaign estimate at golden jmax 147, from these times: 158 airfoils, a golden mesh 3.9 s (median), 4 bumps
+    12.1 min serial, about 2.1 min at this run's 5.9x; with NSTAR_CW_GRID 1, 12.1 and 2.1 min
+
+Rung 2: its budget, under the study's skew gate 0.25
+  airfoil                golden skew golden failed          route                            meshes   skew  note
+  ag47c03                      0.250 skew                   golden > smoothing                    2  0.243  
+  e1214                        0.250 skew                   golden > smoothing                    2  0.244  
+  e376                         0.271 skew,size_ratio        golden > jmax_bump > smoothing       82  0.238  
+  e478                         0.257 skew                   golden > smoothing                    2  0.250  
+  e520                         0.254 skew                   golden > smoothing                    2  0.246  
+  fx69274                      0.251 skew                   golden > smoothing                    2  0.244  
+  fx711520                     0.251 skew                   golden > smoothing                    2  0.245  
+  goe55                        0.250 -                      golden                                -      -  
+  goe780                       0.250 skew                   golden > smoothing                    2  0.244  
+  hn33s                        0.250 -                      golden                                -      -  
+  hq109                        0.250 skew                   golden > smoothing                    2  0.243  
+  ls013                        0.250 -                      golden                                -      -  
+  m17                          0.253 skew                   golden > smoothing                    2  0.246  
+  m18                          0.251 skew                   golden > smoothing                    2  0.244  
+  m2                           0.255 skew                   golden > smoothing                    2  0.248  
+  m20                          0.254 skew                   golden > smoothing                    6  0.225  
+  m27                          0.253 skew                   golden > smoothing                    6  0.225  
+  mh24                         0.253 skew                   golden > smoothing                    2  0.246  
+  mh78                         0.250 -                      golden                                -      -  
+  mh82                         0.251 skew                   golden > smoothing                    2  0.244  
+  n24                          0.258 skew                   golden > smoothing                    4  0.249  
+  n66021                       0.252 skew                   golden > smoothing                    2  0.246  
+  naca23012                    0.250 -                      golden                                -      -  
+  naca64a010                   0.250 -                      golden                                -      -  
+  naca66_018                   0.249 -                      golden                                -      -  
+  rae100                       0.256 skew                   golden > smoothing                    2  0.249  
+  s1046                        0.258 skew                   golden > smoothing                    4  0.249  
+  s4096                        0.250 -                      golden                                -      -  
+  sd8020                       0.255 skew                   golden > smoothing                    2  0.248  
+  usa49                        0.250 -                      golden                                -      -  
+
+  Routed to rung 2: 21; passed: 21 (meshes to a first pass: median 2, max 82); never: 0
+  passing skew: 0.225-0.250
+  not routed to rung 2: goe55 (golden passed)
+  not routed to rung 2: hn33s (golden passed)
+  not routed to rung 2: ls013 (golden passed)
+  not routed to rung 2: mh78 (golden passed)
+  not routed to rung 2: naca23012 (golden passed)
+  not routed to rung 2: naca64a010 (golden passed)
+  not routed to rung 2: naca66_018 (golden passed)
+  not routed to rung 2: s4096 (golden passed)
+  not routed to rung 2: usa49 (golden passed)
+  Rung-2 budget (the most meshes to a first pass, rounded up to 10): 90
+
+Rung 3: from the golden run (jmax 147) to a cap of 300 c2d runs, no plateau
+  saving: the best against the golden run's nodes; by jmax*: how much of it meshing at jmax* alone gives (needs rung 1)
+  airfoil                  golden     best  saving by jmax*  to 1% to best  s to 1%  s best  note
+  s1223                     71589    68667    4.1%     1.4%     51      66      271     350  
+  s1210                     70119    65688    6.3%     2.0%     41      59      206     291  
+  mid012r                   70266    65550    6.7%     2.7%     16     117       81     580  
+  e376                      64974    66880       -        -     94     248      589    1295  golden failed
+  goe531                    63504    58752       -        -     84      85      336     340  golden failed
+  naca0040                  61446    55594    9.5%     5.4%    126     149      479     567  
+  e423                      64974    60828    6.4%     1.4%     41     211      184     987  
+  fx69pr281                 65856    60480    8.2%     3.4%     53      90      260     431  
+  naca0006                  61152    59072    3.4%     3.4%     28      32      118     137  
+  naca4412                  59829    57387    4.1%     2.7%    200     200      840     840  
+  e1214                     59535    54270       -        -    108     108      442     442  golden failed
+  fx69274                   60564    55620       -        -     32      32      132     132  golden failed
+  fx78k150                  60858    57820    5.0%     3.4%     29      49      120     207  
+  m17                       59976    55080       -        -     29     149      121     553  golden failed
+  usa35b                    59535    56700    4.8%     2.7%     48      57      183     225  
+
+  nodes saved against the golden run: median 5.7%, max 9.5% (naca0040)
+
+  Plateau replay: where each (window, min_gain) would have stopped every search above, summed; loss: how far its best ends above the cap's
+  window   gain  meshes  seconds worst loss mean loss
+      10  0.25%     403     1987      7.35%     2.74%
+      10  0.50%     330     1596      7.35%     3.30%
+      10  1.00%     304     1488      7.35%     3.30%
+      15  0.25%     572     2752      7.35%     2.02%
+      15  0.50%     553     2665      7.35%     2.09%
+      15  1.00%     421     2025      7.35%     2.59%
+      20  0.25%     714     3354      6.02%     1.58%
+      20  0.50%     711     3340      6.02%     1.58%
+      20  1.00%     498     2358      7.35%     2.52%
+      30  0.25%    1045     4819      3.72%     1.04%
+      30  0.50%     999     4596      3.72%     1.09%
+      30  1.00%     801     3757      5.26%     1.33%
+      50  0.25%    1656     7553      1.49%     0.35%
+      50  0.50%    1613     7352      1.49%     0.35%
+      50  1.00%    1334     6140      3.72%     0.64%
+
+  Plateau pick (fewest meshes giving up at most 0.5% on every airfoil): none qualifies
+  Rung-3 cap (the most meshes any airfoil took to within 1% of its best, rounded up to 10): 200

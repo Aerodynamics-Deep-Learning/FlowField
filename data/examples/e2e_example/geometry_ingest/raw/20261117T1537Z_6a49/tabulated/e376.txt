@@ -1,6 +1,6 @@
 e376: added
 source   tabulated/e376.dat
-ingest   20261116T1248Z_c029, shape version cst8-r1, code a3d0204-dirty
+ingest   20261117T1537Z_6a49, shape version cst8-r1, code ce55070
 
 identity
   geometry_id  73634bbb301a523b363338a1370e57e2e7b94317262ebb16179e778e1c9f5153

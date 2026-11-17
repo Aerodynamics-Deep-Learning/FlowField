@@ -1,5 +1,5 @@
-Geometry ingest 20261116T1248Z_c029
-started 2026-11-16T12:48:31Z, code a3d0204-dirty, shape version cst8-r1, fit tolerance 0.001c
+Geometry ingest 20261117T1537Z_6a49
+started 2026-11-17T15:37:10Z, code ce55070, shape version cst8-r1, fit tolerance 0.001c
 source  for_cst
 190 files: 158 added, 10 duplicate, 22 rejected (fit_tolerance 19, surfaces_cross 3)
 

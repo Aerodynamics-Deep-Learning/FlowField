@@ -1,6 +1,6 @@
 s1223: added
 source   tabulated/s1223.dat
-ingest   20261116T1248Z_c029, shape version cst8-r1, code a3d0204-dirty
+ingest   20261117T1537Z_6a49, shape version cst8-r1, code ce55070
 
 identity
   geometry_id  179916c00c828c9bded1e0a2b3995ffb837775cc401d477db9f571d3879b8a7a
