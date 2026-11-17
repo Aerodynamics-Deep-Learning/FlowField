@@ -1,8 +1,8 @@
 """
 Tests for `scripts.datagen.meshing.calibrate`, the ladder calibration's command line, i.e.:
 
-Step 1: Ensure the options and settings reach the calibration, its folder the run folder's when left out, and its
-files named
+Step 1: Ensure the options and settings reach the calibration, its folder the run folder's when left out, its files
+named, and the run's account of itself for its rungs' batch rows
     - test_the_options_reach_the_calibration
     - test_settings_reach_the_calibration
 Step 2: Ensure a mistake in what was asked stops it before anything meshes
@@ -54,11 +54,15 @@ def test_the_options_reach_the_calibration(calibrate, tmp_path, data_root, capsy
     left_out = calibrate[1][0]
     assert left_out.name == "mesh_calibrate" and left_out.parent.parent == data_root / "scratchpad"  # its run folder
     constants = {"overrides": {}, "method": Method(), "watchdog_s": WATCHDOG_S, "cap_mb": SLOT_MEMORY_CAP_MB}
+    given, _ = (kw.pop("invocation") for *_, kw in calibrate)
     assert calibrate == [(out, [1, 3], ["naca0012", "s1223"], 150, 30, 10, 2, manifest, work, constants),
                          (left_out, [1, 2, 3], None, None, CAL_RUNG3_CAP, CAL_RUNG2_CAP, WORKERS,
                           engine.SHARED_GEOMETRY_DB, None, constants)]
     printed = capsys.readouterr().out
     assert "the report" not in printed and "r.txt; every run: r.sqlite" in printed  # the findings came per rung
+    assert (given.run_name, given.config_yaml) == ("mesh_calibrate", None)
+    assert given.command.startswith(f"python -m {mesh_calibrate.STAGE.module} --out ")
+    assert given.machine_check["problem"].startswith("this machine has not passed machine_check")
 
 
 def test_settings_reach_the_calibration(calibrate, tmp_path):

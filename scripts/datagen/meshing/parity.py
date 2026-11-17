@@ -3,8 +3,9 @@ The machine check behind `machine_check.py`. It runs the parity test,
 tests/integration/datagen/mesh/optimizer/test_machine_parity.py, and passes only when every test in it passed: a
 skip counts as a failure. A pass is stamped in data/.machine_check.json with what was checked (the reference, the
 c2d executable, the sampler and shape versions, the computer), so a mesh script can say when something has moved
-since. It also rewrites the parity reference from the shared manifest, keeping the old file when nothing but the
-writer's name would change; the reference holds its shapes, so the check itself reads nothing under data/.
+since, and its batch rows record it. It also rewrites the parity reference from the shared manifest, keeping the old
+file when nothing but the writer's name would change; the reference holds its shapes, so the check itself reads
+nothing under data/.
 """
 
 import datetime
@@ -154,6 +155,29 @@ def Script_stamp_problem() -> Optional[str]:
     else:
         return None
     return f"this machine has not passed machine_check since {reason}" + advice
+
+
+def Script_stamp_record() -> dict:
+    """This computer's stamp as a run records it: what its last passed check saw (None: none), and what moved since."""
+    try:
+        stamp = json.loads(STAMP.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        stamp = None
+    return {"stamp": stamp, "problem": Script_stamp_problem()}
+
+
+def Script_invocation(args):
+    """
+    A mesh stage's account of its run, for its batch rows: the engine's `args.run_info` and this computer's stamp.
+
+    Returns:
+        Invocation: The batch rows' how-it-was-started columns
+    """
+    from src.datagen.meshing.optimizer.batch.batches import Invocation  # only mesh stages load the optimizer
+    info, stamp = getattr(args, "run_info", None), Script_stamp_record()
+    if info is None:
+        return Invocation(machine_check=stamp)
+    return Invocation(info.title, info.command, info.log, info.config, stamp)
 
 
 def _state() -> dict:

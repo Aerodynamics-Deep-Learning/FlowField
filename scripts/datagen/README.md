@@ -156,6 +156,16 @@ A `folder:` that exists is used again, with a `!` warning: this run's log and co
   then just says it adds to it.
 - **The run store and calibrations are only shared on purpose.** Experiment in your own stores; the campaign
   run into `shared` is the one that gets committed, once the constants are agreed.
+- **One writer at a time on the shared run store.** Git keeps the store whole, as one file: two people's campaigns
+  pushed into it cannot be combined, and the second push loses one of them. Pull, run the campaign, commit, push,
+  before anyone else starts one; and on one computer, never two campaigns into one store at once (the second
+  marks the first's running airfoils aborted and meshes them again).
+- **A run store describes what ran into it.** Each campaign, and each rung of a mesh calibration, is one row of
+  its `batches` table, one with nothing to run included: the run's title, its command, its log's path and the
+  master's config (empty for a single script's run), the computer, its CPU and OS, the commit, the Python and
+  package versions, this computer's machine-check stamp, what it was asked to run, and how it ended (completed,
+  stopped, interrupted, crashed, or aborted when it was found still running at the next start), with its airfoils'
+  outcomes and its c2d runs counted.
 - **The log**: one per run, `log_<start>.log` in the run's folder; the stage folders hold data only. It is written and
   synced to disk line by line, so a killed run keeps everything up to that moment and an editor showing it (VS
   Code) follows it as it grows. A refused run logs into a new scratchpad folder, never a named one.

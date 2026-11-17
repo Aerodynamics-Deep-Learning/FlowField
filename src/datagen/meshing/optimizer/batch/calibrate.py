@@ -17,7 +17,8 @@ Rungs 2 and 3 start from the golden jmax rung 1 recommends when it runs alongsid
 wins over it, with a warning. Each rung runs under its own settings row, a run's settings over the constants
 (src/datagen/constants.py), and the calibration's own choices are its `Method`. The report (`<date>.txt`) and
 every run (`<date>.sqlite`, the run store's schema) are written to the folder it is given (the repo's is
-`CALIBRATION_DIR`).
+`CALIBRATION_DIR`). Each rung asked for is one row of that store's batches (`batches.Optim_batch`), rung 2 with
+no airfoil to run included.
 """
 
 import datetime
@@ -28,6 +29,7 @@ import random
 import statistics
 import tempfile
 import time
+import uuid
 from functools import partial
 from pathlib import Path
 from typing import NamedTuple, Optional, Sequence
@@ -36,6 +38,7 @@ from src.datagen.constants import (
     CAL_GAINS, CAL_GOLDEN_MARGIN, CAL_MAX_LOSS, CAL_ORDINARY_COUNT, CAL_RUNG2_CAP, CAL_RUNG3_CAP, CAL_SET, CAL_WINDOWS,
     CAL_WITHIN, DX_MAX, GOLDEN_JMAX, SLOT_MEMORY_CAP_MB, WATCHDOG_S, WORKERS,
 )
+from src.datagen.meshing.optimizer.batch.batches import Invocation, Optim_batch
 from src.datagen.meshing.optimizer.batch.runner import Optim_load_shapes, Optim_run_airfoils
 from src.datagen.meshing.optimizer.common.settings import Optim_build_settings, Optim_shape_version
 from src.datagen.meshing.optimizer.common.space import Knob, Optim_knobs_of
@@ -178,7 +181,8 @@ def Optim_run_calibration(out_dir, rungs: Sequence[int] = (1, 2, 3), names: Opti
                           golden_jmax: Optional[int] = None, rung3_cap: int = CAL_RUNG3_CAP,
                           rung2_cap: int = CAL_RUNG2_CAP, workers: int = WORKERS, geometry_db=None, work_root=None,
                           *, overrides: Optional[dict] = None, method: Method = Method(),
-                          watchdog_s: float = WATCHDOG_S, cap_mb: int = SLOT_MEMORY_CAP_MB) -> CalibrationFiles:
+                          watchdog_s: float = WATCHDOG_S, cap_mb: int = SLOT_MEMORY_CAP_MB,
+                          invocation: Optional[Invocation] = None) -> CalibrationFiles:
     """
     A calibration named by its start: every run into `<out_dir>/mesh_calibrate_<YYYY-MM-DD_HHMMSS>.sqlite`, the
     report into the `.txt` beside it.
@@ -186,7 +190,7 @@ def Optim_run_calibration(out_dir, rungs: Sequence[int] = (1, 2, 3), names: Opti
     Args:
         out_dir (str | Path): The folder for both, made if missing (the repo's is `CALIBRATION_DIR`)
         rungs, names, golden_jmax, rung3_cap, rung2_cap, workers, geometry_db, work_root, overrides, method,
-            watchdog_s, cap_mb: As `Optim_calibrate`
+            watchdog_s, cap_mb, invocation: As `Optim_calibrate`
 
     Returns:
         CalibrationFiles: Where the report and the database went, and the report
@@ -202,7 +206,8 @@ def Optim_run_calibration(out_dir, rungs: Sequence[int] = (1, 2, 3), names: Opti
     out_dir.mkdir(parents=True, exist_ok=True)
     with RunStore.open(db) as store:
         cal = Optim_calibrate(store, sorted(set(rungs)), names, golden_jmax, rung3_cap, rung2_cap, workers, work_root,
-                              geometry_db, overrides=overrides, method=method, watchdog_s=watchdog_s, cap_mb=cap_mb)
+                              geometry_db, overrides=overrides, method=method, watchdog_s=watchdog_s, cap_mb=cap_mb,
+                              invocation=invocation)
         text = Optim_format_report(store, cal)
     report.write_text(text, encoding="utf-8", newline="\n")
     return CalibrationFiles(report, db, text)
@@ -211,10 +216,10 @@ def Optim_run_calibration(out_dir, rungs: Sequence[int] = (1, 2, 3), names: Opti
 def Optim_calibrate(store: RunStore, rungs: Sequence[int] = (1, 2, 3), names: Optional[Sequence[str]] = None,
                     golden_jmax: Optional[int] = None, rung3_cap: int = CAL_RUNG3_CAP, rung2_cap: int = CAL_RUNG2_CAP,
                     workers: int = WORKERS, work_root=None, geometry_db=None, *, overrides: Optional[dict] = None,
-                    method: Method = Method(), watchdog_s: float = WATCHDOG_S,
-                    cap_mb: int = SLOT_MEMORY_CAP_MB) -> Calibration:
+                    method: Method = Method(), watchdog_s: float = WATCHDOG_S, cap_mb: int = SLOT_MEMORY_CAP_MB,
+                    invocation: Optional[Invocation] = None) -> Calibration:
     """
-    Calibrates the rungs asked for, every run recorded in `store`.
+    Calibrates the rungs asked for, every run recorded in `store`, each rung as one batch.
 
     Args:
         store (RunStore): Where every rung's runs go
@@ -234,6 +239,7 @@ def Optim_calibrate(store: RunStore, rungs: Sequence[int] = (1, 2, 3), names: Op
         method (Method): The calibration's own choices
         watchdog_s (float): A slot silent this long is killed as hung
         cap_mb (int): Each slot's memory cap
+        invocation (Invocation | None): How it was started, for each rung's batch row; nothing of it if None
 
     Returns:
         Calibration: Each rung's outcomes, the golden jmax rungs 2 and 3 ran at, and the method
@@ -241,7 +247,8 @@ def Optim_calibrate(store: RunStore, rungs: Sequence[int] = (1, 2, 3), names: Op
     if work_root is None:
         with tempfile.TemporaryDirectory(prefix="calibration_") as work:
             return Optim_calibrate(store, rungs, names, golden_jmax, rung3_cap, rung2_cap, workers, work, geometry_db,
-                                   overrides=overrides, method=method, watchdog_s=watchdog_s, cap_mb=cap_mb)
+                                   overrides=overrides, method=method, watchdog_s=watchdog_s, cap_mb=cap_mb,
+                                   invocation=invocation)
 
     overrides = dict(overrides or {})
     if golden_jmax is not None and 1 in rungs and {2, 3} & set(rungs):
@@ -250,7 +257,7 @@ def Optim_calibrate(store: RunStore, rungs: Sequence[int] = (1, 2, 3), names: Op
     load = partial(Optim_load_shapes, db=geometry_db, shape_version=Optim_shape_version(overrides))
     done: dict[int, Stage] = {}
     run = partial(_run_stage, store=store, work_root=Path(work_root), workers=workers, first=min(rungs),
-                  watchdog_s=watchdog_s, cap_mb=cap_mb)
+                  watchdog_s=watchdog_s, cap_mb=cap_mb, invocation=invocation)
     if 1 in rungs:
         settings = Optim_build_settings(**overrides)
         jmax = _knob(settings, "jmax")
@@ -290,6 +297,7 @@ def Optim_calibrate(store: RunStore, rungs: Sequence[int] = (1, 2, 3), names: Op
         else:
             logger.info("%s  none to run: every airfoil passes the shape gates at jmax* in rung 1",
                         _RUNG_START.format(2))
+            run(2, None, [], settings, what)  # recorded all the same
     if 3 in rungs:
         chosen = names or [*method.set, *Optim_ordinary_airfoils([n for n, _ in load()], method)]
         settings = Optim_build_settings(**{**overrides, "golden_jmax": golden_jmax, "rung3_budget": rung3_cap})
@@ -303,13 +311,19 @@ def Optim_calibrate(store: RunStore, rungs: Sequence[int] = (1, 2, 3), names: Op
 
 
 def _run_stage(rung: int, task, airfoils: list, settings: dict, what: str, *, store: RunStore, work_root: Path,
-               workers: int, first: int, watchdog_s: float, cap_mb: int, edge=None) -> Stage:
-    logger.info("%s  %s; %d airfoils, %d workers", _RUNG_START.format(rung), what, len(airfoils), workers)
+               workers: int, first: int, watchdog_s: float, cap_mb: int, invocation: Optional[Invocation],
+               edge=None) -> Optional[Stage]:
+    """A rung over its airfoils as one batch; with none, only its batch row, and no Stage."""
     store.ensure_settings(settings, label=f"calibration rung {rung}")
-    ctx = RunContext.create(settings, work_root / f"rung{rung}")
-    t0 = time.perf_counter()
-    outcomes = Optim_run_airfoils(task, airfoils, ctx, store, workers, warn_memory=rung == first, edge=edge,
-                                  watchdog_s=watchdog_s, cap_mb=cap_mb)
+    batch_id = str(uuid.uuid4())
+    with Optim_batch(store, batch_id, settings["settings_id"], invocation, workers, len(airfoils), len(airfoils)):
+        if not airfoils:
+            return None
+        logger.info("%s  %s; %d airfoils, %d workers", _RUNG_START.format(rung), what, len(airfoils), workers)
+        ctx = RunContext.create(settings, work_root / f"rung{rung}", batch_id)
+        t0 = time.perf_counter()
+        outcomes = Optim_run_airfoils(task, airfoils, ctx, store, workers, warn_memory=rung == first, edge=edge,
+                                      watchdog_s=watchdog_s, cap_mb=cap_mb)
     return Stage(rung, settings, [name for name, _ in airfoils], outcomes, time.perf_counter() - t0)
 
 

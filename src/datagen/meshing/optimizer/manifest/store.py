@@ -2,9 +2,14 @@
 The mesh study's run store, `meshing.sqlite`: the one module that reads and writes it.
 
     settings  one row per settings_id: every value a run is meshed and judged by (`settings.py`)
+    batches   one row per campaign or calibration rung: who started it and how, on what software and computer,
+              how it ended
     ladders   one row per airfoil per campaign: its n*, route through the rungs, counts and outcome
     runs      one row per evaluation, meshed or not: config, sample, quality, deviation and verdict
     best      per (airfoil, settings), its fewest-node passing run; triggers keep it pointing at one
+
+A batch is the parent of the ladders and runs carrying its batch_id, by that id alone: SQLite cannot add a foreign
+key to the columns the ladders and runs already had.
 
 No mesh file is kept: a run's `config_json` re-meshes it, and `Optim_su2_sha256` checks the result.
 
@@ -16,10 +21,13 @@ milliseconds (`Optim_utc_now`).
 """
 
 import hashlib
+import importlib.metadata
 import json
 import logging
+import platform
 import sqlite3
 import subprocess
+import sys
 import time
 from contextlib import contextmanager
 from datetime import datetime, timezone
@@ -154,6 +162,39 @@ _MIGRATIONS = [
     ALTER TABLE settings ADD COLUMN smoothing_json TEXT NOT NULL
         DEFAULT '{"alfa": 1.0, "asmt": 40, "epsi": 20.0, "funi": 0.02}';
     """,
+    # One row per campaign; the batches before it rebuilt from their ladders, what they cannot tell left NULL
+    """
+    CREATE TABLE batches (
+        batch_id TEXT PRIMARY KEY,
+        settings_id TEXT NOT NULL REFERENCES settings(settings_id),
+        status TEXT NOT NULL CHECK (status IN ('running', 'completed', 'nothing_to_run', 'stopped', 'interrupted',
+                                               'crashed', 'aborted', 'unknown')),
+        run_name TEXT, command TEXT, log_path TEXT,
+        config_yaml TEXT,                   -- the master's config; NULL for a single script's run
+        host TEXT, git_commit TEXT, git_dirty INTEGER,
+        workers INTEGER, airfoils_asked INTEGER, airfoils_skipped INTEGER, airfoils_run INTEGER,
+        n_passed INTEGER, n_failed INTEGER, n_aborted INTEGER,  -- each airfoil by its last ladder
+        meshes INTEGER,                     -- its runs that reached c2d (an entry flag), retries included
+        error_text TEXT,
+        started_at TEXT NOT NULL, finished_at TEXT, wall_s REAL,
+        python_version TEXT, packages_json TEXT, cpu TEXT, os TEXT,
+        machine_check_json TEXT,            -- this computer's machine-check stamp, and what moved since
+        image_digest TEXT                   -- the Docker image's, once runs happen in one
+    ) STRICT;
+
+    INSERT INTO batches (batch_id, settings_id, status, host, git_commit, git_dirty, airfoils_run, n_passed, n_failed,
+                         n_aborted, meshes, started_at, finished_at, wall_s)
+    SELECT x.batch_id, MIN(settings_id), 'unknown', MIN(host), MIN(git_commit), MAX(git_dirty),
+           COUNT(DISTINCT geometry_id),
+           SUM(last AND status = 'passed'), SUM(last AND status = 'failed'), SUM(last AND status = 'aborted'),
+           (SELECT COUNT(*) FROM runs r WHERE r.batch_id = x.batch_id AND r.entry_flag IS NOT NULL),
+           MIN(started_at), MAX(finished_at),
+           ROUND((julianday(MAX(finished_at)) - julianday(MIN(started_at))) * 86400, 3)
+    FROM (SELECT l.*, l.rowid = (SELECT MAX(l2.rowid) FROM ladders l2
+                                 WHERE l2.batch_id = l.batch_id AND l2.geometry_id = l.geometry_id) AS last
+          FROM ladders l) x
+    GROUP BY x.batch_id;
+    """,
 ]
 
 # The runs table's columns, in its order
@@ -182,6 +223,20 @@ _BEST_SQL = """
     LIMIT 1
 """
 
+# A batch's outcomes: each airfoil by its last ladder; its runs that reached c2d, whatever their rung
+_BATCH_COUNTS = ("n_passed", "n_failed", "n_aborted", "meshes")
+_BATCH_COUNTS_SQL = """
+    SELECT COALESCE(SUM(last AND status = 'passed'), 0), COALESCE(SUM(last AND status = 'failed'), 0),
+           COALESCE(SUM(last AND status = 'aborted'), 0),
+           (SELECT COUNT(*) FROM runs WHERE batch_id = :batch AND entry_flag IS NOT NULL)
+    FROM (SELECT l.status, l.rowid = (SELECT MAX(l2.rowid) FROM ladders l2
+                                      WHERE l2.batch_id = l.batch_id AND l2.geometry_id = l.geometry_id) AS last
+          FROM ladders l WHERE l.batch_id = :batch)
+"""
+
+# The packages a mesh's outcome can depend on, by their distribution names
+_PACKAGES = ("numpy", "pydantic", "PyNomadBBO")
+
 #region main
 
 class StoreLocked(RuntimeError):
@@ -195,7 +250,7 @@ class RunStore:
         self._conn = conn
         self.path = path
         self._columns = {table: [r[1] for r in conn.execute(f"PRAGMA table_info({table})")]
-                         for table in ("settings", "ladders", "runs")}
+                         for table in ("settings", "batches", "ladders", "runs")}
 
     @classmethod
     def open(cls, db=None, read_only: bool = False) -> "RunStore":
@@ -314,6 +369,22 @@ class RunStore:
             self._insert("settings", row, on_conflict="ON CONFLICT(settings_id) DO NOTHING")
         return values["settings_id"]
 
+    def start_batch(self, row: dict) -> None:
+        """Records a campaign as it starts (status 'running'), before any of its ladders."""
+        with self.transaction():
+            self._insert("batches", row)
+
+    def finish_batch(self, batch_id: str, fields: dict) -> None:
+        """
+        Writes a campaign's end onto its row, with its ladders' outcomes counted (`_BATCH_COUNTS`).
+
+        Raises:
+            ValueError: On an unknown column, or a batch that was never started
+        """
+        with self.transaction():
+            counts = self._conn.execute(_BATCH_COUNTS_SQL, {"batch": batch_id}).fetchone()
+            self._update("batches", "batch_id", batch_id, {**dict(zip(_BATCH_COUNTS, counts)), **fields})
+
     def start_ladder(self, row: dict) -> None:
         """Records a ladder as it starts (status 'running'), before any of its runs."""
         with self.transaction():
@@ -326,15 +397,8 @@ class RunStore:
         Raises:
             ValueError: On an unknown column, or a ladder that was never started
         """
-        _check_columns("ladders", fields, self._columns["ladders"])
-        if "ladder_id" in fields:
-            raise ValueError("a ladder's id cannot change")
-        sets = ", ".join(f"{name} = ?" for name in fields)
         with self.transaction():
-            cur = self._conn.execute(f"UPDATE ladders SET {sets} WHERE ladder_id = ?",
-                                     [_sql(v) for v in fields.values()] + [ladder_id])
-            if cur.rowcount != 1:
-                raise ValueError(f"no ladder {ladder_id}")
+            self._update("ladders", "ladder_id", ladder_id, fields)
 
     def insert_run(self, row: dict) -> None:
         """
@@ -367,17 +431,19 @@ class RunStore:
 
     def abort_running(self) -> int:
         """
-        Marks every ladder still 'running' as aborted, as a campaign starts: one left running was cut
-        short. Its runs stay; the campaign restarts that airfoil from scratch.
+        Marks every ladder and batch still 'running' as aborted, as a campaign starts: one left running was cut
+        short. Its runs stay; the campaign restarts that airfoil from scratch. An aborted batch's outcomes are
+        counted as its ladders were left.
 
         Returns:
             int: How many ladders it aborted
         """
+        now, why = Optim_utc_now(), "still running when a campaign started"
         with self.transaction():
-            cur = self._conn.execute(
-                "UPDATE ladders SET status = 'aborted', finished_at = ?, "
-                "error_text = COALESCE(error_text, 'still running when a campaign started') "
-                "WHERE status = 'running'", (Optim_utc_now(),))
+            cur = self._conn.execute("UPDATE ladders SET status = 'aborted', finished_at = ?, "
+                                     "error_text = COALESCE(error_text, ?) WHERE status = 'running'", (now, why))
+            for (batch_id,) in self._conn.execute("SELECT batch_id FROM batches WHERE status = 'running'").fetchall():
+                self.finish_batch(batch_id, dict(status="aborted", finished_at=now, error_text=why))
         return cur.rowcount
 
 #endregion
@@ -387,6 +453,10 @@ class RunStore:
     def settings(self, settings_id: str) -> Optional[dict]:
         """A settings row by column name, or None."""
         return self._one("SELECT * FROM settings WHERE settings_id = ?", settings_id)
+
+    def batch(self, batch_id: str) -> Optional[dict]:
+        """A batch row by column name, JSON columns as stored, or None."""
+        return self._one("SELECT * FROM batches WHERE batch_id = ?", batch_id)
 
     def ladder(self, ladder_id: str) -> Optional[dict]:
         """A ladder row by column name, or None."""
@@ -426,6 +496,18 @@ class RunStore:
         marks = ", ".join("?" * len(row))
         self._conn.execute(f"INSERT INTO {table} ({names}) VALUES ({marks}) {on_conflict}",
                            [_sql(v) for v in row.values()])
+
+    def _update(self, table: str, key: str, value: str, fields: dict) -> None:
+        """Writes `fields` onto the row whose `key` is `value`; raises ValueError on a new key or no such row."""
+        _check_columns(table, fields, self._columns[table])
+        what = key.removesuffix("_id")
+        if key in fields:
+            raise ValueError(f"a {what}'s id cannot change")
+        sets = ", ".join(f"{name} = ?" for name in fields)
+        cur = self._conn.execute(f"UPDATE {table} SET {sets} WHERE {key} = ?",
+                                 [_sql(v) for v in fields.values()] + [value])
+        if cur.rowcount != 1:
+            raise ValueError(f"no {what} {value}")
 
     def _one(self, sql: str, *params) -> Optional[dict]:
         cur = self._conn.execute(sql, params)
@@ -484,6 +566,35 @@ def Optim_su2_sha256(path) -> tuple[str, int]:
     """
     data = Path(path).read_bytes()
     return hashlib.sha256(data.replace(b"\r\n", b"\n")).hexdigest(), len(data)
+
+
+def Optim_provenance() -> dict:
+    """
+    What runs the code, as a batch row's columns: Python, the packages a mesh's outcome can depend on (None for
+    one not installed), the CPU's model and the OS.
+    """
+    packages = {}
+    for name in _PACKAGES:
+        try:
+            packages[name] = importlib.metadata.version(name)
+        except importlib.metadata.PackageNotFoundError:
+            packages[name] = None
+    return dict(python_version=platform.python_version(), packages_json=packages, cpu=_cpu(), os=platform.platform())
+
+
+def _cpu() -> Optional[str]:
+    """The CPU's model name: Windows' registry, Linux's /proc/cpuinfo, else what `platform` knows."""
+    try:
+        if sys.platform == "win32":
+            import winreg
+            with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"HARDWARE\DESCRIPTION\System\CentralProcessor\0") as key:
+                return str(winreg.QueryValueEx(key, "ProcessorNameString")[0]).strip()
+        for line in Path("/proc/cpuinfo").read_text(encoding="utf-8").splitlines():
+            if line.startswith("model name"):
+                return line.split(":", 1)[1].strip()
+    except OSError:
+        pass
+    return platform.processor() or None
 
 
 def Optim_git_state() -> tuple[str, Optional[int]]:

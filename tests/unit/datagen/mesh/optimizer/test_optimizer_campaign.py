@@ -13,18 +13,24 @@ Step 3: Ensure the summary reads the batch back from the store
     - test_the_summary_counts_the_batch
     - test_the_summary_counts_the_golden_failures_by_gate
     - test_a_stopped_campaign_says_so
+Step 4: Ensure a campaign is one batch row: how it was started, on what, what it was asked, how it ended
+    - test_a_campaign_is_one_batch_row
+    - test_how_a_campaign_ended_is_its_batch_status
 
 Runs here with one worker and a stand-in ladder over the tests' airfoil manifest; the runner and the store are
 real. The stand-in passes at its golden run unless its airfoil is named in `_ABORTING` or `_SETUP`, or in
 `_GOLDEN_SKEW`, whose golden run fails skew before a rung-3 pass.
 """
 
+import json
+import socket
 import uuid
 
 import pytest
 
 from src.datagen.geometry.common.constants import SHAPE_VERSION
 from src.datagen.meshing.optimizer.batch import campaign
+from src.datagen.meshing.optimizer.batch.batches import Invocation
 from src.datagen.meshing.optimizer.batch.campaign import Optim_campaign_summary, Optim_run_campaign
 from src.datagen.meshing.optimizer.batch.runner import BatchStopped
 from src.datagen.meshing.optimizer.common.settings import Optim_build_settings
@@ -155,7 +161,10 @@ def test_nothing_left_to_run(store):
     _campaign(store, "naca0012")
     result = _campaign(store, "naca0012")
 
-    assert (result.batch_id, result.names, result.skipped) == (None, [], ["naca0012"])
+    assert (result.names, result.skipped) == ([], ["naca0012"])
+    row = store.batch(result.batch_id)  # recorded all the same
+    assert (row["status"], row["airfoils_asked"], row["airfoils_skipped"], row["airfoils_run"], row["n_passed"],
+            row["meshes"]) == ("nothing_to_run", 1, 1, 0, 0, 0)
     assert Optim_campaign_summary(store, result).endswith("Nothing left to run.")
 # endregion
 
@@ -193,4 +202,52 @@ def test_a_stopped_campaign_says_so(store):
     assert isinstance(result.stopped, BatchStopped) and not _statuses(store, "naca0040")
     assert "Stopped early: setup error on naca4412: EXECUTABLE_NOT_FOUND" in text
     assert text.endswith("Run the campaign again to retry what is left.")
+# endregion
+
+
+# region Step 4
+def test_a_campaign_is_one_batch_row(store):
+    _GOLDEN_SKEW.update(naca4412=0.26)  # golden, then a rung-3 pass: two c2d runs
+    invocation = Invocation("master run.yaml", "python -m scripts.datagen.meshing.campaign --db x",
+                            "data/scratchpad/r/log_1.log", "campaign:\n  enabled: true\n",
+                            {"stamp": None, "problem": "this machine has not passed machine_check"})
+    _campaign(store, "naca0012")  # finished before
+    result = Optim_run_campaign(store, ["naca0012", "naca4412", "naca0040"], workers=1, task=_ladder,
+                                geometry_db=_MANIFEST["db"], invocation=invocation)
+
+    row = store.batch(result.batch_id)
+    assert (row["run_name"], row["command"], row["log_path"], row["config_yaml"]) == invocation[:4]
+    assert json.loads(row["machine_check_json"]) == invocation.machine_check
+    assert (row["status"], row["error_text"], row["settings_id"]) == ("completed", None, result.settings_id)
+    assert (row["workers"], row["airfoils_asked"], row["airfoils_skipped"], row["airfoils_run"]) == (1, 3, 1, 2)
+    assert (row["n_passed"], row["n_failed"], row["n_aborted"], row["meshes"]) == (2, 0, 0, 3)
+    assert row["host"] == socket.gethostname() and row["git_commit"] and row["cpu"] and row["python_version"]
+    assert json.loads(row["packages_json"])["numpy"] and row["image_digest"] is None
+    assert row["started_at"] <= row["finished_at"] and row["wall_s"] >= 0
+
+
+@pytest.mark.parametrize("how, status, error", [
+    ("stop", "stopped", "BatchStopped: setup error on naca4412: EXECUTABLE_NOT_FOUND"),
+    ("ctrl-c", "interrupted", None),
+    ("crash", "crashed", "RuntimeError: the disk is gone"),
+], ids=["stopped", "ctrl-c", "crashed"])
+def test_how_a_campaign_ended_is_its_batch_status(store, monkeypatch, how, status, error):
+    if how == "stop":
+        _SETUP.add("naca4412")
+    else:
+        raised = KeyboardInterrupt() if how == "ctrl-c" else RuntimeError("the disk is gone")
+
+        def ends(*args, **kwargs):
+            raise raised
+        monkeypatch.setattr(campaign, "Optim_run_airfoils", ends)
+
+    if how == "crash":
+        with pytest.raises(RuntimeError, match="the disk is gone"):  # recorded, then raised on
+            _campaign(store, "naca0012", "naca4412")
+    else:
+        _campaign(store, "naca0012", "naca4412")
+
+    [batch_id] = [r[0] for r in store._conn.execute("SELECT batch_id FROM batches")]
+    row = store.batch(batch_id)
+    assert (row["status"], row["error_text"]) == (status, error) and row["finished_at"] is not None
 # endregion

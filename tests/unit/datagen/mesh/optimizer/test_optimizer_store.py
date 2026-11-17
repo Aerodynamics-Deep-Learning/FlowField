@@ -10,6 +10,7 @@ Step 2: Ensure opening refuses what it cannot trust
     - test_read_only_refuses_a_missing_file
     - test_read_only_refuses_an_unmigrated_file
     - test_an_older_store_gains_the_smoothing_its_runs_used
+    - test_an_older_store_gains_a_batch_row_per_batch_its_ladders_name
     - test_a_newer_schema_is_refused
     - test_a_read_only_store_cannot_write
 Step 3: Ensure writes take exactly the tables' columns and keep the links whole
@@ -19,6 +20,7 @@ Step 3: Ensure writes take exactly the tables' columns and keep the links whole
     - test_values_are_stored_as_sqlite_types
     - test_foreign_keys_hold
     - test_a_ladder_starts_and_finishes
+    - test_a_batch_starts_and_finishes_with_its_ladders_counted
     - test_a_ladders_runs_come_back_in_their_order
     - test_a_batchs_ladders_come_back_in_their_order
 Step 4: Ensure `best` only ever points at the right passing run
@@ -34,6 +36,7 @@ Step 6: Ensure the helpers record what they claim
     - test_utc_now_has_milliseconds
     - test_git_state
     - test_git_state_outside_git
+    - test_provenance
 Step 7: Ensure a write waits out another program holding the file, warning as it starts, and gives up cleanly
     - test_a_write_waits_out_a_lock_and_warns
     - test_a_lock_held_past_the_wait_fails_with_nothing_written
@@ -44,6 +47,7 @@ No mesher or c2d needed: stores live in `tmp_path`, settings come from a stand-i
 import hashlib
 import json
 import logging
+import platform
 import re
 import shutil
 import sqlite3
@@ -61,7 +65,7 @@ from src.datagen.meshing.common.schemas import MeshGeoDeviationSummary, MeshQual
 from src.datagen.meshing.optimizer.common.settings import Optim_build_settings
 from src.datagen.meshing.optimizer.manifest import store as store_module
 from src.datagen.meshing.optimizer.manifest.store import (
-    RUN_COLUMNS, Optim_git_state, Optim_su2_sha256, Optim_utc_now, RunStore, StoreLocked,
+    RUN_COLUMNS, Optim_git_state, Optim_provenance, Optim_su2_sha256, Optim_utc_now, RunStore, StoreLocked,
 )
 
 # SampleReport fields a run does not store, and why
@@ -108,6 +112,12 @@ def _ladder(settings, **fields):
     return {**row, **fields}
 
 
+def _batch(settings, **fields):
+    row = dict(batch_id=str(uuid.uuid4()), settings_id=settings["settings_id"], status="running",
+               started_at=Optim_utc_now())
+    return {**row, **fields}
+
+
 def _raw(store):
     """A second connection to the same file, for SQL the store itself never issues."""
     conn = sqlite3.connect(store.path, isolation_level=None)
@@ -122,7 +132,7 @@ def test_a_new_store_builds_the_schema(store):
               if kind == "table" and not name.startswith("sqlite_")}
     others = {(kind, name) for kind, name in conn.execute("SELECT type, name FROM sqlite_master WHERE type != 'table'")}
 
-    assert tables == {"settings": 1, "ladders": 1, "runs": 1, "best": 1}  # all STRICT
+    assert tables == {"settings": 1, "batches": 1, "ladders": 1, "runs": 1, "best": 1}  # all STRICT
     assert {name for kind, name in others if kind == "view"} == {"v_best", "v_airfoil_outcome"}
     assert {name for kind, name in others if kind == "trigger"} == {"best_insert_must_pass", "best_update_must_pass"}
     assert conn.execute("PRAGMA user_version").fetchone()[0] == len(store_module._MIGRATIONS)
@@ -177,6 +187,33 @@ def test_an_older_store_gains_the_smoothing_its_runs_used(tmp_path, settings, mo
 
     with RunStore.open(tmp_path / "m.sqlite") as s:  # migrated on opening
         assert json.loads(s.settings(settings["settings_id"])["smoothing_json"]) == SMOOTHING_DEFAULTS
+
+
+def test_an_older_store_gains_a_batch_row_per_batch_its_ladders_name(tmp_path, settings, monkeypatch):
+    git = dict(host="pc", git_commit="abc", git_dirty=0)
+    with monkeypatch.context() as before:
+        before.setattr(store_module, "_MIGRATIONS", store_module._MIGRATIONS[:2])  # the schema before batches
+        with RunStore.open(tmp_path / "m.sqlite") as s:
+            s.ensure_settings(settings)
+            for gid, status, started, finished in (  # b1: g1 aborted then retried to a pass, g2 failed
+                    ("g1", "aborted", "2026-01-01T00:00:00.000Z", "2026-01-01T00:00:10.000Z"),
+                    ("g2", "failed", "2026-01-01T00:00:01.000Z", "2026-01-01T00:00:20.000Z"),
+                    ("g1", "passed", "2026-01-01T00:00:21.000Z", "2026-01-01T00:01:40.500Z")):
+                s.start_ladder(_ladder(settings, batch_id="b1", geometry_id=gid, status=status, started_at=started,
+                                       finished_at=finished, meshes_golden=9, **git))  # counters: not what is counted
+            for flag in ("SUCCESS", "SUCCESS", None):  # two reached c2d, one was rejected before it
+                s.insert_run(_run(settings, batch_id="b1", entry_flag=flag, rung="bisect"))
+            s.start_ladder(_ladder(settings, batch_id="b2", started_at="2026-01-02T00:00:00.000Z", **git))  # running
+
+    with RunStore.open(tmp_path / "m.sqlite") as s:  # migrated on opening
+        b1, b2 = s.batch("b1"), s.batch("b2")
+    assert {k: b1[k] for k in ("settings_id", "status", "host", "git_commit", "git_dirty", "airfoils_run", "n_passed",
+                               "n_failed", "n_aborted", "meshes", "started_at", "finished_at", "wall_s")} == {
+        "settings_id": settings["settings_id"], "status": "unknown", **git, "airfoils_run": 2, "n_passed": 1,
+        "n_failed": 1, "n_aborted": 0, "meshes": 2, "started_at": "2026-01-01T00:00:00.000Z",
+        "finished_at": "2026-01-01T00:01:40.500Z", "wall_s": 100.5}  # each airfoil by its last ladder
+    assert (b1["command"], b1["config_yaml"], b1["workers"], b1["python_version"]) == (None, None, None, None)
+    assert (b2["n_passed"], b2["n_failed"], b2["n_aborted"], b2["finished_at"], b2["wall_s"]) == (0, 0, 0, None, None)
 
 
 def test_a_newer_schema_is_refused(tmp_path):
@@ -255,6 +292,33 @@ def test_a_ladder_starts_and_finishes(store, settings):
         store.finish_ladder(ladder["ladder_id"], dict(stauts="failed"))
     with pytest.raises(sqlite3.IntegrityError, match="CHECK"):
         store.finish_ladder(ladder["ladder_id"], dict(status="done"))
+
+
+def test_a_batch_starts_and_finishes_with_its_ladders_counted(store, settings):
+    batch = _batch(settings, workers=6, packages_json={"numpy": "2.4.3"})
+    store.start_batch(batch)
+    for gid, status in (("g1", "aborted"), ("g1", "passed"), ("g2", "failed"), ("g3", "aborted")):
+        store.start_ladder(_ladder(settings, batch_id=batch["batch_id"], geometry_id=gid, status=status))
+    for rung, flag in (("golden", "SUCCESS"), ("mads", "FATAL_ERROR"), ("mads", None), ("bisect", "SUCCESS")):
+        store.insert_run(_run(settings, batch_id=batch["batch_id"], rung=rung, entry_flag=flag))  # 3 reached c2d
+    store.start_ladder(_ladder(settings, geometry_id="elsewhere", status="passed"))  # batch "b"
+    store.insert_run(_run(settings, entry_flag="SUCCESS"))
+    store.finish_batch(batch["batch_id"], dict(status="completed", finished_at=Optim_utc_now(), wall_s=12.5))
+
+    row = store.batch(batch["batch_id"])
+    assert (row["status"], row["workers"], row["wall_s"], row["packages_json"]) == ("completed", 6, 12.5,
+                                                                                     '{"numpy": "2.4.3"}')
+    assert (row["n_passed"], row["n_failed"], row["n_aborted"], row["meshes"]) == (1, 1, 1, 3)
+    with pytest.raises(ValueError, match="no batch"):
+        store.finish_batch("unknown", dict(status="completed"))
+    with pytest.raises(ValueError, match="batches has no column"):
+        store.finish_batch(batch["batch_id"], dict(stauts="completed"))
+    with pytest.raises(ValueError, match="a batch's id cannot change"):
+        store.finish_batch(batch["batch_id"], dict(batch_id="other"))
+    with pytest.raises(sqlite3.IntegrityError, match="CHECK"):
+        store.finish_batch(batch["batch_id"], dict(status="done"))
+    with pytest.raises(sqlite3.IntegrityError, match="FOREIGN KEY"):
+        store.start_batch(_batch(settings, settings_id="unknown"))
 
 
 def test_a_ladders_runs_come_back_in_their_order(store, settings):
@@ -353,8 +417,11 @@ def test_finished_airfoils(store, settings):
 
 
 def test_abort_running(store, settings):
-    running = [_ladder(settings, geometry_id=f"g{i}") for i in range(2)]
-    done = _ladder(settings, geometry_id="done", status="passed")
+    cut, finished = _batch(settings, batch_id="cut"), _batch(settings, batch_id="finished", status="completed")
+    store.start_batch(cut)
+    store.start_batch(finished)
+    running = [_ladder(settings, batch_id="cut", geometry_id=f"g{i}") for i in range(2)]
+    done = _ladder(settings, batch_id="cut", geometry_id="done", status="passed")
     for ladder in (*running, done):
         store.start_ladder(ladder)
 
@@ -363,6 +430,9 @@ def test_abort_running(store, settings):
     assert store.ladder(running[0]["ladder_id"])["finished_at"] is not None
     assert "still running" in store.ladder(running[0]["ladder_id"])["error_text"]
     assert store.ladder(done["ladder_id"])["status"] == "passed"
+    row = store.batch("cut")  # counted as its ladders were left
+    assert (row["status"], row["n_passed"], row["n_aborted"]) == ("aborted", 1, 2) and row["finished_at"] is not None
+    assert "still running" in row["error_text"] and store.batch("finished")["status"] == "completed"
     assert store.abort_running() == 0
 # endregion
 
@@ -410,6 +480,16 @@ def test_git_state_outside_git(monkeypatch):
     monkeypatch.setattr(subprocess, "run", no_git)
 
     assert Optim_git_state() == ("unknown", None)
+
+
+def test_provenance():
+    found = Optim_provenance()
+
+    assert set(found) == {"python_version", "packages_json", "cpu", "os"}  # the batch row's columns
+    assert found["python_version"] == platform.python_version() and found["os"] == platform.platform()
+    assert found["packages_json"]["numpy"] == np.__version__ and set(found["packages_json"]) == {
+        "numpy", "pydantic", "PyNomadBBO"}
+    assert found["cpu"]  # a model name, not empty
 # endregion
 
 

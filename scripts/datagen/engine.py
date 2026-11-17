@@ -11,7 +11,8 @@ What every datagen script shares, and the run it makes (scripts/datagen/README.m
              every line `HH:MM:SS [run|cmd] [plan|<stage>|summary] [info|!|!!|error] text`, the blocks opened by
              `===== PLAN =====`, `===== START <stage> =====` / `===== END <stage> =====` and `===== SUMMARY =====`
     run      a script's one stage in this process, so a debugger stops in it; the master's stages each as a
-             child process, `python -m <script>` with FLOWFIELD_STAGE_CHILD naming the stage, which only runs
+             child process, `python -m <script>` with FLOWFIELD_STAGE_CHILD naming the stage, which only runs;
+             either way the stage gets `args.run_info`, the run it is part of, for what it records of itself
     summary  each stage's exit code and minutes, the warnings again
 
 Exit codes: 0 done, 1 a stage stopped or failed, 2 refused (a usage error), 130 Ctrl-C.
@@ -21,6 +22,7 @@ import argparse
 import datetime
 import enum
 import io
+import json
 import logging
 import os
 import re
@@ -38,6 +40,7 @@ from src.datagen import constants
 from src.datagen.geometry.common.paths import DATA_ROOT, REPO_ROOT, Geom_paths
 
 CHILD_ENV = "FLOWFIELD_STAGE_CHILD"
+RUN_ENV = "FLOWFIELD_RUN"  # a master's child: its run (title, log, command, the config's copy) as JSON
 SHARED = "shared"
 INTERRUPTED = 130
 STAMP = "{:%Y-%m-%d_%H%M%S}"  # a run's start, naming its log and its config's copy
@@ -64,6 +67,14 @@ class PlanError(ValueError):
 
 class _Refused(Exception):
     pass
+
+
+class RunInfo(NamedTuple):
+    """The run a stage is part of, as `args.run_info`: for what the stage records of itself, never what it does."""
+    title: str                # the log's first words: the script's stage, or `master <config>`
+    log: str                  # the run's log, under the repo if it is
+    command: str              # the stage's own command line
+    config: Optional[str]     # the master's config as copied for this run; None for a single script's run
 
 
 #region What a stage declares
@@ -98,7 +109,7 @@ class Stage(NamedTuple):
     name: str
     module: str
     build_parser: Callable[[], argparse.ArgumentParser]
-    run: Callable[[argparse.Namespace], int]
+    run: Callable[[argparse.Namespace], int]       # its args carry `run_info` (RunInfo) besides the options
     outputs: tuple = ()
     inputs: tuple = ()
     slots: bool = False                            # runs worker slots: relaunched on Linux for their caps
@@ -462,7 +473,7 @@ class RunLog:
 
     def __init__(self, path: Path):
         path.parent.mkdir(parents=True, exist_ok=True)
-        self.echo, self.lock = sys.stdout, threading.Lock()
+        self.path, self.echo, self.lock = path, sys.stdout, threading.Lock()
         self.file = open(path, "a", encoding="utf-8", newline="\n")
 
     def line(self, who: str, stage: str, level: str, text) -> None:
@@ -524,11 +535,16 @@ class _Handler(logging.Handler):
 class Run:
     """A run under way: what a stage's `after` may use to say something or start another script."""
 
-    def __init__(self, plan: RunPlan, log: RunLog):
-        self.plan, self.log = plan, log
+    def __init__(self, plan: RunPlan, log: RunLog, copy: Optional[Path] = None):
+        self.plan, self.log, self.copy = plan, log, copy
 
     def say(self, stage: str, level: str, text) -> None:
         self.log.line("run", stage, level, text)
+
+    def info(self, module: str, argv: Sequence[str]) -> RunInfo:
+        """The run, as the stage `python -m module argv` gets it."""
+        config = self.copy.read_text(encoding="utf-8") if self.copy is not None else None
+        return RunInfo(self.plan.title, _show(self.log.path), _command(module, argv), config)
 
     def relay(self, stage: str, module: str, argv: Sequence[str], child: str) -> int:
         """Runs `python -m module argv` as `child`'s stage, its output logged under `stage`; returns its exit code."""
@@ -536,7 +552,10 @@ class Run:
         return INTERRUPTED if interrupted else code
 
     def _child(self, stage: str, module: str, argv: Sequence[str], child: str) -> tuple[int, bool]:
-        env = {**os.environ, "PYTHONUNBUFFERED": "1", "PYTHONIOENCODING": "utf-8", CHILD_ENV: child}
+        info = RunInfo(self.plan.title, _show(self.log.path), _command(module, argv),
+                       str(self.copy) if self.copy is not None else None)  # the config by its copy's path
+        env = {**os.environ, "PYTHONUNBUFFERED": "1", "PYTHONIOENCODING": "utf-8", CHILD_ENV: child,
+               RUN_ENV: json.dumps(info._asdict())}
         proc = subprocess.Popen([sys.executable, "-m", module, *argv], cwd=REPO_ROOT, env=env, stdout=subprocess.PIPE,
                                 stderr=subprocess.PIPE)
         pumps = [threading.Thread(target=self._pump, args=(proc.stdout, stage, False), daemon=True),
@@ -571,6 +590,7 @@ class Run:
     def here(self, sp: StagePlan) -> int:
         """`sp`'s stage in this process, its output and logging caught into the log."""
         name = sp.stage.name
+        sp.args.run_info = self.info(sp.stage.module, sp.argv)
         out = _Lines(lambda text: self.log.line("cmd", name, "info", text))
         err = _Lines(lambda text: self.log.line("cmd", name, "error", text))
         root = logging.getLogger()
@@ -605,14 +625,13 @@ def Script_execute(plan: RunPlan, *, in_process: bool) -> int:
         int: 0, the failing stage's exit code, or 130 on Ctrl-C
     """
     log, copy = _open(plan)
-    run = Run(plan, log)
+    run = Run(plan, log, copy)
     t_run, ran, code = time.monotonic(), [], 0
     try:
         _header(run, plan, copy)
         for i, sp in enumerate(plan.stages):
             name, rest = sp.stage.name, [s.stage.name for s in plan.stages[i + 1:]]
-            run.say(name, "info", f"{_marker('START', name)}  " + " ".join(["python -m", sp.stage.module,
-                                                                             _line(sp.argv)]).rstrip()
+            run.say(name, "info", f"{_marker('START', name)}  {_command(sp.stage.module, sp.argv)}"
                     + (" (in this process)" if in_process else ""))
             t0 = time.monotonic()
             for out, w in zip(sp.stage.outputs, sp.writes):
@@ -701,6 +720,10 @@ def _summary(run: Run, plan: RunPlan, ran: list, code: int, seconds: float) -> N
 
 def _line(argv: Sequence[str]) -> str:
     return " ".join(f'"{a}"' if " " in a else a for a in argv)
+
+
+def _command(module: str, argv: Sequence[str]) -> str:
+    return " ".join(["python -m", module, _line(argv)]).rstrip()
 
 
 def _code_version() -> str:
@@ -796,6 +819,7 @@ def Script_main(stage: Stage, argv: Optional[Sequence[str]] = None) -> int:
 def _as_child(stage: Stage, argv: Sequence[str]) -> int:
     parser = stage.build_parser()
     args = parser.parse_args(argv)
+    args.run_info = _run_info_from_master()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s", datefmt="%H:%M:%S",
                         force=True)
     real, sys.stdout = sys.stdout, _Lines(logging.getLogger(stage.name).info)  # one stream to the master, in order
@@ -806,5 +830,14 @@ def _as_child(stage: Stage, argv: Sequence[str]) -> int:
     finally:
         sys.stdout.finish()
         sys.stdout = real
+
+
+def _run_info_from_master() -> Optional[RunInfo]:
+    """The run a master's child is part of, its config read from the copy the master named; None without one."""
+    given = os.environ.get(RUN_ENV)
+    if not given:
+        return None
+    info = RunInfo(**json.loads(given))
+    return info._replace(config=Path(info.config).read_text(encoding="utf-8") if info.config else None)
 
 #endregion

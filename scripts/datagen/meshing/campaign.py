@@ -10,7 +10,8 @@ ones a cut-short campaign left run again.
 
 Left out, --db is a new run store in the scratchpad, which a rerun cannot resume: name one to resume. `shared` is
 the repo's committed store, data/manifest/datagen/meshing/meshing.sqlite. Exit code 0 when the campaign ran to the
-end, 1 when it stopped early, 130 on Ctrl-C.
+end, 1 when it stopped early, 130 on Ctrl-C. The campaign's row in the store's batches records this run: its title,
+command, log, the master's config, and this computer's machine-check stamp.
 """
 
 import argparse
@@ -22,6 +23,7 @@ from scripts.datagen.engine import (
     GEOMETRY_DB, Output, OutputKind, Script_check_names, Script_given, Script_main, Script_names, Script_settings,
     Script_settings_option, Stage, UsageError,
 )
+from scripts.datagen.meshing.parity import Script_invocation
 from src.datagen.constants import WORKERS
 from src.datagen.meshing.optimizer.batch.campaign import Optim_campaign_summary, Optim_run_campaign
 from src.datagen.meshing.optimizer.batch.runner import EXECUTION_KEYS, Optim_execution, Optim_load_shapes
@@ -58,7 +60,8 @@ def run(args: argparse.Namespace) -> int:
         result = Optim_run_campaign(store, args.airfoils, execution["workers"], args.work_root, args.settings_label,
                                     geometry_db=args.geometry_db,
                                     overrides={k: v for k, v in settings.items() if k in STUDY_KEYS},
-                                    watchdog_s=execution["watchdog_s"], cap_mb=execution["cap_mb"])
+                                    watchdog_s=execution["watchdog_s"], cap_mb=execution["cap_mb"],
+                                    invocation=Script_invocation(args))
         print(Optim_campaign_summary(store, result))
     if isinstance(result.stopped, KeyboardInterrupt):
         return 130

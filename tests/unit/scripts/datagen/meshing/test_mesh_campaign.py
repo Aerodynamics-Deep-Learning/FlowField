@@ -1,8 +1,8 @@
 """
 Tests for `scripts.datagen.meshing.campaign`, the campaign's command line, i.e.:
 
-Step 1: Ensure the options reach the campaign, its store the scratchpad's when left out, its summary printed and
-how it ended the exit code
+Step 1: Ensure the options reach the campaign, its store the scratchpad's when left out, with the run's account of
+itself for its batch row; its summary printed and how it ended the exit code
     - test_the_options_reach_the_campaign
     - test_how_the_campaign_ended_is_the_exit_code
 Step 2: Ensure settings reach it through `--set` alone, each one it reads, and a mistake in what was asked stops it
@@ -60,10 +60,16 @@ def test_the_options_reach_the_campaign(campaign, tmp_path, data_root, capsys):
     assert mesh_campaign.main([]) == 0
     [scratch] = [p.parent for p in (data_root / "scratchpad").glob("*/campaign")]  # the run that left it out
     constants = {"overrides": {}, "watchdog_s": WATCHDOG_S, "cap_mb": SLOT_MEMORY_CAP_MB}
+    given, left_out = (kw.pop("invocation") for *_, kw in calls)
     assert calls == [(db, ["naca0012", "naca4412"], 2, work, "trial 3", {"geometry_db": manifest, **constants}),
                      (scratch / "campaign" / "campaign.sqlite", None, WORKERS, None, None,
                       {"geometry_db": engine.SHARED_GEOMETRY_DB, **constants})]
     assert "the summary" in capsys.readouterr().out
+    assert (given.run_name, given.config_yaml) == ("campaign", None)  # a single script's run: no config
+    assert given.command.startswith(f"python -m {mesh_campaign.STAGE.module} ") and "--settings-label" in given.command
+    assert left_out.log_path == str(next(scratch.glob("log_*.log")))
+    assert given.machine_check == {"stamp": None, "problem": given.machine_check["problem"]}
+    assert given.machine_check["problem"].startswith("this machine has not passed machine_check")
 
 
 @pytest.mark.parametrize("stopped, code", [(None, 0), (BatchStopped("3 airfoils aborted in a row", []), 1),

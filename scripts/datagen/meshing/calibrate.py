@@ -16,7 +16,8 @@ changes no constant.
 Every rung runs under the study's settings: the constants (src/datagen/constants.py) but those a run sets (`--set`;
 the calibration's own are the cal_ ones). Rungs 2 and 3 start from the golden jmax rung 1 recommends when it runs
 alongside them; a given golden jmax wins over it, with a warning. Left out, --out is a folder in the scratchpad;
-`shared` is the repo's, data/raw/datagen/meshing/report/calibration.
+`shared` is the repo's, data/raw/datagen/meshing/report/calibration. Each rung's row in the database's batches
+records this run, as the campaign's does.
 """
 
 import argparse
@@ -28,6 +29,7 @@ from scripts.datagen.engine import (
     GEOMETRY_DB, Output, OutputKind, Script_check_names, Script_given, Script_main, Script_names, Script_settings,
     Script_settings_option, Stage, UsageError,
 )
+from scripts.datagen.meshing.parity import Script_invocation
 from src.datagen.constants import CAL_RUNG2_CAP, CAL_RUNG3_CAP, WORKERS
 from src.datagen.meshing.optimizer.batch.calibrate import CAL_KEYS, Method, Optim_run_calibration
 from src.datagen.meshing.optimizer.batch.runner import EXECUTION_KEYS, Optim_execution, Optim_load_shapes
@@ -82,7 +84,8 @@ def run(args: argparse.Namespace) -> int:
         settings.get("cal_rung3_cap", CAL_RUNG3_CAP), settings.get("cal_rung2_cap", CAL_RUNG2_CAP),
         execution["workers"], args.geometry_db, args.work_root,
         overrides={k: v for k, v in settings.items() if k in STUDY_KEYS and k != "golden_jmax"},
-        method=Method.of(settings), watchdog_s=execution["watchdog_s"], cap_mb=execution["cap_mb"])
+        method=Method.of(settings), watchdog_s=execution["watchdog_s"], cap_mb=execution["cap_mb"],
+        invocation=Script_invocation(args))
     print(f"Report (every rung's tables): {files.report}; every run: {files.db}")  # findings logged per rung
     return 0
 

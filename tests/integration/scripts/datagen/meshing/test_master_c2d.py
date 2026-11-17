@@ -2,7 +2,8 @@
 The master on the real sampler and c2d, i.e.:
 
 Step 1: Ensure a config's campaign and re-mesh run as child processes, the re-mesh reading the campaign's store,
-its mesh delivered on the stored hash, and the run logged, labelled, into its named run folder
+its mesh delivered on the stored hash, the run logged, labelled, into its named run folder, and the campaign's
+batch row naming the run, its log and its config
     - test_a_campaign_then_its_remesh_through_the_master
 
 naca0012 from the tests' airfoil manifest, one worker, the run folder and every output in a temporary folder and the
@@ -57,6 +58,11 @@ def test_a_campaign_then_its_remesh_through_the_master(tmp_path, capsys, airfoil
     [(_, shape)] = Optim_load_shapes(["naca0012"], db=airfoils_manifest)
     with RunStore.open(store, read_only=True) as runs:
         best = runs.run(runs.best(shape.geometry_id, Optim_build_settings()["settings_id"]))
+        batch = runs.batch(best["batch_id"])
+    assert (batch["run_name"], batch["log_path"], batch["status"], batch["n_passed"]) == (
+        "master run", str(log), "completed", 1)
+    assert batch["config_yaml"] == config.read_text(encoding="utf-8")
+    assert batch["command"].startswith("python -m scripts.datagen.meshing.campaign ")
     mesh = out / "naca0012" / "naca0012.su2"
     assert Optim_su2_sha256(mesh)[0] == best["su2_sha256"] and (out / "naca0012" / "naca0012.vtk").exists()
 # endregion

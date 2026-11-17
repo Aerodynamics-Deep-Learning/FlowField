@@ -7,16 +7,20 @@ changing a constant makes a new settings_id, under which every airfoil runs agai
 It resumes by itself: an airfoil with a passed or failed ladder under the run's settings is skipped, and a
 ladder a cut-short campaign left running is marked aborted at the start, so its airfoil runs again. The
 workers run in slots (`runner`), and the summary is read back from the store.
+
+Each campaign is one row of the store's batches (`batches.Optim_batch`), one with nothing left to run included.
 """
 
 import logging
 import statistics
 import tempfile
 import time
+import uuid
 from collections import Counter
 from typing import Callable, NamedTuple, Optional, Sequence
 
 from src.datagen.constants import SLOT_MEMORY_CAP_MB, WATCHDOG_S, WORKERS
+from src.datagen.meshing.optimizer.batch.batches import Invocation, Optim_batch
 from src.datagen.meshing.optimizer.batch.runner import BatchStopped, Optim_load_shapes, Optim_run_airfoils
 from src.datagen.meshing.optimizer.common.settings import Optim_build_settings
 from src.datagen.meshing.optimizer.evaluate.context import RunContext
@@ -31,7 +35,7 @@ _MESH_COLUMNS = (("golden", "meshes_golden"), ("jmax_bump", "meshes_bump"), ("sm
 
 
 class CampaignResult(NamedTuple):
-    batch_id: Optional[str]           # None when nothing was left to run
+    batch_id: str                     # its row in the store's batches
     settings_id: str
     skipped: list[str]                # finished under these settings before this campaign
     names: list[str]                  # run by this campaign
@@ -42,9 +46,9 @@ class CampaignResult(NamedTuple):
 def Optim_run_campaign(store: RunStore, names: Optional[Sequence[str]] = None, workers: int = WORKERS,
                        work_root=None, label: Optional[str] = None, task: Callable = Optim_run_ladder,
                        geometry_db=None, *, overrides: Optional[dict] = None, watchdog_s: float = WATCHDOG_S,
-                       cap_mb: int = SLOT_MEMORY_CAP_MB) -> CampaignResult:
+                       cap_mb: int = SLOT_MEMORY_CAP_MB, invocation: Optional[Invocation] = None) -> CampaignResult:
     """
-    Runs the ladder over the airfoils not yet finished under the run's settings.
+    Runs the ladder over the airfoils not yet finished under the run's settings, recorded as one batch.
 
     Args:
         store (RunStore): The run store, `meshing.sqlite` for a real campaign
@@ -57,12 +61,14 @@ def Optim_run_campaign(store: RunStore, names: Optional[Sequence[str]] = None, w
         overrides (dict | None): The run's settings over the constants (`Optim_build_settings`)
         watchdog_s (float): A slot silent this long is killed as hung
         cap_mb (int): Each slot's memory cap
+        invocation (Invocation | None): How it was started, for its batch row; nothing of it if None
 
     Returns:
         CampaignResult: What ran, and what stopped it early (a `BatchStopped` or Ctrl-C), if anything
 
     Raises:
         ValueError: If a name has no stored shape, before anything is recorded
+        Exception: Whatever else ends it, once its batch row says it crashed
     """
     t0 = time.perf_counter()
     settings = Optim_build_settings(**(overrides or {}))
@@ -76,17 +82,16 @@ def Optim_run_campaign(store: RunStore, names: Optional[Sequence[str]] = None, w
     todo = [(name, shape) for name, shape in airfoils if shape.geometry_id not in finished]
     skipped = [name for name, shape in airfoils if shape.geometry_id in finished]
     logger.info("settings %s: %d airfoils to run, %d finished already", settings_id, len(todo), len(skipped))
-    if not todo:
-        return CampaignResult(None, settings_id, skipped, [], time.perf_counter() - t0, None)
-
-    with tempfile.TemporaryDirectory(prefix="campaign_") as scratch:
-        ctx = RunContext.create(settings, work_root or scratch)
-        stopped = None
-        try:
-            Optim_run_airfoils(task, todo, ctx, store, workers, watchdog_s=watchdog_s, cap_mb=cap_mb)
-        except (BatchStopped, KeyboardInterrupt) as e:
-            stopped = e
-    return CampaignResult(ctx.batch_id, settings_id, skipped, [name for name, _ in todo], time.perf_counter() - t0,
+    batch_id, stopped = str(uuid.uuid4()), None
+    try:
+        with Optim_batch(store, batch_id, settings_id, invocation, workers, len(airfoils), len(todo), len(skipped)):
+            if todo:
+                with tempfile.TemporaryDirectory(prefix="campaign_") as scratch:
+                    ctx = RunContext.create(settings, work_root or scratch, batch_id)
+                    Optim_run_airfoils(task, todo, ctx, store, workers, watchdog_s=watchdog_s, cap_mb=cap_mb)
+    except (BatchStopped, KeyboardInterrupt) as e:
+        stopped = e
+    return CampaignResult(batch_id, settings_id, skipped, [name for name, _ in todo], time.perf_counter() - t0,
                           stopped)
 
 
@@ -104,7 +109,7 @@ def Optim_campaign_summary(store: RunStore, result: CampaignResult) -> str:
     """
     out = [f"Campaign under settings {result.settings_id}: {len(result.names)} airfoils run, "
            f"{len(result.skipped)} finished before, in {result.seconds / 60:.1f} min"]
-    if result.batch_id is None:
+    if not result.names:
         out.append("Nothing left to run.")
         return "\n".join(out)
     ladders = store.ladders(result.batch_id)

@@ -20,12 +20,15 @@ Step 4: Ensure the master's stages run as child processes, their lines labelled 
     - test_ctrl_c_waits_for_the_child_then_stops_the_run
 Step 5: Ensure a script's own entry: its help, and only running when it is a child
     - test_a_scripts_help_and_its_run_as_a_child
+Step 6: Ensure a stage is handed the run it is part of, in this process and as a child
+    - test_a_stage_gets_its_run_in_this_process_and_as_a_child
 
 The stages are `engine_stages.py`'s stand-ins; the scripts' data/ is a temporary folder (conftest).
 """
 
 import argparse
 import datetime
+import json
 import logging
 import os
 import re
@@ -266,4 +269,24 @@ def test_a_scripts_help_and_its_run_as_a_child(tmp_path, data_root, monkeypatch,
     monkeypatch.setitem(os.environ, CHILD_ENV, "maker")  # started by a run: only runs
     assert Script_main(MAKER, ["--out", str(tmp_path), "--exit", "4"]) == 4
     assert (tmp_path / "made.txt").exists() and not list(tmp_path.glob("*.log"))
+    assert not (tmp_path / "run_info.json").exists()  # no master, no run handed on
+# endregion
+
+
+# region Step 6
+def test_a_stage_gets_its_run_in_this_process_and_as_a_child(tmp_path, data_root, capsys):
+    here, config = tmp_path.resolve(), tmp_path / "run.yaml"
+    config.write_text("maker:\n  enabled: true\n", encoding="utf-8")
+
+    assert Script_run("solo", [(MAKER, ["--out", str(here / "a")])], in_process=True) == 0
+    assert Script_run("kids", [(MAKER, ["--out", str(here / "b")])], in_process=False, title="master run.yaml",
+                      config=config, folder=here / "run") == 0
+
+    solo, kid = (json.loads((here / f / "run_info.json").read_text(encoding="utf-8")) for f in ("a", "b"))
+    quoted = {f: f'"{here / f}"' if " " in str(here) else str(here / f) for f in ("a", "b")}  # as the log shows it
+    assert solo == {"title": "solo", "log": str(_log(data_root, "solo")),
+                    "command": f"python -m {MAKER.module} --out {quoted['a']} --exit 0", "config": None}
+    assert kid == {"title": "master run.yaml", "log": str(_only_log(here / "run")),
+                   "command": f"python -m {MAKER.module} --out {quoted['b']} --exit 0",
+                   "config": "maker:\n  enabled: true\n"}
 # endregion

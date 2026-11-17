@@ -16,7 +16,8 @@ Step 3: Ensure rung 3's curves, its replay of the plateau, and the budgets
     - test_a_failed_golden_run_is_no_best_to_beat
     - test_the_plateau_pick_takes_the_fewest_meshes_within_the_loss
     - test_the_budgets_round_up_to_ten
-Step 4: Ensure the rungs run together, the ordinary airfoils, the golden jmax's source, the report and its files
+Step 4: Ensure the rungs run together, each one batch row (rung 2 with nothing to run too), the ordinary airfoils,
+the golden jmax's source, the report and its files
     - test_the_ordinary_airfoils_are_drawn_the_same_way
     - test_a_calibration_runs_every_rung_and_reports_it
     - test_rung_2_takes_the_airfoils_rung_1_found_over_a_shape_gate
@@ -39,6 +40,7 @@ import pytest
 
 from src.datagen.constants import DX_MAX, GOLDEN_JMAX, JMAX_MAX, JMAX_MIN, SMOOTHING_DEFAULTS
 from src.datagen.meshing.optimizer.batch import calibrate as cal
+from src.datagen.meshing.optimizer.batch.batches import Invocation
 from src.datagen.meshing.optimizer.common.settings import Optim_build_settings
 from src.datagen.meshing.optimizer.evaluate.context import RunContext
 from src.datagen.meshing.optimizer.evaluate.executor import Optim_failed_gates, RunResult
@@ -347,6 +349,12 @@ def test_a_calibration_runs_every_rung_and_reports_it(stubs, tmp_path, monkeypat
         assert (r3["golden_jmax"], r3["rung3_budget"]) == (result.golden_jmax, 10)
         labels = {row[0] for row in store._conn.execute("SELECT label FROM settings")}
         assert labels == {"calibration rung 1", "calibration rung 2", "calibration rung 3"}
+        batches = store._conn.execute(
+            "SELECT s.label, b.status, b.airfoils_run, b.meshes, (SELECT COUNT(*) FROM runs r WHERE r.batch_id = "
+            "b.batch_id AND r.entry_flag IS NOT NULL), (SELECT COUNT(*) FROM ladders l WHERE l.batch_id = b.batch_id) "
+            "FROM batches b JOIN settings s USING (settings_id) ORDER BY b.rowid").fetchall()
+        assert [b[:3] for b in batches] == [(f"calibration rung {r}", "completed", 2) for r in (1, 2, 3)]
+        assert all(meshes == reached > 0 and ladders == 2 for *_, meshes, reached, ladders in batches)  # rung 1 too
     logged = [r.getMessage() for r in caplog.records if r.name == cal.__name__]
     per_airfoil = [r.getMessage() for r in caplog.records if r.name == _RUNNER and r.getMessage().startswith("naca")]
     assert per_airfoil == []  # rung 1's skew 0.3 at jmax* is rung 2's work, rung 3's passes its design: no lines
@@ -380,7 +388,10 @@ def test_rung_2_takes_the_airfoils_rung_1_found_over_a_shape_gate(stubs, tmp_pat
     _world(monkeypatch, _sr_from(140))  # jmax* passes every gate: rung 2 has nothing to run
     with RunStore.open(tmp_path / "other.sqlite") as store, caplog.at_level(logging.INFO, logger=cal.__name__):
         result = cal.Optim_calibrate(store, (1, 2), None, workers=1, work_root=tmp_path / "work2")
+        rows = store._conn.execute("SELECT s.label, b.status, b.airfoils_asked, b.airfoils_run FROM batches b "
+                                   "JOIN settings s USING (settings_id) ORDER BY b.rowid").fetchall()
     assert 2 not in result.stages
+    assert rows == [("calibration rung 1", "completed", 2, 2), ("calibration rung 2", "nothing_to_run", 0, 0)]
     assert any(r.getMessage().endswith("none to run: every airfoil passes the shape gates at jmax* in rung 1")
                for r in caplog.records)
 
@@ -417,7 +428,8 @@ def test_a_given_golden_jmax_over_rung_1_is_warned(stubs, tmp_path, monkeypatch,
 def test_a_calibration_writes_its_report_and_database_named_by_its_start(stubs, tmp_path, monkeypatch):
     _world(monkeypatch, _sr_from(142))
     out = tmp_path / "calibration"  # made on the way
-    files = cal.Optim_run_calibration(out, (1,), ["naca0012"], workers=1)
+    files = cal.Optim_run_calibration(out, (1,), ["naca0012"], workers=1,
+                                      invocation=Invocation("master cal", "python -m x", "log_1.log", "a: 1\n"))
 
     assert re.fullmatch(rf"mesh_calibrate_{date.today().isoformat()}_\d{{6}}", files.db.stem)
     assert (files.report, files.db.parent) == (files.db.with_suffix(".txt"), out)
@@ -425,6 +437,8 @@ def test_a_calibration_writes_its_report_and_database_named_by_its_start(stubs, 
     assert report == files.text and "naca0012" in report and "Rung 1: n*, jmax*" in report
     with RunStore.open(files.db, read_only=True) as store:
         assert store._conn.execute("SELECT COUNT(*) FROM runs WHERE rung = 'bisect'").fetchone()[0] > 0
+        [row] = store._conn.execute("SELECT run_name, command, log_path, config_yaml FROM batches").fetchall()
+    assert row == ("master cal", "python -m x", "log_1.log", "a: 1\n")  # how it was started, on its rung's row
     for rungs in ((4,), ()):
         with pytest.raises(ValueError, match="rungs are any of 1, 2, 3"):
             cal.Optim_run_calibration(tmp_path / "other", rungs)

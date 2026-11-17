@@ -2,12 +2,13 @@
 Stand-in stages for the engine's tests, kept in a module of their own so the master can start them as child
 processes (`python -m tests.unit.scripts.datagen.engine_stages`, the stage named by FLOWFIELD_STAGE_CHILD):
 
-    maker   writes `made.txt` into its output folder, prints a line, logs an info and a warning, then exits
-            with --exit, or raises as --raise says
+    maker   writes `made.txt` into its output folder (and `run_info.json`, the run it was handed, when it was
+            handed one), prints a line, logs an info and a warning, then exits with --exit, or raises as --raise says
     reader  copies an earlier `made.txt` (its input, the maker's output when this run made one) into its file
 """
 
 import argparse
+import json
 import logging
 import os
 import sys
@@ -30,6 +31,8 @@ def _maker_parser() -> argparse.ArgumentParser:
 def _make(args: argparse.Namespace) -> int:
     args.out.mkdir(parents=True, exist_ok=True)
     (args.out / "made.txt").write_text("made", encoding="utf-8")
+    if args.run_info is not None:
+        (args.out / "run_info.json").write_text(json.dumps(args.run_info._asdict()), encoding="utf-8")
     print("made it")
     logging.getLogger("maker").info("an info")
     logging.getLogger("maker").warning("a warning")
