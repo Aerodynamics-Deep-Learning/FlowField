@@ -59,6 +59,7 @@ campaign:                            # every airfoil's best mesh (scripts/datage
 remesh:                              # best runs' meshes back out, hash-checked (scripts/datagen/meshing/remesh.py)
   enabled: true
   airfoils: [naca0012, s1223]        # or  all: true    or  run: <run id>
+  workers: 6                         # by name; need not match the campaign's
   vtk: true
   out: experiments/dx003/remeshed    # writes
   # db: shared                       reads; default: this run's campaign, else shared

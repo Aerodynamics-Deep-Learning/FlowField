@@ -1,7 +1,8 @@
 """
 The re-mesh on the real c2d, i.e.:
 
-Step 1: Ensure a stored best run is rebuilt bit for bit into its airfoil's folder, its .vtk alongside
+Step 1: Ensure a stored best run is rebuilt bit for bit into its airfoil's folder, its .vtk alongside, in this
+process and on worker processes, the outcomes in the order asked
     - test_a_best_run_is_remeshed_bit_for_bit
 
 naca0012 from the tests' airfoil manifest is meshed once by the executor, at smoothing that passes the study's gates,
@@ -55,4 +56,13 @@ def test_a_best_run_is_remeshed_bit_for_bit(tmp_path, airfoils_manifest):
     folder = out / "naca0012"
     assert sorted(os.listdir(folder)) == ["naca0012.su2", "naca0012.vtk"]  # no temp folder, no c2d side files
     assert Optim_su2_sha256(folder / "naca0012.su2")[0] == row["su2_sha256"]
+
+    pooled = tmp_path / "pooled"  # on a spawned worker, its own connection; naca4412 has no best run
+    with RunStore.open(db, read_only=True) as store:
+        missing, delivered = Optim_remesh_airfoils(store, ["naca4412", "naca0012"], pooled,
+                                                   geometry_db=airfoils_manifest, workers=2)
+    assert (missing.name, delivered.name, delivered.error) == ("naca4412", "naca0012", None)
+    assert missing.error.startswith("no best run: never finished a campaign ladder")
+    assert sorted(os.listdir(pooled / "naca0012")) == ["naca0012.su2"]
+    assert Optim_su2_sha256(pooled / "naca0012" / "naca0012.su2")[0] == row["su2_sha256"]
 # endregion

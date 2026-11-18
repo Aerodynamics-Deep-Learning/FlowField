@@ -1,8 +1,8 @@
 """
 Tests for `scripts.datagen.meshing.remesh`, the re-mesh's command line, i.e.:
 
-Step 1: Ensure the options pick the runs, the folder is the scratchpad's when left out, what was not delivered is
-named, the quality follows a re-mesh by name, and the exit code says if all were
+Step 1: Ensure the options pick the runs and the workers, the folder is the scratchpad's when left out, what was not
+delivered is named, the quality follows a re-mesh by name, and the exit code says if all were
     - test_the_airfoils_best_runs_are_asked_for
     - test_one_run_is_asked_for_by_its_id
 Step 2: Ensure a mistake in what was asked stops it before anything meshes
@@ -18,6 +18,7 @@ import pytest
 
 from scripts.datagen import engine
 from scripts.datagen.meshing import remesh as mesh_remesh
+from src.datagen.constants import WORKERS
 from src.datagen.meshing.optimizer.batch.remesh import RemeshOutcome
 
 
@@ -78,10 +79,10 @@ def remesh(monkeypatch):
 def test_the_airfoils_best_runs_are_asked_for(remesh, db, tmp_path, data_root, capsys):
     out, manifest = tmp_path.resolve() / "out", tmp_path.resolve() / "geometry.sqlite"
     manifest.touch()
-    shared = {"with_vtk": False, "geometry_db": engine.SHARED_GEOMETRY_DB, "overrides": {}}
+    shared = {"with_vtk": False, "geometry_db": engine.SHARED_GEOMETRY_DB, "overrides": {}, "workers": WORKERS}
 
     assert mesh_remesh.main(["--airfoils", "naca4412,naca0012", "--out", str(out), "--vtk", "--db", str(db),
-                             "--geometry-db", str(manifest)]) == 1
+                             "--geometry-db", str(manifest), "--workers", "2"]) == 1
     printed = capsys.readouterr().out  # why naca4412 was not delivered, the batch warns of as it happens
     assert f"Re-meshed 1 of 2 into {out}; not delivered: naca4412" in printed and "the quality table" in printed
     assert mesh_remesh.main(["--all", "--out", str(out), "--db", str(db)]) == 1
@@ -89,11 +90,13 @@ def test_the_airfoils_best_runs_are_asked_for(remesh, db, tmp_path, data_root, c
     left_out = remesh[2][2]
     assert left_out.name == "remesh" and left_out.parent.parent == data_root / "scratchpad"  # its run folder
     assert remesh == [("airfoils", ["naca4412", "naca0012"], out,
-                       {"with_vtk": True, "geometry_db": manifest, "overrides": {}}),
+                       {"with_vtk": True, "geometry_db": manifest, "overrides": {}, "workers": 2}),
                       ("airfoils", None, out, shared),
                       ("airfoils", ["naca0012"], left_out, shared)]
-    assert mesh_remesh.main(["--all", "--out", str(out), "--db", str(db), "--set", "gate_skew_max=0.22"]) == 1
+    assert mesh_remesh.main(["--all", "--out", str(out), "--db", str(db), "--set", "gate_skew_max=0.22",
+                             "--set", "workers=3"]) == 1
     assert remesh[-1][3]["overrides"] == {"gate_skew_max": 0.22}  # the campaign's settings, to find its meshes
+    assert remesh[-1][3]["workers"] == 3  # how many re-mesh at once: not one of them
 
 
 def test_one_run_is_asked_for_by_its_id(remesh, db, tmp_path, capsys):

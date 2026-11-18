@@ -28,6 +28,7 @@ from scripts.datagen.engine import SHARED, PlanError, Script_refuse, Script_run,
 from scripts.datagen.geometry import calibrate as geometry_calibrate, ingest as geometry_ingest
 from scripts.datagen.meshing import calibrate as mesh_calibrate, campaign as mesh_campaign, machine_check
 from scripts.datagen.meshing import merge as mesh_merge, remesh as mesh_remesh
+from src.datagen.meshing.optimizer.batch.runner import EXECUTION_KEYS
 
 STAGES = (machine_check.STAGE, geometry_calibrate.STAGE, geometry_ingest.STAGE, mesh_calibrate.STAGE,
           mesh_campaign.STAGE, mesh_remesh.STAGE, mesh_merge.STAGE)
@@ -128,7 +129,8 @@ def _settings(value, where: str, problems: list) -> dict:
 def _disagreements(resolved: dict, options: dict) -> list[tuple[str, str]]:
     """
     A stage that reads what an earlier stage of the run writes must set alike every setting both read: the re-mesh
-    finds the campaign's meshes by their settings, a mesh stage the ingest's shapes by their CST order and nose.
+    finds the campaign's meshes by their settings, a mesh stage the ingest's shapes by their CST order and nose. How
+    a stage runs (`EXECUTION_KEYS`: workers, watchdog, memory cap) changes nothing it makes, so it need not agree.
     """
     stages, out = {stage.name: stage for stage in STAGES}, []
     for name, settings in resolved.items():
@@ -136,7 +138,7 @@ def _disagreements(resolved: dict, options: dict) -> list[tuple[str, str]]:
             maker = inp.made_by[0] if inp.made_by else None
             if maker not in resolved or inp.option in options[name]:  # it reads no output of this run
                 continue
-            for key in sorted(stages[name].reads & stages[maker].reads):
+            for key in sorted((stages[name].reads & stages[maker].reads) - EXECUTION_KEYS):
                 if _value(settings, key) != _value(resolved[maker], key):
                     out.append((name, f"{key} is {_said(settings, key)} here but {_said(resolved[maker], key)} in "
                                       f"{maker}, whose {inp.what} it reads; both must set it alike"))

@@ -5,11 +5,11 @@ an airfoil's mesh is its best run under the run's settings, which must be the ca
 by --run, any run that meshed, best or not.
 
     python -m scripts.datagen.meshing.remesh (--airfoils a,b | --all | --run ID) [--out <folder>] [--vtk]
-        [--db PATH] [--geometry-db PATH] [--set key=value ...]
+        [--db PATH] [--geometry-db PATH] [--workers 6] [--set key=value ...]
 
 Left out, --out is the run folder's remesh/, inside its campaign/ when a campaign in the same run wrote its store
 there (meshes are never kept in a committed place); --db is the repo's run store, `shared`, unless a campaign in the
-same run made one. Airfoils run one after another; one that cannot be
+same run made one. By name, airfoils run on `workers` processes (1: one after another, here); one that cannot be
 re-meshed is warned of and the rest go on. By name, the delivered meshes' quality against the gates follows, as a
 table and as histograms in `<out>/quality.png`. The run store is only read, so this can run beside a campaign. Exit
 code 0 when every mesh was delivered, else 1.
@@ -24,12 +24,16 @@ from scripts.datagen.engine import (
     GEOMETRY_DB, Input, Output, OutputKind, Script_check_names, Script_given, Script_main, Script_names,
     Script_settings, Script_settings_option, Stage, UsageError,
 )
+from src.datagen.constants import WORKERS
 from src.datagen.meshing.optimizer.batch.quality import Optim_remesh_quality
 from src.datagen.meshing.optimizer.batch.remesh import Optim_remesh_airfoils, Optim_remesh_run
-from src.datagen.meshing.optimizer.batch.runner import Optim_load_shapes
+from src.datagen.meshing.optimizer.batch.runner import Optim_execution, Optim_load_shapes
 from src.datagen.meshing.optimizer.common.paths import MESHING_DB
 from src.datagen.meshing.optimizer.common.settings import STUDY_KEYS, Optim_shape_version
 from src.datagen.meshing.optimizer.manifest.store import RunStore
+
+# The campaign's settings, to find its meshes, and how many re-mesh at once
+READS = STUDY_KEYS | {"workers"}
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -45,7 +49,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--vtk", action="store_true", help="also deliver each .vtk")
     parser.add_argument("--db", type=Path, help="the run store to read (default: the repo's, `shared`)")
     parser.add_argument("--geometry-db", type=Path, help="the geometry manifest (default: the repo's, `shared`)")
-    Script_settings_option(parser, STUDY_KEYS)
+    parser.add_argument("--workers", type=int, help=f"processes re-meshing at once, by name (default {WORKERS}); "
+                                                    f"short for --set workers=N")
+    Script_settings_option(parser, READS)
     return parser
 
 
@@ -68,7 +74,9 @@ def run(args: argparse.Namespace) -> int:
             outcomes = [Optim_remesh_run(store, args.run, args.out, with_vtk=args.vtk, geometry_db=args.geometry_db)]
         else:  # each one not delivered is warned of as it happens
             outcomes = Optim_remesh_airfoils(store, args.airfoils, args.out, with_vtk=args.vtk,
-                                             geometry_db=args.geometry_db, overrides=settings)
+                                             geometry_db=args.geometry_db,
+                                             overrides={k: v for k, v in settings.items() if k in STUDY_KEYS},
+                                             workers=Optim_execution(settings)["workers"])
             quality = Optim_remesh_quality(store, outcomes, args.out)
 
     missing = [o for o in outcomes if o.remeshed is None]
@@ -97,7 +105,7 @@ STAGE = Stage(
     outputs=(Output("out", OutputKind.FOLDER, "re-mesh folder", exists="meshes of the same airfoils are replaced",
                     within="campaign"),),
     inputs=(Input("db", "run store", shared=lambda: MESHING_DB, made_by=("campaign", "db")), GEOMETRY_DB),
-    meshes=True, check=_check, reads=STUDY_KEYS)
+    meshes=True, check=_check, reads=READS, aliases=(("workers", "workers"),))
 
 
 def main(argv=None) -> int:

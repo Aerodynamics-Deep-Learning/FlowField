@@ -76,7 +76,7 @@ def test_settings_reach_the_stages_that_read_them(tmp_path):
     assert [(stage.name, argv) for stage, argv in config.stages] == [  # each stage only what it reads
         ("mesh_calibrate", ["--set", "gate_skew_max=0.2", "--set", "workers=4", "--set", "cal_windows=10,20"]),
         ("campaign", ["--set", "gate_skew_max=0.22", "--set", "workers=4"]),
-        ("remesh", ["--all", "--set", "gate_skew_max=0.22"])]
+        ("remesh", ["--all", "--set", "gate_skew_max=0.22", "--set", "workers=4"])]
     assert config.sources[("mesh_calibrate", "gate_skew_max")] == "its own settings, over the settings block's 0.22"
     assert config.sources[("campaign", "workers")] == "the settings block" and config.notes == []
     unread = Script_load_config(_config(tmp_path, "settings:\n  cal_set: [naca0012]\n"
@@ -110,6 +110,8 @@ def test_a_stage_and_the_one_whose_output_it_reads_must_agree(tmp_path):
     for agrees in ("campaign:\n  enabled: true\n  settings:\n    cst_order: 10\n",  # cst_fit_tol is the ingest's own
                    "campaign:\n  enabled: true\n  geometry_db: shared\n"):          # it reads another manifest
         Script_load_config(_config(tmp_path, ingest + agrees))
+    Script_load_config(_config(tmp_path, "machine_check:\n  enabled: false\ncampaign:\n  enabled: true\n  settings:\n"
+                                         "    workers: 1\nremesh:\n  enabled: true\n  all: true\n"))  # never agreed on
 
 
 def test_folder_names_the_run_folder(tmp_path, data_root, capsys):

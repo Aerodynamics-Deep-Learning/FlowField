@@ -59,7 +59,7 @@ stage is the script's name in configs and logs.
 | `geometry.ingest [folder]` | `geometry_ingest` | adds the folder's airfoils to a manifest; without a folder, brings stored ones to the current shape version | the `.dat` folder | `--data-root`: a data folder (manifest, raw copies, reports) | ~15 s for 190 files |
 | `meshing.calibrate` | `mesh_calibrate` | measures the numbers the ladder's rungs run on | `--geometry-db` | `--out`: a folder, `mesh_calibrate_<start>.txt` and `.sqlite` | ~1 h for 158 airfoils on 6 workers (rung 1 ~12 min, rung 2 ~6, rung 3 ~41) |
 | `meshing.campaign` | `campaign` | the ladder over every airfoil not finished under the run's settings (the constants, unless set) | `--geometry-db` | `--db`: a run store | ~10 min for 158 airfoils on 6 workers, most of it the few that reach rung 3 |
-| `meshing.remesh` | `remesh` | rebuilds best runs (`--airfoils`, `--all`) or one run (`--run`), each checked against its stored hash | `--db`, `--geometry-db` | `--out`: a folder per airfoil, and `quality.png` | ~3 s an airfoil |
+| `meshing.remesh` | `remesh` | rebuilds best runs (`--airfoils`, `--all`, on `--workers` processes) or one run (`--run`), each checked against its stored hash | `--db`, `--geometry-db` | `--out`: a folder per airfoil, and `quality.png` | ~3 s an airfoil on one worker |
 | `meshing.merge` | `merge` | folds one run store into another (another machine's into the shared one): the rows it lacks, by id, then each best run recomputed | `--store` (in a config: this run's campaign's) | `--into`: a run store | seconds |
 
 Exit codes, for every script and the master:
@@ -270,7 +270,8 @@ order and nose at the top of the config so the mesh stages, which find their sha
 
 In a config, a stage that reads what an earlier stage of the run wrote must set alike every setting both read
 (the master refuses a run where they differ): the re-mesh and the campaign whose run store it reads, a mesh stage
-and the ingest whose manifest it reads. A stage told to read another store or manifest is free of it.
+and the ingest whose manifest it reads. A stage told to read another store or manifest is free of it, and how a
+stage runs (`workers`, `watchdog_s`, `slot_memory_cap_mb`) never has to agree.
 
 ## 9. Ingesting into the shared manifest is a release
 
