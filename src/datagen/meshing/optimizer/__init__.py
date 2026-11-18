@@ -13,6 +13,7 @@ _EXPORTS = {
     "Optim_run_calibration": "batch.calibrate",     # a dated calibration: its database and report in one folder
     "Optim_remesh_airfoils": "batch.remesh",        # each airfoil's best run meshed again into its own folder
     "Optim_remesh_run": "batch.remesh",             # one run by id meshed again into its airfoil's folder
+    "Optim_remesh_at_re": "batch.remesh",           # an airfoil's best run meshed at an asked Re, for the solver side
     # One airfoil
     "Optim_run_ladder": "search.ladder",            # n*, the golden run and the rungs it routes to, reported as events
     "LadderOutcome": "search.events",         # how a ladder ended, its error handed up rather than raised
@@ -31,10 +32,11 @@ _EXPORTS = {
     "Optim_sample_for_mesher": "evaluate.sampling",    # one config's surface points as the mesher's input
     "Optim_sample_for_study": "evaluate.sampling",     # the same, the rest of the input from the settings row
     # One stored run
-    "Optim_remesh": "evaluate.remesh",              # a run meshed again, delivered once it hashes to the stored mesh
+    "Optim_remesh": "evaluate.remesh",              # a run meshed again: hash-checked, or gate-judged at another Re
     "Remeshed": "evaluate.remesh",
     "RemeshRefused": "evaluate.remesh",       # no mesh to rebuild, or something it was meshed by has moved
     "RemeshMismatch": "evaluate.remesh",      # the rebuilt mesh is not the stored one; nothing delivered
+    "RemeshFailedGates": "evaluate.remesh",   # the mesh at another Re fails a gate; nothing delivered
     # The study's definition and record
     "Optim_build_settings": "common.settings",      # the hashed settings row every run is meshed and judged by
     "RunStore": "manifest.store",             # meshing.sqlite: settings, ladders, runs and the best run per airfoil

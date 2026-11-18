@@ -129,10 +129,10 @@ def Optim_sample_for_mesher(config: MeshingConfig, contour: Contour, *, airfoil_
 
 
 def Optim_sample_for_study(settings: dict, config: MeshingConfig, contour: Contour, airfoil_name: str,
-                           working_dir: str, write_vtk: bool = False) -> SampledInput:
+                           working_dir: str, write_vtk: bool = False, mesh_re: Optional[float] = None) -> SampledInput:
     """
-    `Optim_sample_for_mesher` as the study calls it: the freestream at the settings' design Re, the
-    settings' gates as the count limits, its backend and topology, `CHORD`, and a file-safe name.
+    `Optim_sample_for_mesher` as the study calls it: the freestream at the settings' design Re (or `mesh_re`),
+    the settings' gates as the count limits, its backend and topology, `CHORD`, and a file-safe name.
 
     Args:
         settings (dict): The settings row the run is meshed under
@@ -141,13 +141,17 @@ def Optim_sample_for_study(settings: dict, config: MeshingConfig, contour: Conto
         airfoil_name (str): The airfoil's name; the mesher's files take `Optim_safe_name`'s copy
         working_dir (str): The run's own, existing directory
         write_vtk (bool): Whether the mesher also writes the diagnostic .vtk
+        mesh_re (float | None): The Re to mesh at; None for the settings' design Re
 
     Returns:
         SampledInput: As `Optim_sample_for_mesher` returns it, raising as it does
+
+    Raises:
+        ValidationError: If `mesh_re` is outside the freestream's range
     """
     s = settings
     # c2d reads only Re; Freestream requires an alpha and a mach regardless
-    freestream = Freestream(alpha=0.0, Re=s["design_re"], mach=0.5)
+    freestream = Freestream(alpha=0.0, Re=s["design_re"] if mesh_re is None else mesh_re, mach=0.5)
     limits = QualityLimits(skew_max=s["gate_skew_max"], ortho_min=s["gate_ortho_min"], jac_min=s["gate_jac_min"],
                            size_ratio_max=s["gate_size_ratio_max"])
     return Optim_sample_for_mesher(config, contour, airfoil_name=Optim_safe_name(airfoil_name), chord=CHORD,

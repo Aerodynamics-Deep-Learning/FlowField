@@ -1,11 +1,13 @@
 """
 A stored run meshed again: the study keeps no mesh files, only each run's config and its `.su2`'s hash, so a
-mesh is rebuilt on the executor's own input path and delivered only if it hashes to what the run stored.
+mesh is rebuilt on the executor's own input path and delivered only if it hashes to what the run stored. At
+another Re there is no stored hash: that mesh is delivered only if it passes the run's settings' gates.
 
-    Optim_remesh    one run: checked, meshed, verified, delivered
-    Remeshed        what it delivered
-    RemeshRefused   the run cannot be rebuilt by this code: it has no mesh, or something it was meshed by moved
-    RemeshMismatch  the rebuilt mesh is not the stored one; nothing was delivered
+    Optim_remesh       one run: checked, meshed, verified (or judged, at another Re), delivered
+    Remeshed           what it delivered
+    RemeshRefused      the run cannot be rebuilt by this code: it has no mesh, or something it was meshed by moved
+    RemeshMismatch     the rebuilt mesh is not the stored one; nothing was delivered
+    RemeshFailedGates  the mesh at another Re fails the gates; nothing was delivered
 
 A run is refused before meshing when its shape revision, sampler version, config schema or c2d executable
 differs from the code's now: rebuilding it then needs its commit checked out. Anything else that moved (the
@@ -26,6 +28,7 @@ from src.datagen.geometry.manifest.store import GeometryStore
 from src.datagen.meshing.c2d.schemas import C2D_MeshingConfig
 from src.datagen.meshing.common.entry import Common_GenerateMesh
 from src.datagen.meshing.optimizer.common.settings import Optim_config_schema_fp, Optim_mesher_sha256
+from src.datagen.meshing.optimizer.evaluate.executor import Optim_failed_gates, Optim_mesh_columns
 from src.datagen.meshing.optimizer.evaluate.sampling import (
     Optim_contour_for, Optim_safe_name, Optim_sample_for_study,
 )
@@ -40,6 +43,8 @@ class Remeshed(NamedTuple):
     vtk_path: Optional[str]  # None unless asked for
     num_nodes: int
     su2_sha256: str
+    mesh_re: float           # the Re it was meshed at
+    measured: dict           # the delivered mesh's `Optim_mesh_columns`; empty if the mesher measured nothing
 
 
 class RemeshRefused(ValueError):
@@ -50,11 +55,22 @@ class RemeshMismatch(RuntimeError):
     """The rebuilt mesh is not the stored one, or no mesh came out; nothing was delivered."""
 
 
-def Optim_remesh(store: RunStore, run_id: str, out_dir, *, with_vtk: bool = False, geometry_db=None) -> Remeshed:
-    """
-    Meshes a stored run again and delivers its `.su2` (and `.vtk`) into `out_dir`, once its hash matches.
+class RemeshFailedGates(RuntimeError):
+    """The mesh at another Re fails the run's settings' gates; nothing was delivered."""
 
-    c2d runs in `out_dir/.remesh_<run id[:8]>/`, which is deleted whatever happens; the verified files move up
+    def __init__(self, message: str, failed: list[str], measured: dict):
+        super().__init__(message)
+        self.failed = failed      # the gates it fails, in `GATE_ORDER`
+        self.measured = measured  # its `Optim_mesh_columns`
+
+
+def Optim_remesh(store: RunStore, run_id: str, out_dir, *, with_vtk: bool = False, geometry_db=None,
+                 mesh_re: Optional[float] = None) -> Remeshed:
+    """
+    Meshes a stored run again and delivers its `.su2` (and `.vtk`) into `out_dir`: at the run's design Re once its
+    hash matches; at another `mesh_re`, which has no stored hash, once it passes the settings' gates.
+
+    c2d runs in `out_dir/.remesh_<run id[:8]>/`, which is deleted whatever happens; the accepted files move up
     as `<name>.su2` and `<name>.vtk`, replacing any there, the name file-safe. An `out_dir` this call made is
     removed again when nothing was delivered.
 
@@ -64,6 +80,7 @@ def Optim_remesh(store: RunStore, run_id: str, out_dir, *, with_vtk: bool = Fals
         out_dir (str | Path): Where the files go; created if missing
         with_vtk (bool): Also deliver the diagnostic .vtk
         geometry_db (str | Path | None): The geometry manifest, the repo's own by default
+        mesh_re (float | None): The Re to mesh at; None or the settings' design Re for the stored mesh
 
     Returns:
         Remeshed: The delivered files
@@ -72,7 +89,9 @@ def Optim_remesh(store: RunStore, run_id: str, out_dir, *, with_vtk: bool = Fals
         RemeshRefused: Before meshing, if the run is unknown, has no mesh, or its shape revision, sampler
             version, config schema or c2d executable differs from now, or its shape is not stored
         RemeshMismatch: After meshing, if the sampler rejected the config, no .su2 (or asked-for .vtk) was
-            written, or the .su2's hash differs from the stored one
+            written, the .su2's hash differs from the stored one, or a mesh at another Re was not measured
+        RemeshFailedGates: After meshing at another Re, if the mesh fails a gate
+        ValidationError: If `mesh_re` is outside the freestream's range
         FileNotFoundError: If no c2d executable is configured
     """
     run = store.run(run_id)
@@ -88,6 +107,8 @@ def Optim_remesh(store: RunStore, run_id: str, out_dir, *, with_vtk: bool = Fals
     if contour is None:
         raise RemeshRefused(f"run {run_id}: {settings['backend']}/{settings['topology']} is not sampled")
     config = C2D_MeshingConfig(**json.loads(run["config_json"]))
+    stored = mesh_re is None or mesh_re == settings["design_re"]  # the stored mesh, so its hash decides
+    mesh_re = settings["design_re"] if mesh_re is None else mesh_re
 
     out_dir = Path(out_dir)
     made = not out_dir.exists()
@@ -95,7 +116,8 @@ def Optim_remesh(store: RunStore, run_id: str, out_dir, *, with_vtk: bool = Fals
     shutil.rmtree(work, ignore_errors=True)  # a killed re-mesh's leftovers
     work.mkdir(parents=True)
     try:
-        sampled = Optim_sample_for_study(settings, config, contour, name, str(work), write_vtk=with_vtk)
+        sampled = Optim_sample_for_study(settings, config, contour, name, str(work), write_vtk=with_vtk,
+                                         mesh_re=mesh_re)
         if sampled.mesh_in is None:
             raise RemeshMismatch(f"run {run_id} ({name}): the sampler now rejects its config "
                                  f"({sampled.report.rejection}); {_provenance(run)}")
@@ -103,9 +125,18 @@ def Optim_remesh(store: RunStore, run_id: str, out_dir, *, with_vtk: bool = Fals
         if not out.mesh_path or not os.path.isfile(out.mesh_path):
             raise RemeshMismatch(f"run {run_id} ({name}): no .su2 written ({out.flag.name}); {_provenance(run)}")
         sha, _ = Optim_su2_sha256(out.mesh_path)
-        if sha != run["su2_sha256"]:
+        measured = Optim_mesh_columns(out) if out.quality is not None else {}
+        if stored and sha != run["su2_sha256"]:
             raise RemeshMismatch(f"run {run_id} ({name}): the .su2 hashes to {sha}, the run stored "
                                  f"{run['su2_sha256']}; {_provenance(run)}")
+        if not stored:
+            if not measured:
+                raise RemeshMismatch(f"run {run_id} ({name}) at Re {mesh_re:.4g}: the mesh was not measured "
+                                     f"({out.flag.name})")
+            failed = Optim_failed_gates({"entry_flag": out.flag.name, **measured}, settings)
+            if failed:
+                raise RemeshFailedGates(f"run {run_id} ({name}) at Re {mesh_re:.4g} fails {', '.join(failed)}; "
+                                        f"it passed at its design Re {settings['design_re']:.4g}", failed, measured)
         if with_vtk and not (out.mesh_path_vtk and os.path.isfile(out.mesh_path_vtk)):
             raise RemeshMismatch(f"run {run_id} ({name}): no .vtk written ({out.flag.name})")
 
@@ -121,7 +152,8 @@ def Optim_remesh(store: RunStore, run_id: str, out_dir, *, with_vtk: bool = Fals
         if made:
             with contextlib.suppress(OSError):  # only an empty folder goes: one this call made, nothing delivered
                 out_dir.rmdir()
-    return Remeshed(run_id, name, str(su2_path), str(vtk_path) if vtk_path else None, run["num_nodes"], sha)
+    return Remeshed(run_id, name, str(su2_path), str(vtk_path) if vtk_path else None, out.num_nodes, sha, mesh_re,
+                    measured)
 
 
 def _refuse_if_moved(run: dict, settings: dict) -> None:

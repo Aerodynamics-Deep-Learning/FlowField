@@ -4,6 +4,7 @@ ladder, NOMAD, the calibration) goes through `RunExecutor.run`.
 
     RunExecutor          one per ladder: samples, meshes, scores and judges a config, and emits its row
     RunResult            that row, and whether it came from the ladder's cache
+    Optim_mesh_columns   a mesher's output measured as a row's columns
     Optim_failed_gates   the study's verdict on a meshed row
     Optim_nomad_outputs  what NOMAD is told about a row
 
@@ -185,15 +186,7 @@ class RunExecutor:
             row["error_text"] = "\n".join(filter(None, [row.get("error_text"), *captured.lines])) or None
             return
 
-        quality, geo = out.quality, out.geo_dev
-        row.update(status="meshed", num_nodes=out.num_nodes)
-        row.update({column: getattr(quality, name) for name, column in _QUALITY_COLUMNS.items()})
-        for name, short in _DISTRIBUTIONS.items():
-            dist = getattr(quality, name)
-            if dist is not None:
-                row.update({f"q_{short}_{f}": getattr(dist, f) for f in _DIST_FIELDS})
-        if geo is not None:
-            row.update({column: getattr(geo, name) for name, column in _GEO_COLUMNS.items()})
+        row.update(status="meshed", **Optim_mesh_columns(out))
         row["su2_sha256"], row["su2_bytes"] = Optim_su2_sha256(out.mesh_path)
         failed = Optim_failed_gates(row, self.ctx.settings)
         row.update(passed=int(not failed), failed_gates=failed)
@@ -208,6 +201,21 @@ class RunExecutor:
             self._cache[row["cache_key"]] = row
         self.emit(row)
         return RunResult(row, cached=False)
+
+
+def Optim_mesh_columns(out) -> dict:
+    """A mesher's output measured as the runs table names it: node count, worst-cell quality, its distributions and
+    the boundary deviation (none of the last when unmeasured)."""
+    quality, geo = out.quality, out.geo_dev
+    columns = {"num_nodes": out.num_nodes}
+    columns.update({column: getattr(quality, name) for name, column in _QUALITY_COLUMNS.items()})
+    for name, short in _DISTRIBUTIONS.items():
+        dist = getattr(quality, name)
+        if dist is not None:
+            columns.update({f"q_{short}_{f}": getattr(dist, f) for f in _DIST_FIELDS})
+    if geo is not None:
+        columns.update({column: getattr(geo, name) for name, column in _GEO_COLUMNS.items()})
+    return columns
 
 
 def Optim_failed_gates(row: dict, settings: dict) -> list[str]:

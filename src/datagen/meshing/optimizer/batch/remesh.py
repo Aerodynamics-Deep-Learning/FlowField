@@ -8,20 +8,27 @@ By name, airfoils run on `workers` processes, each re-meshing one at a time (one
 order), with a progress line every tenth; one that cannot be re-meshed is warned of as it happens and the rest go
 on. The run store is only read, so this can run beside a campaign. No slots: a best run's mesh is one already made,
 so no cap or watchdog guards it.
+
+`Optim_remesh_at_re` is the solver side's call: one airfoil's best run meshed at an asked Re into a folder the caller
+names, its hash checked at the design Re and the mesh at the asked Re judged by the gates; it raises instead of
+reporting, and returns what a caller keeps to rebuild and check that mesh later.
 """
 
 import logging
 import multiprocessing as mp
 import signal
+import tempfile
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 from typing import NamedTuple, Optional, Sequence
 
+from src.datagen.meshing.optimizer.batch.quality import GATES
 from src.datagen.meshing.optimizer.batch.runner import Optim_load_shapes, Progress, _worker_env
 from src.datagen.meshing.optimizer.common.settings import Optim_build_settings
 from src.datagen.meshing.optimizer.evaluate.remesh import Optim_remesh, Remeshed, RemeshMismatch, RemeshRefused
 from src.datagen.meshing.optimizer.evaluate.sampling import Optim_safe_name
 from src.datagen.meshing.optimizer.manifest.store import RunStore
+from src.datagen.meshing.optimizer.search.events import Optim_gate_value
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +37,21 @@ class RemeshOutcome(NamedTuple):
     name: str
     remeshed: Optional[Remeshed]  # None if not delivered
     error: Optional[str]          # why not
+
+
+class RemeshedAtRe(NamedTuple):
+    """An airfoil's best mesh at an asked Re, and what a caller keeps to rebuild and check it later."""
+    airfoil_name: str
+    run_id: str
+    settings_id: str
+    design_re: float
+    mesh_re: float
+    hash_checked: bool    # its run's mesh at the design Re hashed to the stored one in this call
+    su2_path: str
+    vtk_path: Optional[str]
+    num_nodes: int
+    su2_sha256: str       # the delivered mesh's: the run meshed again at `mesh_re` gives it again
+    gates: dict           # each gate's worst value on the delivered mesh, by `quality.GATES` key
 
 
 def Optim_remesh_airfoils(store: RunStore, names: Optional[Sequence[str]], out_root, *, with_vtk: bool = False,
@@ -72,7 +94,7 @@ def Optim_remesh_airfoils(store: RunStore, names: Optional[Sequence[str]], out_r
     for i, (name, shape) in enumerate(shapes):
         run_id = store.best(shape.geometry_id, settings_id)
         if run_id is None:
-            end(i, _no_best(name, shape.geometry_id in finished, settings_id))
+            end(i, RemeshOutcome(name, None, _no_best(shape.geometry_id in finished, settings_id)))
         elif workers > 1:
             pooled.append((i, name, run_id))
         else:
@@ -106,11 +128,56 @@ def Optim_remesh_run(store: RunStore, run_id: str, out_root, *, with_vtk: bool =
     return _remesh_one(store, run["airfoil_name"], run_id, out_root, with_vtk, geometry_db)
 
 
-def _no_best(name: str, finished: bool, settings_id: str) -> RemeshOutcome:
+def Optim_remesh_at_re(store: RunStore, name: str, mesh_re: float, out_dir, *, verify_hash: bool = True,
+                       with_vtk: bool = False, geometry_db=None, overrides: Optional[dict] = None) -> RemeshedAtRe:
+    """
+    An airfoil's best run under the run's settings meshed at `mesh_re`, its `.su2` (and `.vtk`) into `out_dir`.
+
+    At the design Re this is the stored mesh, so its hash is checked whatever `verify_hash` says. At another Re
+    there is no stored hash: with `verify_hash` the run is first meshed at its design Re, which must hash to the
+    stored mesh (nothing of it is kept); then it is meshed at `mesh_re`, delivered only if it passes the gates.
+
+    Args:
+        store (RunStore): The run store, read-only is enough
+        name (str): The airfoil
+        mesh_re (float): The Re to mesh at, as the caller asks it
+        out_dir (str | Path): Where `<name>.su2` (and `.vtk`) go, the name file-safe; created if missing
+        verify_hash (bool): At another Re, first check the run still meshes to its stored mesh
+        with_vtk (bool): Also deliver the .vtk
+        geometry_db (str | Path | None): The geometry manifest, the repo's own by default
+        overrides (dict | None): The run's settings over the constants, as the campaign ran under
+
+    Returns:
+        RemeshedAtRe: The delivered mesh and its record
+
+    Raises:
+        ValueError: If no shape is stored under `name`, before anything meshes, or `mesh_re` is outside the
+            freestream's range
+        RemeshRefused: If the airfoil has no best run under the settings, or the run cannot be rebuilt by this code
+        RemeshMismatch: If its mesh at the design Re is not the stored one, or no mesh came out
+        RemeshFailedGates: If the mesh at `mesh_re` fails a gate
+    """
+    settings = Optim_build_settings(**(overrides or {}))
+    settings_id, design_re = settings["settings_id"], settings["design_re"]
+    [(name, shape)] = Optim_load_shapes([name], geometry_db, settings["shape_version"])
+    run_id = store.best(shape.geometry_id, settings_id)
+    if run_id is None:
+        finished = shape.geometry_id in store.finished_airfoils(settings_id)
+        raise RemeshRefused(f"{name}: {_no_best(finished, settings_id)}")
+    stored = mesh_re == design_re
+    if verify_hash and not stored:
+        with tempfile.TemporaryDirectory(prefix="remesh_check_") as scratch:
+            Optim_remesh(store, run_id, scratch, geometry_db=geometry_db)
+    done = Optim_remesh(store, run_id, out_dir, with_vtk=with_vtk, geometry_db=geometry_db, mesh_re=mesh_re)
+    gates = {gate.key: Optim_gate_value(done.measured, gate.key) for gate in GATES}
+    return RemeshedAtRe(name, run_id, settings_id, design_re, mesh_re, verify_hash or stored, done.su2_path,
+                        done.vtk_path, done.num_nodes, done.su2_sha256, gates)
+
+
+def _no_best(finished: bool, settings_id: str) -> str:
     if finished:
-        return RemeshOutcome(name, None, "no best run: its campaign ladder failed, no mesh passed under these settings")
-    return RemeshOutcome(name, None, f"no best run: never finished a campaign ladder under these settings "
-                                     f"({settings_id[:8]})")
+        return "no best run: its campaign ladder failed, no mesh passed under these settings"
+    return f"no best run: never finished a campaign ladder under these settings ({settings_id[:8]})"
 
 
 def _remesh_one(store, name, run_id, out_root, with_vtk, geometry_db) -> RemeshOutcome:

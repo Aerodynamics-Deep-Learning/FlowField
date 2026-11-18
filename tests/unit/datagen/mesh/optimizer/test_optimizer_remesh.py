@@ -15,6 +15,12 @@ delivered meshes' quality is tabled and drawn (`meshing.optimizer.batch.quality`
     - test_the_delivered_meshes_quality_is_tabled_and_drawn
     - test_the_airfoils_go_on_past_one_that_cannot_be_delivered
     - test_any_meshed_run_is_remeshed_by_its_id
+Step 4: Ensure a mesh at another Re, which has no stored hash, is judged by the gates, and the solver side's call
+checks the stored mesh first, delivers the asked Re's and raises whatever stops it
+    - test_a_mesh_at_another_re_is_judged_by_the_gates
+    - test_a_mesh_failing_a_gate_at_another_re_delivers_nothing
+    - test_the_solver_sides_call_meshes_at_the_asked_re
+    - test_the_solver_sides_call_raises_what_stops_it
 
 The executor records three naca0012 runs (the golden one, marked best; a manual one; a rejected one) into a
 scratch store with the sampler real and `Common_GenerateMesh` a stand-in; the re-mesh then meshes with the same
@@ -27,7 +33,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from src.datagen.constants import DX_MAX, SMOOTHING_DEFAULTS
+from src.datagen.constants import DESIGN_RE, DX_MAX, SMOOTHING_DEFAULTS
 from src.datagen.geometry.common.constants import SHAPE_VERSION
 from src.datagen.meshing.common.schemas import (
     MeshBackend, MeshExitFlag, MeshGeoDeviationSummary, MeshQualitySummary, MeshTopology,
@@ -39,9 +45,11 @@ from src.datagen.meshing.optimizer.evaluate import executor as executor_module
 from src.datagen.meshing.optimizer.evaluate import remesh as remesh_module
 from src.datagen.meshing.optimizer.evaluate.context import RunContext
 from src.datagen.meshing.optimizer.evaluate.executor import RunExecutor
-from src.datagen.meshing.optimizer.evaluate.remesh import Optim_remesh, Remeshed, RemeshMismatch, RemeshRefused
+from src.datagen.meshing.optimizer.evaluate.remesh import (
+    Optim_remesh, Remeshed, RemeshFailedGates, RemeshMismatch, RemeshRefused,
+)
 from src.datagen.meshing.optimizer.evaluate.sampling import Optim_build_study_contour
-from src.datagen.meshing.optimizer.manifest.store import Optim_utc_now, RunStore
+from src.datagen.meshing.optimizer.manifest.store import Optim_su2_sha256, Optim_utc_now, RunStore
 from tests.geometry_shapes import SHAPE_NAMES, stored_shape
 
 GOLDEN = {"dx_mid": DX_MAX, "le_ratio": 0.025, "te_ratio": 1.0, "cluster_width": 0.026, "jmax": 147,
@@ -56,12 +64,12 @@ _GEO = MeshGeoDeviationSummary(n_boundary_nodes=468, max_dev_mesh_to_input=1e-8,
 class _Mesher:
     """
     A stand-in for `Common_GenerateMesh`: writes its `su2` bytes (`su2_for[name]`'s for that airfoil; no file
-    if None) as `<name>.su2`, a `.vtk` when asked and a side file into the run's folder, reporting a mesh that
-    clears every gate. Keeps its inputs.
+    if None) as `<name>.su2`, a `.vtk` when asked and a side file into the run's folder, reporting its `quality`
+    (one that clears every gate unless changed). Keeps its inputs.
     """
 
     def __init__(self):
-        self.su2, self.su2_for, self.calls = _SU2, {}, []
+        self.su2, self.su2_for, self.calls, self.quality = _SU2, {}, [], _QUALITY
 
     def __call__(self, mesh_in):
         self.calls.append(mesh_in)
@@ -78,7 +86,7 @@ class _Mesher:
             Path(vtk_path).write_text("# vtk DataFile")
         ok = mesh_path is not None
         return SimpleNamespace(flag=MeshExitFlag.SUCCESS if ok else MeshExitFlag.SUBPROCESS_FAIL,
-                               quality=_QUALITY if ok else None, geo_dev=_GEO if ok else None, mesh_path=mesh_path,
+                               quality=self.quality if ok else None, geo_dev=_GEO if ok else None, mesh_path=mesh_path,
                                mesh_path_vtk=vtk_path, num_nodes=68_796 if ok else None, verbose_list=[])
 
 
@@ -157,8 +165,10 @@ def test_a_verified_mesh_is_delivered_alone(study, with_vtk):
 
     files = ["naca0012.su2", "naca0012.vtk"] if with_vtk else ["naca0012.su2"]
     assert sorted(os.listdir(study.out)) == files  # no temp folder, no side files
-    assert got == Remeshed(study.best["run_id"], "naca0012", str(study.out / "naca0012.su2"),
-                           str(study.out / "naca0012.vtk") if with_vtk else None, 68_796, study.best["su2_sha256"])
+    assert got._replace(measured={}) == Remeshed(
+        study.best["run_id"], "naca0012", str(study.out / "naca0012.su2"),
+        str(study.out / "naca0012.vtk") if with_vtk else None, 68_796, study.best["su2_sha256"], DESIGN_RE, {})
+    assert got.measured["q_skew_max"] == study.best["q_skew_max"]  # measured as the executor measures a run
     assert Path(got.su2_path).read_bytes() == _SU2
 
 
@@ -282,4 +292,67 @@ def test_any_meshed_run_is_remeshed_by_its_id(study):
     assert _delivered([got]) == [("naca0012", True)]
     assert sorted(os.listdir(study.out / "naca0012")) == ["naca0012.su2", "naca0012.vtk"]
     assert study.mesher.calls[-1].mesh_config.jmax == 148  # the manual run's, not the best's
+# endregion
+
+
+# region Step 4
+def test_a_mesh_at_another_re_is_judged_by_the_gates(study):
+    study.mesher.su2 = b"NDIME= 2\nNPOIN= 3\n"  # another Re's mesh: no stored hash to match
+
+    got = _remesh(study, study.best["run_id"], mesh_re=3e6)
+
+    assert study.mesher.calls[-1].freestream.Re == 3e6
+    assert (got.mesh_re, got.su2_sha256) == (3e6, Optim_su2_sha256(got.su2_path)[0])
+    assert got.su2_sha256 != study.best["su2_sha256"] and got.measured["q_size_ratio_max"] == 1.2
+    assert os.listdir(study.out) == ["naca0012.su2"]
+    with pytest.raises(ValueError, match="Re"):  # past the freestream's range
+        _remesh(study, study.best["run_id"], mesh_re=2e7)
+
+
+def test_a_mesh_failing_a_gate_at_another_re_delivers_nothing(study):
+    study.mesher.quality = _QUALITY.model_copy(update={"max_size_ratio": 1.3, "max_skew": 0.3})
+
+    with pytest.raises(RemeshFailedGates, match=r"at Re 3e\+06 fails skew, size_ratio; it passed at its design Re "
+                                                r"1\.5e\+07") as e:
+        _remesh(study, study.best["run_id"], mesh_re=3e6, with_vtk=True)
+
+    assert e.value.failed == ["skew", "size_ratio"] and e.value.measured["q_size_ratio_max"] == 1.3
+    assert not study.out.exists()
+
+
+@pytest.mark.parametrize("mesh_re, verify, meshed_at, checked", [
+    (3e6, True, [DESIGN_RE, 3e6], True),
+    (3e6, False, [3e6], False),
+    (DESIGN_RE, False, [DESIGN_RE], True),  # the stored mesh: its hash is checked anyway
+], ids=["verified", "unverified", "at_the_design_re"])
+def test_the_solver_sides_call_meshes_at_the_asked_re(study, mesh_re, verify, meshed_at, checked):
+    meshed = len(study.mesher.calls)
+    case = study.out / "case"
+
+    with RunStore.open(study.db, read_only=True) as store:
+        got = batch_remesh.Optim_remesh_at_re(store, "naca0012", mesh_re, case, verify_hash=verify)
+
+    assert [call.freestream.Re for call in study.mesher.calls[meshed:]] == meshed_at
+    assert got == batch_remesh.RemeshedAtRe(
+        "naca0012", study.best["run_id"], study.ctx.settings["settings_id"], DESIGN_RE, mesh_re, checked,
+        str(case / "naca0012.su2"), None, 68_796, Optim_su2_sha256(case / "naca0012.su2")[0],
+        {"skew": 0.2, "ortho": 0.91, "jac": 0.91, "aspect_ratio": 9e3, "size_ratio": 1.2, "geo_dev": 2e-8})
+    assert os.listdir(case) == ["naca0012.su2"]  # the check's mesh kept nowhere
+
+
+def test_the_solver_sides_call_raises_what_stops_it(study):
+    with RunStore.open(study.db, read_only=True) as store:
+        with pytest.raises(RemeshRefused, match="naca4412: no best run: never finished a campaign ladder"):
+            batch_remesh.Optim_remesh_at_re(store, "naca4412", 3e6, study.out)
+        with pytest.raises(ValueError, match="naca9999"):
+            batch_remesh.Optim_remesh_at_re(store, "naca9999", 3e6, study.out)
+        study.mesher.su2 = b"NDIME= 2\nNPOIN= 2\n"  # the run no longer meshes to its stored mesh
+        meshed = len(study.mesher.calls)
+        with pytest.raises(RemeshMismatch, match="hashes to"):
+            batch_remesh.Optim_remesh_at_re(store, "naca0012", 3e6, study.out)
+        assert [call.freestream.Re for call in study.mesher.calls[meshed:]] == [DESIGN_RE]  # 3e6 never meshed
+        with pytest.raises(RemeshMismatch, match="hashes to"):  # the design Re asked: its hash checked unasked
+            batch_remesh.Optim_remesh_at_re(store, "naca0012", DESIGN_RE, study.out, verify_hash=False)
+
+    assert not study.out.exists()
 # endregion
